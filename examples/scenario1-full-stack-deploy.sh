@@ -1,0 +1,507 @@
+#!/bin/bash
+set -euo pipefail
+
+###############################################################################
+# VCF 9 Scenario 1 — Full Stack Deploy Script
+#
+# This script automates the complete VCF 9 provisioning workflow end to end:
+#   Phase 1: VCF CLI Context Creation
+#   Phase 2: Project + RBAC + Supervisor Namespace Provisioning
+#   Phase 3: Context Bridge Execution
+#   Phase 4: VKS Cluster Deployment
+#   Phase 5: Kubeconfig Retrieval via VksCredentialRequest
+#   Phase 6: Functional Validation Workload Deployment
+#
+# Edit the variable block below with your environment-specific values,
+# then run: bash examples/scenario1-full-stack-deploy.sh
+###############################################################################
+
+###############################################################################
+# Variable Block — Customer-Configurable Values
+#
+# Fill in the required variables below. Variables with defaults can be
+# overridden by setting them in your environment before running the script.
+###############################################################################
+
+# --- API Token ---
+VCF_API_TOKEN="${VCF_API_TOKEN:-}"
+
+# --- VCFA Connection ---
+VCFA_ENDPOINT="${VCFA_ENDPOINT:-}"
+TENANT_NAME="${TENANT_NAME:-}"
+CONTEXT_NAME="${CONTEXT_NAME:-}"
+
+# --- Project & Namespace ---
+PROJECT_NAME="${PROJECT_NAME:-}"
+PROJECT_DESCRIPTION="${PROJECT_DESCRIPTION:-Scenario 1 project}"
+USER_IDENTITY="${USER_IDENTITY:-}"
+NAMESPACE_PREFIX="${NAMESPACE_PREFIX:-}"
+NAMESPACE_DESCRIPTION="${NAMESPACE_DESCRIPTION:-Scenario 1 namespace}"
+
+# --- Pre-Existing Resources (Region, Zone, Networking) ---
+REGION_NAME="${REGION_NAME:-region-us1-a}"
+ZONE_NAME="${ZONE_NAME:-}"
+VPC_NAME="${VPC_NAME:-region-us1-a-default-vpc}"
+TRANSIT_GATEWAY_NAME="${TRANSIT_GATEWAY_NAME:-default@region-us1-a}"
+CONNECTIVITY_PROFILE_NAME="${CONNECTIVITY_PROFILE_NAME:-default@region-us1-a}"
+
+# --- Namespace Resource Limits ---
+RESOURCE_CLASS="${RESOURCE_CLASS:-xxlarge}"
+CPU_LIMIT="${CPU_LIMIT:-100000M}"
+MEMORY_LIMIT="${MEMORY_LIMIT:-102400Mi}"
+
+# --- VKS Cluster Configuration ---
+CLUSTER_NAME="${CLUSTER_NAME:-}"
+K8S_VERSION="${K8S_VERSION:-v1.33.6+vmware.1-fips-vkr.2}"
+CONTENT_LIBRARY_ID="${CONTENT_LIBRARY_ID:-}"
+SERVICES_CIDR="${SERVICES_CIDR:-10.96.0.0/12}"
+PODS_CIDR="${PODS_CIDR:-192.168.156.0/20}"
+VM_CLASS="${VM_CLASS:-best-effort-large}"
+STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
+MIN_NODES="${MIN_NODES:-2}"
+MAX_NODES="${MAX_NODES:-10}"
+
+# --- Timeouts and Polling ---
+CLUSTER_TIMEOUT="${CLUSTER_TIMEOUT:-1800}"
+WORKER_TIMEOUT="${WORKER_TIMEOUT:-600}"
+KUBECONFIG_TIMEOUT="${KUBECONFIG_TIMEOUT:-300}"
+PVC_TIMEOUT="${PVC_TIMEOUT:-300}"
+LB_TIMEOUT="${LB_TIMEOUT:-300}"
+POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+###############################################################################
+# Helper Functions
+###############################################################################
+
+log_step() {
+  local step_number="$1"
+  local message="$2"
+  echo "[Step ${step_number}] ${message}..."
+}
+
+log_success() {
+  local message="$1"
+  echo "✓ ${message}"
+}
+
+log_error() {
+  local message="$1"
+  echo "✗ ERROR: ${message}" >&2
+}
+
+validate_variables() {
+  local missing=0
+  local required_vars=(
+    "VCF_API_TOKEN"
+    "VCFA_ENDPOINT"
+    "TENANT_NAME"
+    "CONTEXT_NAME"
+    "PROJECT_NAME"
+    "USER_IDENTITY"
+    "NAMESPACE_PREFIX"
+    "ZONE_NAME"
+    "CLUSTER_NAME"
+    "CONTENT_LIBRARY_ID"
+  )
+
+  for var_name in "${required_vars[@]}"; do
+    if [[ -z "${!var_name:-}" ]]; then
+      log_error "Required variable ${var_name} is not set or is empty"
+      missing=1
+    fi
+  done
+
+  if [[ "${missing}" -eq 1 ]]; then
+    log_error "One or more required variables are missing. Please set them in the variable block above."
+    exit 1
+  fi
+}
+
+wait_for_condition() {
+  local description="$1"
+  local timeout="$2"
+  local interval="$3"
+  local check_command="$4"
+  local elapsed=0
+
+  while [[ "${elapsed}" -lt "${timeout}" ]]; do
+    if eval "${check_command}" >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "  Waiting for ${description}... (${elapsed}s/${timeout}s elapsed)"
+    sleep "${interval}"
+    elapsed=$((elapsed + interval))
+  done
+
+  echo "  Timeout waiting for ${description} after ${elapsed}s"
+  return 1
+}
+
+###############################################################################
+# Pre-Flight Validation
+###############################################################################
+
+validate_variables
+
+###############################################################################
+# Phase 1: VCF CLI Context Creation
+###############################################################################
+
+log_step 1 "Creating VCF CLI context and activating it"
+
+# Remove any stale context so create always succeeds (idempotent)
+vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+
+if ! vcf context create "${CONTEXT_NAME}" \
+  --endpoint "https://${VCFA_ENDPOINT}" \
+  --type cci \
+  --tenant-name "${TENANT_NAME}" \
+  --api-token "${VCF_API_TOKEN}" \
+  --set-current; then
+  log_error "Failed to create VCF CLI context '${CONTEXT_NAME}' for endpoint '${VCFA_ENDPOINT}'. Verify your endpoint URL, tenant name, and API token."
+  exit 2
+fi
+
+log_success "VCF CLI context '${CONTEXT_NAME}' created and activated"
+
+###############################################################################
+# Phase 2: Project + RBAC + Supervisor Namespace Provisioning
+###############################################################################
+
+log_step 2 "Creating Project, ProjectRoleBinding, and Supervisor Namespace"
+
+# Idempotency check — skip creation if project already exists
+if kubectl get project "${PROJECT_NAME}" 2>/dev/null; then
+  log_success "Project '${PROJECT_NAME}' already exists, skipping creation"
+else
+  # Generate and apply the multi-document manifest
+  if ! cat <<EOF | kubectl create --validate=false -f -
+apiVersion: project.cci.vmware.com/v1alpha2
+kind: Project
+metadata:
+  name: ${PROJECT_NAME}
+spec:
+  description: "${PROJECT_DESCRIPTION}"
+---
+apiVersion: authorization.cci.vmware.com/v1alpha1
+kind: ProjectRoleBinding
+metadata:
+  name: "cci:user:${USER_IDENTITY}"
+  namespace: ${PROJECT_NAME}
+roleRef:
+  apiGroup: authorization.cci.vmware.com
+  kind: ProjectRole
+  name: admin
+subjects:
+- kind: User
+  name: ${USER_IDENTITY}
+---
+apiVersion: infrastructure.cci.vmware.com/v1alpha2
+kind: SupervisorNamespace
+metadata:
+  generateName: ${NAMESPACE_PREFIX}
+  namespace: ${PROJECT_NAME}
+spec:
+  description: "${NAMESPACE_DESCRIPTION}"
+  regionName: "${REGION_NAME}"
+  className: "${RESOURCE_CLASS}"
+  vpcName: "${VPC_NAME}"
+  initialClassConfigOverrides:
+    zones:
+    - name: "${ZONE_NAME}"
+      cpuLimit: "${CPU_LIMIT}"
+      cpuReservation: "0M"
+      memoryLimit: "${MEMORY_LIMIT}"
+      memoryReservation: "0Mi"
+EOF
+  then
+    log_error "Failed to create Project, RBAC, and Supervisor Namespace resources"
+    exit 3
+  fi
+fi
+
+# Retrieve the dynamic namespace name (works for both new and existing projects)
+DYNAMIC_NS_NAME=$(kubectl get supervisornamespaces -n "${PROJECT_NAME}" -o jsonpath='{.items[0].metadata.name}')
+
+if [[ -z "${DYNAMIC_NS_NAME}" ]]; then
+  log_error "Failed to retrieve dynamic namespace name from project '${PROJECT_NAME}'"
+  exit 3
+fi
+
+log_success "Project '${PROJECT_NAME}' provisioned with namespace '${DYNAMIC_NS_NAME}'"
+
+###############################################################################
+# Phase 2b + 3: Context Refresh & Bridge (with retry)
+#
+# The VCFA API may take a few seconds to propagate the new namespace.
+# We retry the delete/create/use cycle until the namespace context appears.
+###############################################################################
+
+log_step "2b" "Refreshing VCF CLI context and bridging to namespace '${DYNAMIC_NS_NAME}'"
+
+NS_CONTEXT="${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}"
+BRIDGE_TIMEOUT=120
+BRIDGE_INTERVAL=10
+BRIDGE_ELAPSED=0
+BRIDGE_OK=false
+
+while [[ "${BRIDGE_ELAPSED}" -lt "${BRIDGE_TIMEOUT}" ]]; do
+  vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+
+  vcf context create "${CONTEXT_NAME}" \
+    --endpoint "https://${VCFA_ENDPOINT}" \
+    --type cci \
+    --tenant-name "${TENANT_NAME}" \
+    --api-token "${VCF_API_TOKEN}" \
+    --set-current >/dev/null 2>&1 || true
+
+  if vcf context use "${NS_CONTEXT}" 2>/dev/null; then
+    # Give the context a moment to fully initialize (plugin install, etc.)
+    sleep 5
+    if kubectl get clusters 2>/dev/null; then
+      BRIDGE_OK=true
+      break
+    fi
+  fi
+
+  echo "  Namespace context not yet available, retrying... (${BRIDGE_ELAPSED}s/${BRIDGE_TIMEOUT}s)"
+  sleep "${BRIDGE_INTERVAL}"
+  BRIDGE_ELAPSED=$((BRIDGE_ELAPSED + BRIDGE_INTERVAL))
+done
+
+if [[ "${BRIDGE_OK}" != "true" ]]; then
+  log_error "Namespace context '${NS_CONTEXT}' did not become available within ${BRIDGE_TIMEOUT}s"
+  exit 4
+fi
+
+log_success "Context bridge complete — now targeting namespace '${DYNAMIC_NS_NAME}' in project '${PROJECT_NAME}'"
+
+###############################################################################
+# Phase 4: VKS Cluster Deployment
+###############################################################################
+
+log_step 4 "Deploying VKS cluster '${CLUSTER_NAME}' in namespace '${DYNAMIC_NS_NAME}'"
+
+# Idempotency check — skip creation if cluster already exists
+if kubectl get cluster "${CLUSTER_NAME}" -n "${DYNAMIC_NS_NAME}" 2>/dev/null; then
+  log_success "Cluster '${CLUSTER_NAME}' already exists in namespace '${DYNAMIC_NS_NAME}', skipping creation"
+else
+  # Generate and apply the Cluster manifest
+  if ! cat <<EOF | kubectl apply --validate=false --insecure-skip-tls-verify -f -
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${DYNAMIC_NS_NAME}
+spec:
+  clusterNetwork:
+    services:
+      cidrBlocks:
+      - "${SERVICES_CIDR}"
+    pods:
+      cidrBlocks:
+      - "${PODS_CIDR}"
+    serviceDomain: cluster.local
+  topology:
+    class: builtin-generic-v3.4.0
+    classNamespace: vmware-system-vks-public
+    version: ${K8S_VERSION}
+    controlPlane:
+      metadata:
+        annotations:
+          run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=${CONTENT_LIBRARY_ID}"
+      replicas: 1
+    workers:
+      machineDeployments:
+      - class: node-pool
+        name: node-pool-01
+        metadata:
+          annotations:
+            run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=${CONTENT_LIBRARY_ID}"
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: "${MAX_NODES}"
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: "${MIN_NODES}"
+    variables:
+    - name: vmClass
+      value: ${VM_CLASS}
+    - name: storageClass
+      value: ${STORAGE_CLASS}
+EOF
+  then
+    log_error "Failed to apply VKS cluster manifest for '${CLUSTER_NAME}'"
+    exit 5
+  fi
+fi
+
+# Wait for cluster to reach Provisioned state
+if ! wait_for_condition "cluster '${CLUSTER_NAME}' to reach Provisioned state" \
+  "${CLUSTER_TIMEOUT}" "${POLL_INTERVAL}" \
+  "[[ \$(kubectl get cluster '${CLUSTER_NAME}' -n '${DYNAMIC_NS_NAME}' -o jsonpath='{.status.phase}') == 'Provisioned' ]]"; then
+  log_error "Cluster '${CLUSTER_NAME}' did not reach Provisioned state within ${CLUSTER_TIMEOUT}s"
+  echo "Current cluster status:"
+  kubectl get cluster "${CLUSTER_NAME}" -n "${DYNAMIC_NS_NAME}" -o wide 2>/dev/null || true
+  exit 6
+fi
+
+log_success "VKS cluster '${CLUSTER_NAME}' is Provisioned and ready"
+
+###############################################################################
+# Phase 5: Kubeconfig Retrieval via VCF CLI
+###############################################################################
+
+log_step 5 "Retrieving admin kubeconfig for VKS cluster '${CLUSTER_NAME}'"
+
+KUBECONFIG_FILE="./kubeconfig-${CLUSTER_NAME}.yaml"
+
+if ! vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}"; then
+  log_error "Failed to retrieve kubeconfig for cluster '${CLUSTER_NAME}'"
+  exit 7
+fi
+
+export KUBECONFIG="${KUBECONFIG_FILE}"
+
+# Verify connectivity to the VKS guest cluster (may take a moment after provisioning)
+if ! wait_for_condition "VKS guest cluster API to become reachable" \
+  300 10 \
+  "kubectl get namespaces"; then
+  log_error "Failed to connect to VKS guest cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_FILE}'"
+  exit 7
+fi
+
+log_success "Kubeconfig retrieved and saved to '${KUBECONFIG_FILE}' — connected to VKS guest cluster '${CLUSTER_NAME}'"
+
+###############################################################################
+# Phase 5b: Wait for Worker Nodes to Become Ready
+###############################################################################
+
+log_step "5b" "Waiting for worker nodes to become Ready"
+
+WORKER_TIMEOUT="${WORKER_TIMEOUT:-600}"
+
+if ! wait_for_condition "at least ${MIN_NODES} worker node(s) to become Ready" \
+  "${WORKER_TIMEOUT}" "${POLL_INTERVAL}" \
+  "[[ \$(kubectl get nodes --no-headers 2>/dev/null | grep -c ' Ready') -ge ${MIN_NODES} ]]"; then
+  log_error "Worker nodes did not become Ready within ${WORKER_TIMEOUT}s"
+  echo "Current node status:"
+  kubectl get nodes -o wide 2>/dev/null || true
+  exit 7
+fi
+
+kubectl get nodes -o wide
+log_success "All worker nodes are Ready"
+
+###############################################################################
+# Phase 6: Functional Validation Workload Deployment
+###############################################################################
+
+log_step 6 "Deploying functional validation workload (PVC, Deployment, LoadBalancer Service)"
+
+# Generate and apply the functional test manifest
+if ! cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vks-test-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: ${STORAGE_CLASS}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vks-test-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vks-test-app
+  template:
+    metadata:
+      labels:
+        app: vks-test-app
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+      containers:
+      - name: nginx
+        image: nginxinc/nginx-unprivileged:latest
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vks-test-lb
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: vks-test-app
+EOF
+then
+  log_error "Failed to apply functional validation workload manifest"
+  exit 8
+fi
+
+# Wait for PVC to reach Bound status
+if ! wait_for_condition "PVC 'vks-test-pvc' to reach Bound status" \
+  "${PVC_TIMEOUT}" "${POLL_INTERVAL}" \
+  "[[ \$(kubectl get pvc vks-test-pvc -o jsonpath='{.status.phase}') == 'Bound' ]]"; then
+  log_error "PVC 'vks-test-pvc' did not reach Bound status within ${PVC_TIMEOUT}s"
+  kubectl describe pvc vks-test-pvc
+  exit 8
+fi
+
+log_success "PVC 'vks-test-pvc' is Bound"
+
+# Wait for LoadBalancer external IP to be assigned
+if ! wait_for_condition "LoadBalancer 'vks-test-lb' to receive external IP" \
+  "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+  "[[ -n \$(kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+  log_error "LoadBalancer 'vks-test-lb' did not receive an external IP within ${LB_TIMEOUT}s"
+  kubectl get svc vks-test-lb -o wide
+  exit 8
+fi
+
+EXTERNAL_IP=$(kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+log_success "LoadBalancer 'vks-test-lb' assigned external IP: ${EXTERNAL_IP}"
+
+# HTTP connectivity test
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${EXTERNAL_IP}")
+if [[ "${HTTP_STATUS}" != "200" ]]; then
+  log_error "HTTP test failed — expected status 200 but got ${HTTP_STATUS} from http://${EXTERNAL_IP}"
+  exit 8
+fi
+
+log_success "HTTP connectivity test passed — received status 200 from http://${EXTERNAL_IP}"
+
+###############################################################################
+# Success Summary
+###############################################################################
+
+echo ""
+echo "============================================="
+echo "  VCF 9 Scenario 1 — Deployment Complete"
+echo "============================================="
+echo "  Cluster:    ${CLUSTER_NAME}"
+echo "  Namespace:  ${DYNAMIC_NS_NAME}"
+echo "  Kubeconfig: ${KUBECONFIG_FILE}"
+echo "  External IP: ${EXTERNAL_IP}"
+echo "============================================="
+echo ""
+
+exit 0

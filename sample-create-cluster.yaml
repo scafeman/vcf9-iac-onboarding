@@ -1,0 +1,36 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: my-dev-project-01-clus-01
+  namespace: my-dev-project-01-ns-xxxxx
+spec:
+  clusterNetwork:
+    services:
+      cidrBlocks: ["10.96.0.0/12"]
+    pods:
+      cidrBlocks: ["192.168.156.0/20"]
+    serviceDomain: cluster.local
+  topology:
+    class: builtin-generic-v3.4.0
+    classNamespace: vmware-system-vks-public
+    version: v1.33.6+vmware.1-fips
+    controlPlane:
+      metadata:
+        annotations:
+          run.tanzu.vmware.com/resolve-os-image: os-name=photon, content-library=cl-32ee3681364c701d0
+      replicas: 1
+    workers:
+      machineDeployments:
+        - class: node-pool
+          name: node-pool-01
+          metadata:
+            annotations:
+              run.tanzu.vmware.com/resolve-os-image: os-name=photon, content-library=cl-32ee3681364c701d0
+              cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: '10'
+              cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: '2'
+    variables:
+      - name: vmClass
+        value: best-effort-large
+      - name: storageClass
+        value: nfs
+

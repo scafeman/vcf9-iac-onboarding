@@ -1,0 +1,207 @@
+# Scenario 1: Full Stack Deploy Script
+
+## Overview
+
+`scenario1-full-stack-deploy.sh` automates the complete VCF 9 provisioning workflow from zero to a fully validated VKS cluster with running workloads. It is the "spin up" half of the dev environment lifecycle — pair it with `scenario1-full-stack-teardown.sh` to tear everything down.
+
+The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
+
+---
+
+## What the Script Does
+
+### Phase 1: VCF CLI Context Creation
+
+Authenticates to the VCFA endpoint using an API token and creates a named CLI context scoped to the target tenant. The `--set-current` flag activates the context immediately so all subsequent `kubectl` commands route through VCFA's CCI APIs.
+
+```
+vcf context create <CONTEXT_NAME> \
+  --endpoint https://<VCFA_ENDPOINT> \
+  --type cci \
+  --tenant-name <TENANT_NAME> \
+  --api-token <VCF_API_TOKEN> \
+  --set-current
+```
+
+### Phase 2: Project + RBAC + Supervisor Namespace Provisioning
+
+Applies a single multi-document YAML manifest that creates three resources in one shot:
+
+1. **Project** (`project.cci.vmware.com/v1alpha2`) — the governance boundary for resource ownership and RBAC.
+2. **ProjectRoleBinding** (`authorization.cci.vmware.com/v1alpha1`) — grants admin access to the specified user identity.
+3. **SupervisorNamespace** (`infrastructure.cci.vmware.com/v1alpha2`) — provisions a vSphere Supervisor Namespace with compute, storage, and network resources. Uses `generateName` so VCF appends a random 5-character suffix to produce the final namespace name.
+
+After creation, the script retrieves the dynamically generated namespace name via:
+
+```
+kubectl get supervisornamespaces -n <PROJECT_NAME> -o jsonpath='{.items[0].metadata.name}'
+```
+
+This phase includes an idempotency check — if the project already exists, creation is skipped.
+
+### Phase 2b + 3: Context Refresh and Bridge (with retry)
+
+This is the trickiest part of the VCF 9 workflow. The newly created namespace isn't immediately visible to the VCF CLI because the VCFA API needs time to propagate it. The script handles this with a retry loop:
+
+1. Deletes the existing CLI context (`vcf context delete --yes`)
+2. Re-creates it (`vcf context create`) — this triggers namespace discovery
+3. Attempts to switch to the namespace-scoped context (`vcf context use <CONTEXT>:<NAMESPACE>:<PROJECT>`)
+4. Verifies Cluster API access (`kubectl get clusters`)
+
+If the namespace context isn't available yet, it retries every 10 seconds for up to 120 seconds. This is the "Context Bridge" — the critical step that makes `cluster.x-k8s.io` API resources visible.
+
+### Phase 4: VKS Cluster Deployment
+
+Applies a Cluster API manifest (`cluster.x-k8s.io/v1beta1`) that deploys a VKS cluster with:
+
+- 1 control plane node (Photon OS)
+- 1 worker node pool with autoscaling (min 2, max 10 nodes)
+- Cluster class: `builtin-generic-v3.4.0`
+- Kubernetes version: `v1.33.6+vmware.1-fips-vkr.2`
+
+The script polls every 15 seconds until the cluster reaches `Provisioned` phase (timeout: 30 minutes). This phase includes an idempotency check — if the cluster already exists, creation is skipped.
+
+### Phase 5: Kubeconfig Retrieval
+
+Uses the VCF CLI to retrieve an admin kubeconfig with certificate-based authentication:
+
+```
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file ./kubeconfig-<CLUSTER_NAME>.yaml
+```
+
+Then waits up to 300 seconds for the guest cluster API server to become reachable (the control plane VM needs time to boot and start the API server after the cluster reaches `Provisioned` state).
+
+### Phase 5b: Worker Node Readiness Wait
+
+After the API server is reachable, the script waits for at least `MIN_NODES` (default: 2) worker nodes to reach `Ready` status before proceeding. This prevents workload deployment failures caused by unschedulable pods. Timeout: 600 seconds.
+
+```
+kubectl get nodes --no-headers | grep -c ' Ready'
+```
+
+### Phase 6: Functional Validation Workload Deployment
+
+Deploys three resources to the guest cluster to validate storage, compute, and networking:
+
+1. **PersistentVolumeClaim** (`vks-test-pvc`) — 1Gi NFS volume. Validates CSI driver and storage backend.
+2. **Deployment** (`vks-test-app`) — nginx-unprivileged with hardened security context (non-root, seccomp, capabilities dropped). Validates pod scheduling and security enforcement.
+3. **LoadBalancer Service** (`vks-test-lb`) — NSX-provisioned external IP on port 80. Validates network ingress.
+
+The script waits for:
+- PVC to reach `Bound` status (timeout: 300s)
+- LoadBalancer to receive an external IP (timeout: 300s)
+- HTTP 200 response from the external IP
+
+---
+
+## Prerequisites
+
+- Docker and Docker Compose installed
+- The `vcf9-dev` container built and running (`docker compose up -d --build`)
+- A populated `.env` file with all required variables (see below)
+
+---
+
+## Required Environment Variables
+
+Set these in the `.env` file at the project root. Docker Compose loads them into the container automatically.
+
+| Variable | Description | Example |
+|---|---|---|
+| `VCF_API_TOKEN` | API token from the VCFA portal | `uT3s3jCY8GIPzK...` |
+| `VCFA_ENDPOINT` | VCFA hostname (no `https://` prefix) | `vcfa01.vmw-lab1.rpcai.rackspace-cloud.com` |
+| `TENANT_NAME` | SSO tenant/organization | `org-rax-01` |
+| `CONTEXT_NAME` | Local CLI context name | `my-dev-automation` |
+| `PROJECT_NAME` | VCF Project name | `my-dev-project-01` |
+| `USER_IDENTITY` | SSO user identity for RBAC | `rax-user-1` |
+| `NAMESPACE_PREFIX` | Supervisor Namespace prefix (VCF appends a random suffix) | `my-dev-project-01-ns-` |
+| `ZONE_NAME` | Availability zone for namespace placement | `zone-vmw-lab1-md-cl01` |
+| `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
+| `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
+
+Optional variables with defaults: `REGION_NAME`, `VPC_NAME`, `RESOURCE_CLASS`, `CPU_LIMIT`, `MEMORY_LIMIT`, `K8S_VERSION`, `SERVICES_CIDR`, `PODS_CIDR`, `VM_CLASS`, `STORAGE_CLASS`, `MIN_NODES`, `MAX_NODES`, and all timeout values.
+
+---
+
+## How to Run
+
+### Start the dev container (if not already running)
+
+```bash
+docker compose up -d --build
+```
+
+### Execute the deploy script
+
+```bash
+docker exec vcf9-dev bash examples/scenario1-full-stack-deploy.sh
+```
+
+### Monitor from a second terminal (optional)
+
+While the script is running, you can monitor progress in a separate terminal:
+
+```bash
+# Watch cluster provisioning status
+docker exec vcf9-dev kubectl get clusters -w
+
+# Watch VM creation in real time
+docker exec vcf9-dev kubectl get virtualmachines -w
+
+# Check node readiness on the guest cluster
+docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-my-dev-project-01-clus-01.yaml && kubectl get nodes -w"
+
+# Check workload status on the guest cluster
+docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-my-dev-project-01-clus-01.yaml && kubectl get pvc,deploy,svc"
+```
+
+---
+
+## Expected Output
+
+A successful run produces output like this:
+
+```
+[Step 1] Creating VCF CLI context and activating it...
+✓ VCF CLI context 'my-dev-automation' created and activated
+[Step 2] Creating Project, ProjectRoleBinding, and Supervisor Namespace...
+✓ Project 'my-dev-project-01' provisioned with namespace 'my-dev-project-01-ns-x3qk6'
+[Step 2b] Refreshing VCF CLI context and bridging to namespace '...'...
+✓ Context bridge complete — now targeting namespace '...' in project 'my-dev-project-01'
+[Step 4] Deploying VKS cluster 'my-dev-project-01-clus-01'...
+  Waiting for cluster '...' to reach Provisioned state... (0s/1800s elapsed)
+  ...
+✓ VKS cluster 'my-dev-project-01-clus-01' is Provisioned and ready
+[Step 5] Retrieving admin kubeconfig for VKS cluster '...'...
+✓ Kubeconfig retrieved and saved to './kubeconfig-...' — connected to VKS guest cluster '...'
+[Step 5b] Waiting for worker nodes to become Ready...
+✓ All worker nodes are Ready
+[Step 6] Deploying functional validation workload (PVC, Deployment, LoadBalancer Service)...
+✓ PVC 'vks-test-pvc' is Bound
+✓ LoadBalancer 'vks-test-lb' assigned external IP: 74.205.11.86
+✓ HTTP connectivity test passed — received status 200 from http://74.205.11.86
+
+=============================================
+  VCF 9 Scenario 1 — Deployment Complete
+=============================================
+  Cluster:    my-dev-project-01-clus-01
+  Namespace:  my-dev-project-01-ns-x3qk6
+  Kubeconfig: ./kubeconfig-my-dev-project-01-clus-01.yaml
+  External IP: 74.205.11.86
+=============================================
+```
+
+---
+
+## Typical Timing
+
+| Phase | Duration |
+|---|---|
+| Phase 1 (Context creation) | ~10s |
+| Phase 2 (Project/Namespace) | ~5s |
+| Phase 2b+3 (Context bridge) | ~20-30s |
+| Phase 4 (Cluster provisioning) | 1-10 min |
+| Phase 5 (API server reachable) | 1-2 min |
+| Phase 5b (Worker nodes ready) | 2-3 min |
+| Phase 6 (Workload validation) | 1-2 min |
+| **Total** | **~5-18 min** |

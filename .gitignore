@@ -1,0 +1,26 @@
+# Secrets and credentials
+.env
+kubeconfig-*.yaml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+
+# VCF CLI local state
+.config/vcf/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kiro specs (development artifacts)
+.kiro/
