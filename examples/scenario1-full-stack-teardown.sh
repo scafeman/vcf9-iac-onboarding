@@ -153,8 +153,22 @@ if [[ "${SKIP_CLUSTER_TEARDOWN}" == "false" ]]; then
   KUBECONFIG_FILE="./kubeconfig-${CLUSTER_NAME}.yaml"
 
   # Try to get admin kubeconfig for the guest cluster
-  if vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null \
-     && vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null; then
+  if vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null; then
+
+    # Wait for namespace-scoped plugins (e.g. cluster) to install
+    PLUGIN_WAIT=0
+    PLUGIN_MAX=60
+    while [[ "${PLUGIN_WAIT}" -lt "${PLUGIN_MAX}" ]]; do
+      if vcf cluster --help >/dev/null 2>&1; then
+        break
+      fi
+      echo "  Waiting for VCF CLI plugins to install... (${PLUGIN_WAIT}s/${PLUGIN_MAX}s)"
+      sleep 5
+      PLUGIN_WAIT=$((PLUGIN_WAIT + 5))
+    done
+  fi
+
+  if vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null; then
 
     log_step 1 "Deleting guest cluster workloads (Service, Deployment, PVC)"
 
@@ -180,6 +194,18 @@ if [[ "${SKIP_CLUSTER_TEARDOWN}" == "false" ]]; then
 
   # Switch to namespace-scoped context for cluster operations
   if vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null; then
+
+    # Wait for namespace-scoped plugins (e.g. cluster) to install
+    PLUGIN_WAIT=0
+    PLUGIN_MAX=60
+    while [[ "${PLUGIN_WAIT}" -lt "${PLUGIN_MAX}" ]]; do
+      if vcf cluster --help >/dev/null 2>&1; then
+        break
+      fi
+      echo "  Waiting for VCF CLI plugins to install... (${PLUGIN_WAIT}s/${PLUGIN_MAX}s)"
+      sleep 5
+      PLUGIN_WAIT=$((PLUGIN_WAIT + 5))
+    done
 
     if kubectl get cluster "${CLUSTER_NAME}" -n "${DYNAMIC_NS_NAME}" 2>/dev/null; then
       kubectl delete cluster "${CLUSTER_NAME}" -n "${DYNAMIC_NS_NAME}"

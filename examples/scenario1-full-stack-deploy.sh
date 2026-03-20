@@ -256,7 +256,7 @@ while [[ "${BRIDGE_ELAPSED}" -lt "${BRIDGE_TIMEOUT}" ]]; do
     --set-current >/dev/null 2>&1 || true
 
   if vcf context use "${NS_CONTEXT}" 2>/dev/null; then
-    # Give the context a moment to fully initialize (plugin install, etc.)
+    # Give the context a moment to initialize
     sleep 5
     if kubectl get clusters 2>/dev/null; then
       BRIDGE_OK=true
@@ -349,6 +349,29 @@ log_success "VKS cluster '${CLUSTER_NAME}' is Provisioned and ready"
 ###############################################################################
 
 log_step 5 "Retrieving admin kubeconfig for VKS cluster '${CLUSTER_NAME}'"
+
+# Re-activate the namespace-scoped context and ensure the 'cluster' plugin is
+# available.  The bridge in Step 2b may have installed plugins, but the long
+# cluster-provisioning wait in Step 4 can cause the CLI session state to go
+# stale.  Explicitly switching and waiting here guarantees the 'vcf cluster'
+# command is present before we call it.
+vcf context use "${NS_CONTEXT}" >/dev/null 2>&1 || true
+
+PLUGIN_WAIT=0
+PLUGIN_MAX=120
+while [[ "${PLUGIN_WAIT}" -lt "${PLUGIN_MAX}" ]]; do
+  if vcf cluster --help >/dev/null 2>&1; then
+    break
+  fi
+  echo "  Waiting for VCF CLI 'cluster' plugin to become available... (${PLUGIN_WAIT}s/${PLUGIN_MAX}s)"
+  sleep 5
+  PLUGIN_WAIT=$((PLUGIN_WAIT + 5))
+done
+
+if ! vcf cluster --help >/dev/null 2>&1; then
+  log_error "'vcf cluster' command not available after ${PLUGIN_MAX}s — plugins may have failed to install"
+  exit 7
+fi
 
 KUBECONFIG_FILE="./kubeconfig-${CLUSTER_NAME}.yaml"
 
