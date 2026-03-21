@@ -30,6 +30,10 @@ RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kub
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client
 
+# Install Helm v3
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
+    && helm version --short
+
 # Install VCF CLI — extract to temp dir, find the binary, move it into PATH
 RUN curl -fsSL "https://packages.broadcom.com/artifactory/vcf-distro/vcf-cli/linux/amd64/${VCF_CLI_VERSION}/vcf-cli.tar.gz" \
     -o /tmp/vcf-cli.tar.gz \

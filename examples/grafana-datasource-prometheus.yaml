@@ -1,0 +1,21 @@
+# grafana-datasource-prometheus.yaml
+# Points Grafana at the TKG Prometheus package already running in tkg-packages.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: prometheus-ds
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "grafana"
+  datasource:
+    uid: prometheus
+    name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus-server.tkg-packages.svc.cluster.local:80
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

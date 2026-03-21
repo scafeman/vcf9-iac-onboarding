@@ -1,0 +1,24 @@
+# grafana-instance.yaml
+# Grafana instance managed by the Grafana Operator.
+# Exposes Grafana on a ClusterIP service (port-forward to access).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: grafana
+  labels:
+    dashboards: "grafana"
+spec:
+  config:
+    server:
+      root_url: "http://localhost:3000"
+    auth.anonymous:
+      enabled: "true"
+      org_role: "Viewer"
+  service:
+    spec:
+      type: ClusterIP
+      ports:
+        - name: http
+          port: 80
+          targetPort: 3000
