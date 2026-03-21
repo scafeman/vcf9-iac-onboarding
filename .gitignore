@@ -1,6 +1,7 @@
 # Secrets and credentials
 .env
 kubeconfig-*.yaml
+*-kubeconfig.yaml
 
 # Python
 .venv/

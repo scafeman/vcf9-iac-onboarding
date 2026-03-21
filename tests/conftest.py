@@ -3,6 +3,7 @@
 import os
 import re
 import pytest
+import yaml
 
 GUIDE_PATH = os.path.join(os.path.dirname(__file__), "..", "vcf9-iac-onboarding-guide.md")
 
@@ -112,3 +113,53 @@ def script_kubectl_commands(script_text: str) -> list[str]:
 def script_phases(script_text: str) -> dict[int, str]:
     """Return phase sections keyed by phase number."""
     return _extract_phases(script_text)
+
+
+# ---------------------------------------------------------------------------
+# Scenario 2 Fixtures
+# ---------------------------------------------------------------------------
+
+SCENARIO2_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-deploy.sh"
+)
+
+SCENARIO2_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-teardown.sh"
+)
+
+TELEGRAF_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "telegraf-values.yaml"
+)
+
+
+@pytest.fixture(scope="session")
+def scenario2_deploy_text() -> str:
+    """Return the full text of the Scenario 2 deploy script."""
+    with open(SCENARIO2_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def scenario2_teardown_text() -> str:
+    """Return the full text of the Scenario 2 teardown script."""
+    with open(SCENARIO2_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def scenario2_deploy_phases(scenario2_deploy_text: str) -> dict[int, str]:
+    """Return phase sections from the deploy script keyed by phase number."""
+    return _extract_phases(scenario2_deploy_text)
+
+
+@pytest.fixture(scope="session")
+def telegraf_values_text() -> str:
+    """Return the raw text of the Telegraf values YAML file."""
+    with open(TELEGRAF_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def telegraf_values_parsed(telegraf_values_text: str):
+    """Return the parsed YAML object from the Telegraf values file."""
+    return yaml.safe_load(telegraf_values_text)

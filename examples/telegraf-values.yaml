@@ -1,0 +1,17 @@
+# telegraf-values.yaml
+# Configuration for Telegraf metrics collection on VKS clusters.
+#
+# Based on the Broadcom Telegraf Package Reference:
+# https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/managing-vsphere-kuberenetes-service-clusters-and-workloads/installing-standard-packages-on-tkg-service-clusters/standard-package-reference/telegraf-package-reference.html
+
+namespace: "tkg-packages"
+createNamespace: false
+agent:
+  interval: 60s
+outputPlugins:
+  file:
+    enabled: true
+    files:
+      - "stdout"
+    namepass:
+      - "*"
