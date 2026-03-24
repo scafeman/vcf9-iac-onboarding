@@ -120,6 +120,7 @@ log_step 0 "Establishing VCF CLI context"
 
 # Ensure context exists — try to activate, create only if needed
 if ! vcf context use "${CONTEXT_NAME}" 2>/dev/null; then
+  vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
   if ! vcf context create "${CONTEXT_NAME}" \
     --endpoint "https://${VCFA_ENDPOINT}" \
     --type cci \
