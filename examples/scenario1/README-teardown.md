@@ -12,7 +12,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 ### Phase 0: Establish VCF CLI Context
 
-Before deleting anything, the script needs a working CLI context to talk to VCFA. It tries to activate the existing context first. If the context doesn't exist (e.g., it was manually deleted), it creates a new one.
+Before deleting anything, the script needs a working CLI context to talk to VCFA. It tries to activate the existing context first (`vcf context use`). If that fails (e.g., the context doesn't exist, or the token is expired), it deletes any stale context and creates a fresh one. This matches the deploy script's pattern and prevents "context already exists" errors on re-runs.
 
 Once the context is active, it discovers the dynamically named Supervisor Namespace by querying:
 
