@@ -14,10 +14,9 @@ set -euo pipefail
 #   Phase 5:  Delete ArgoCD
 #   Phase 6:  Restore CoreDNS
 #   Phase 7:  Delete Harbor
-#   Phase 8:  Delete Contour
-#   Phase 9:  Delete Certificate Secrets
-#   Phase 10: Clean Up Certificate Files
-#   Phase 11: Summary
+#   Phase 8:  Delete Certificate Secrets
+#   Phase 9:  Clean Up Certificate Files
+#   Phase 10: Summary
 #
 # IMPORTANT: Helm releases are removed via `helm uninstall`. Finalizers are
 # stripped from stuck resources before namespace deletion to prevent hanging
@@ -43,7 +42,7 @@ DOMAIN="${DOMAIN:-lab.local}"
 CERT_DIR="${CERT_DIR:-./certs}"
 
 # --- Namespaces ---
-CONTOUR_NAMESPACE="${CONTOUR_NAMESPACE:-projectcontour}"
+CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
 HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor}"
 GITLAB_NAMESPACE="${GITLAB_NAMESPACE:-gitlab-system}"
 GITLAB_RUNNER_NAMESPACE="${GITLAB_RUNNER_NAMESPACE:-gitlab-runners}"
@@ -262,21 +261,23 @@ log_step 6 "Restoring CoreDNS configuration"
 CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
 
 if [[ -n "${CURRENT_COREFILE}" ]]; then
-  # Remove the hosts block we added (contains GitLab/Harbor entries)
-  # The hosts block looks like:
-  #   hosts {
-  #       <IP> <HARBOR_HOSTNAME>
-  #       <IP> <GITLAB_HOSTNAME>
-  #       fallthrough
-  #   }
-  # We use sed to strip the entire hosts { ... } block
-  CLEANED_COREFILE=$(echo "${CURRENT_COREFILE}" | sed '/hosts {/,/}/d' || true)
+  # Remove the hosts block we added (contains Harbor/GitLab/ArgoCD entries).
+  # Use Python regex to remove the entire hosts { ... } block cleanly,
+  # preventing stale empty blocks from accumulating across teardown/deploy
+  # cycles (which would crash CoreDNS with "this plugin can only be used
+  # once per Server Block").
+  if echo "${CURRENT_COREFILE}" | grep -q "hosts"; then
+    PATCHED_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
+import re, json, sys
+corefile = sys.stdin.read()
+cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+print(json.dumps(cleaned))
+')
 
-  # Only patch if we actually removed something
-  if [[ "${CLEANED_COREFILE}" != "${CURRENT_COREFILE}" ]]; then
     kubectl patch configmap coredns -n kube-system --type merge -p "{
       \"data\": {
-        \"Corefile\": $(echo "${CLEANED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+        \"Corefile\": ${PATCHED_COREFILE}
       }
     }" 2>/dev/null || true
 
@@ -311,27 +312,10 @@ kubectl delete ns "${HARBOR_NAMESPACE}" --ignore-not-found --wait=false 2>/dev/n
 log_success "Harbor removed (namespace '${HARBOR_NAMESPACE}' deleted)"
 
 ###############################################################################
-# Phase 8: Delete Contour
+# Phase 8: Delete Certificate Secrets
 ###############################################################################
 
-log_step 8 "Deleting Contour"
-
-# Uninstall the Contour Helm release (--no-hooks avoids running pre/post-delete hooks)
-helm uninstall contour -n "${CONTOUR_NAMESPACE}" --no-hooks 2>/dev/null || true
-
-# Strip finalizers from stuck resources (targeted types + Contour CRs)
-strip_finalizers_in_namespace "${CONTOUR_NAMESPACE}" httpproxies tlscertificatedelegations
-
-# Delete the Contour namespace (--wait=false to avoid blocking on stuck finalizers)
-kubectl delete ns "${CONTOUR_NAMESPACE}" --ignore-not-found --wait=false 2>/dev/null || true
-
-log_success "Contour removed (namespace '${CONTOUR_NAMESPACE}' deleted)"
-
-###############################################################################
-# Phase 9: Delete Certificate Secrets
-###############################################################################
-
-log_step 9 "Deleting certificate secrets"
+log_step 8 "Deleting certificate secrets"
 
 # Delete Harbor CA certificate secret from all relevant namespaces
 for ns in "${GITLAB_NAMESPACE}" "${GITLAB_RUNNER_NAMESPACE}"; do
@@ -344,10 +328,10 @@ kubectl delete secret gitlab-wildcard-tls -n "${GITLAB_NAMESPACE}" --ignore-not-
 log_success "Certificate secrets deleted from all namespaces"
 
 ###############################################################################
-# Phase 10: Clean Up Certificate Files
+# Phase 9: Clean Up Certificate Files
 ###############################################################################
 
-log_step 10 "Cleaning up certificate files"
+log_step 9 "Cleaning up certificate files"
 
 if [[ -d "${CERT_DIR}" ]]; then
   log_warn "Removing generated certificate files from '${CERT_DIR}'"
@@ -360,10 +344,10 @@ fi
 log_success "Certificate file cleanup complete"
 
 ###############################################################################
-# Phase 11: Summary Banner
+# Phase 10: Summary Banner
 ###############################################################################
 
-log_step 11 "Teardown summary"
+log_step 10 "Teardown summary"
 
 echo ""
 echo "============================================="
@@ -379,7 +363,6 @@ echo "    - GitLab (ns: ${GITLAB_NAMESPACE})"
 echo "    - ArgoCD (ns: ${ARGOCD_NAMESPACE})"
 echo "    - CoreDNS custom host entries"
 echo "    - Harbor (ns: ${HARBOR_NAMESPACE})"
-echo "    - Contour (ns: ${CONTOUR_NAMESPACE})"
 echo "    - Certificate secrets (harbor-ca-cert, gitlab-wildcard-tls)"
 echo "    - Certificate files (${CERT_DIR})"
 echo "============================================="

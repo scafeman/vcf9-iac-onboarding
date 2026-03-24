@@ -364,7 +364,7 @@ class TestProperty5HeredocYAMLValidity:
         st.integers(min_value=8, max_value=30),
     ).map(lambda t: f"{t[0]}.{t[1]}.{t[2]}.{t[3]}/{t[4]}")
     _UUIDS = st.uuids().map(str)
-    _SIMPLE_STRINGS = st.from_regex(r"[a-z][a-z0-9\-]{1,20}", fullmatch=True)
+    _SIMPLE_STRINGS = st.from_regex(r"[a-z](?:[a-z0-9]-?){1,20}", fullmatch=True)
     _INTEGERS = st.integers(min_value=1, max_value=100).map(str)
 
     # Map variable names to appropriate strategies

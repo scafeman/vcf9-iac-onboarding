@@ -39,7 +39,7 @@ Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collec
 
 ## Scenario 3: Self-Contained ArgoCD Consumption Model
 
-Installs a full GitOps and CI/CD stack entirely from Helm charts — no Supervisor platform services required. Deploys Contour (ingress), Harbor (container registry), ArgoCD (GitOps), GitLab (CI/CD), and the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application.
+Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application.
 
 | | |
 |---|---|
@@ -47,7 +47,7 @@ Installs a full GitOps and CI/CD stack entirely from Helm charts — no Supervis
 | Depends on | Scenario 1 (running VKS cluster with LoadBalancer + nfs storageClass) |
 | Deploy | `bash examples/scenario3/scenario3-argocd-deploy.sh` |
 | Teardown | `bash examples/scenario3/scenario3-argocd-teardown.sh` |
-| Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress |
+| Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |
 
 ---
 

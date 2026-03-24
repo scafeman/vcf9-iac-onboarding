@@ -4,14 +4,14 @@ set -euo pipefail
 ###############################################################################
 # VCF 9 Scenario 3 — Self-Contained ArgoCD Consumption Model Deploy Script
 #
-# This script installs the full self-contained ArgoCD Consumption Model stack
-# on an existing VKS cluster provisioned by Scenario 1. All infrastructure
-# (Contour, Harbor, ArgoCD) is installed from scratch — no Supervisor services
-# are required.
+# This script installs the full ArgoCD Consumption Model stack on an existing
+# VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager,
+# Contour) are installed as VKS standard packages (shared with Scenario 2).
+# Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 #
 #   Phase 1:  Kubeconfig Setup & Connectivity Check
 #   Phase 2:  Self-Signed Certificate Generation
-#   Phase 3:  Contour Installation (Helm)
+#   Phase 3:  VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 #   Phase 4:  Harbor Installation (Helm)
 #   Phase 5:  CoreDNS Configuration (static DNS entries, pod restart)
 #   Phase 6:  ArgoCD Installation (Helm)
@@ -32,6 +32,7 @@ set -euo pipefail
 #   - Helm v3 installed
 #   - kubectl installed
 #   - openssl installed
+#   - vcf CLI installed (for VKS package installation)
 #
 # Edit the variable block below with your environment-specific values,
 # then run: bash examples/scenario3/scenario3-argocd-deploy.sh
@@ -52,7 +53,6 @@ KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME}.yaml}"
 DOMAIN="${DOMAIN:-lab.local}"
 
 # --- Infrastructure Versions ---
-CONTOUR_VERSION="${CONTOUR_VERSION:-0.3.0}"
 HARBOR_VERSION="${HARBOR_VERSION:-1.16.2}"
 ARGOCD_VERSION="${ARGOCD_VERSION:-7.8.13}"
 
@@ -75,7 +75,7 @@ GITLAB_RUNNER_VERSION="${GITLAB_RUNNER_VERSION:-0.75.0}"
 GITLAB_RUNNER_TOKEN="${GITLAB_RUNNER_TOKEN:-}"
 
 # --- Namespaces ---
-CONTOUR_NAMESPACE="${CONTOUR_NAMESPACE:-projectcontour}"
+CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
 HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor}"
 GITLAB_NAMESPACE="${GITLAB_NAMESPACE:-gitlab-system}"
 GITLAB_RUNNER_NAMESPACE="${GITLAB_RUNNER_NAMESPACE:-gitlab-runners}"
@@ -87,8 +87,12 @@ APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
 # Defaults to the Google Cloud Platform microservices-demo public repo.
 HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
 
+# --- Package Repository (shared with Scenario 2) ---
+PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
+PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
+PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
+
 # --- Configuration File Paths ---
-CONTOUR_VALUES_FILE="${CONTOUR_VALUES_FILE:-examples/scenario3/contour-values.yaml}"
 HARBOR_VALUES_FILE="${HARBOR_VALUES_FILE:-examples/scenario3/harbor-values.yaml}"
 ARGOCD_VALUES_FILE="${ARGOCD_VALUES_FILE:-examples/scenario3/argocd-values.yaml}"
 GITLAB_OPERATOR_VALUES_FILE="${GITLAB_OPERATOR_VALUES_FILE:-examples/scenario3/gitlab-operator-values.yaml}"
@@ -164,6 +168,11 @@ check_prerequisites() {
     missing=1
   fi
 
+  if ! command -v vcf &>/dev/null; then
+    log_error "vcf CLI is not installed or not in PATH"
+    missing=1
+  fi
+
   if ! command -v openssl &>/dev/null; then
     log_error "openssl is not installed or not in PATH"
     missing=1
@@ -193,6 +202,40 @@ wait_for_condition() {
 
   echo "  Timeout waiting for ${description} after ${elapsed}s"
   return 1
+}
+
+# Wait for the API server to become reachable. CoreDNS restarts and other
+# cluster operations can cause transient "connection refused" errors on the
+# VKS control plane. This helper blocks until kubectl can reach the API
+# server, preventing subsequent vcf/kubectl commands from failing.
+wait_for_api_server() {
+  if ! wait_for_condition "API server to be reachable" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get ns"; then
+    log_error "API server did not become reachable within ${PACKAGE_TIMEOUT}s"
+    exit 2
+  fi
+}
+
+# Install a VKS package with automatic retry. The vcf CLI can fail with
+# transient "connection refused" errors after CoreDNS restarts or during
+# brief API server unavailability windows. This wrapper retries the install
+# command up to 3 times with a pause between attempts.
+install_package_with_retry() {
+  local max_retries=3
+  local attempt=1
+  while [[ "${attempt}" -le "${max_retries}" ]]; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${max_retries}" ]]; then
+      log_warn "Package install failed (attempt ${attempt}/${max_retries}), waiting for API server before retry..."
+      wait_for_api_server
+      attempt=$((attempt + 1))
+    else
+      return 1
+    fi
+  done
 }
 
 ###############################################################################
@@ -227,10 +270,6 @@ prepare_values_files() {
     -e "s|not-a-secure-key|${HARBOR_SECRET_KEY}|g"
     -e "s|changeit|${HARBOR_DB_PASSWORD}|g"
   )
-
-  # Contour values — substitute harbor.lab.local with actual hostname
-  sed "${sed_args[@]}" -e "s|harbor\.lab\.local|${HARBOR_HOSTNAME}|g" \
-    "${CONTOUR_VALUES_FILE}" > "${TEMP_DIR}/contour-values.yaml"
 
   # Harbor values — substitute hardcoded lab.local hostnames and credentials
   sed "${sed_args[@]}" \
@@ -352,41 +391,136 @@ fi
 log_success "Certificates ready in '${CERT_DIR}'"
 
 ###############################################################################
-# Phase 3: Contour Installation
+# Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
+#
+# Contour and cert-manager are installed as VKS standard packages (the same
+# packages used by Scenario 2). If Scenario 2 has already been deployed,
+# these packages will already exist and this phase skips installation.
+# A separate envoy-lb LoadBalancer service is created to provide external
+# access (the VKS Contour package creates Envoy as NodePort by default).
 ###############################################################################
 
-log_step 3 "Installing Contour ingress controller"
+log_step 3 "Installing VKS package prerequisites (cert-manager, Contour)"
 
-# Add Project Contour Helm repository
-helm repo add contour https://projectcontour.github.io/helm-charts/ 2>/dev/null || true
-helm repo update 2>/dev/null || true
-
-# Install Contour via Helm (skip upgrade if already deployed to avoid unnecessary rollouts)
-if helm status contour -n "${CONTOUR_NAMESPACE}" >/dev/null 2>&1; then
-  log_success "Contour Helm release already deployed, skipping install"
+# --- Package Namespace ---
+if kubectl get ns "${PACKAGE_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Namespace '${PACKAGE_NAMESPACE}' already exists, skipping creation"
 else
-  if ! helm upgrade --install contour contour/contour \
-    --namespace "${CONTOUR_NAMESPACE}" \
-    --create-namespace \
-    --version "${CONTOUR_VERSION}" \
-    --values "${TEMP_DIR}/contour-values.yaml" \
-    --timeout 10m; then
-    log_error "Failed to install Contour via Helm"
+  if ! kubectl create ns "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to create namespace '${PACKAGE_NAMESPACE}'"
     exit 4
   fi
-  log_success "Contour Helm release installed"
+  log_success "Namespace '${PACKAGE_NAMESPACE}' created"
 fi
 
-# Wait for Contour Envoy LoadBalancer to get an external IP
-if ! wait_for_condition "Contour Envoy LoadBalancer to get external IP" \
+kubectl label ns "${PACKAGE_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite >/dev/null 2>&1 || true
+
+# --- Package Repository ---
+if vcf package repository list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "${PACKAGE_REPO_NAME}"; then
+  log_success "Package repository '${PACKAGE_REPO_NAME}' already exists, skipping registration"
+else
+  if ! vcf package repository add "${PACKAGE_REPO_NAME}" \
+    --url "${PACKAGE_REPO_URL}" \
+    --namespace "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to register package repository '${PACKAGE_REPO_NAME}'"
+    exit 4
+  fi
+
+  if ! wait_for_condition "package repository '${PACKAGE_REPO_NAME}' to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package repository list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep '${PACKAGE_REPO_NAME}' | grep -qi 'reconcile'"; then
+    log_error "Package repository '${PACKAGE_REPO_NAME}' did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 4
+  fi
+
+  log_success "Package repository '${PACKAGE_REPO_NAME}' registered and reconciled"
+fi
+
+# --- cert-manager (Contour prerequisite) ---
+if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -qi 'cert-manager'; then
+  log_success "cert-manager package already installed, skipping"
+else
+  if ! install_package_with_retry vcf package install cert-manager \
+    -p cert-manager.kubernetes.vmware.com \
+    -n "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to install cert-manager package"
+    exit 4
+  fi
+
+  if ! wait_for_condition "cert-manager package to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package installed list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep 'cert-manager' | grep -qi 'reconcile'"; then
+    log_error "cert-manager package did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 4
+  fi
+
+  log_success "cert-manager installed and reconciled"
+fi
+
+# --- Contour (VKS package) ---
+if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -qi 'contour'; then
+  log_success "Contour package already installed, skipping"
+else
+  if ! install_package_with_retry vcf package install contour \
+    -p contour.kubernetes.vmware.com \
+    -n "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to install Contour package"
+    exit 4
+  fi
+
+  if ! wait_for_condition "Contour package to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package installed list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep 'contour' | grep -qi 'reconcile'"; then
+    log_error "Contour package did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 4
+  fi
+
+  log_success "Contour installed and reconciled"
+fi
+
+# --- envoy-lb LoadBalancer service ---
+# The VKS Contour package creates Envoy as a DaemonSet with NodePort service
+# in tanzu-system-ingress. kapp-controller reverts direct patches. Create a
+# separate LoadBalancer service targeting the same Envoy pods for external access.
+if kubectl get svc envoy-lb -n "${CONTOUR_INGRESS_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Envoy LoadBalancer service 'envoy-lb' already exists"
+else
+  cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-lb
+  namespace: ${CONTOUR_INGRESS_NAMESPACE}
+spec:
+  type: LoadBalancer
+  selector:
+    app: envoy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+EOF
+  log_success "Envoy LoadBalancer service 'envoy-lb' created"
+fi
+
+# Wait for envoy-lb LoadBalancer to get an external IP
+if ! wait_for_condition "Envoy LoadBalancer to get external IP" \
   "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get svc -n '${CONTOUR_NAMESPACE}' contour-envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
-  log_error "Contour Envoy LoadBalancer did not receive an external IP within ${PACKAGE_TIMEOUT}s"
+  "kubectl get svc -n '${CONTOUR_INGRESS_NAMESPACE}' envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
+  log_error "Envoy LoadBalancer did not receive an external IP within ${PACKAGE_TIMEOUT}s"
   exit 4
 fi
 
 # Store the Contour LB IP for CoreDNS configuration
-CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_NAMESPACE}" contour-envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_INGRESS_NAMESPACE}" envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "Contour installed and Envoy LoadBalancer IP: ${CONTOUR_LB_IP}"
 
 ###############################################################################
@@ -459,11 +593,23 @@ CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.d
 if echo "${CURRENT_COREFILE}" | grep -q "${GITLAB_HOSTNAME}"; then
   log_success "CoreDNS already contains entry for '${GITLAB_HOSTNAME}', skipping patch"
 else
+  # First, remove any stale hosts blocks left by previous teardowns or
+  # other scenarios. Without this, repeated teardown/deploy cycles accumulate
+  # empty hosts { fallthrough } blocks, causing CoreDNS to crash with
+  # "this plugin can only be used once per Server Block".
+  CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
+import re, sys
+corefile = sys.stdin.read()
+cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+print(cleaned, end="")
+')
+
   # Build the hosts block to inject (all 3 hostnames use the Contour LB IP)
   HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME}\n            ${CONTOUR_LB_IP} ${GITLAB_HOSTNAME}\n            ${CONTOUR_LB_IP} ${ARGOCD_HOSTNAME}\n            fallthrough\n        }"
 
   # Inject the hosts block before the first "ready" directive
-  PATCHED_COREFILE=$(echo "${CURRENT_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
+  PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
 
   # Apply the patched ConfigMap
   kubectl patch configmap coredns -n kube-system --type merge -p "{
@@ -490,6 +636,10 @@ if ! wait_for_condition "CoreDNS pods to be running" \
 fi
 
 log_success "CoreDNS configured and running with static host entries"
+
+# After CoreDNS restart, the API server may be briefly unreachable.
+# Wait for connectivity to stabilize before proceeding.
+wait_for_api_server
 
 ###############################################################################
 # Phase 6: ArgoCD Installation
@@ -1024,7 +1174,7 @@ echo "  VCF 9 Scenario 3 — Deployment Complete"
 echo "============================================="
 echo "  Cluster:              ${CLUSTER_NAME}"
 echo "  Domain:               ${DOMAIN}"
-echo "  Contour:              v${CONTOUR_VERSION} (ns: ${CONTOUR_NAMESPACE})"
+echo "  Contour:              VKS package (ns: ${CONTOUR_INGRESS_NAMESPACE})"
 echo "  Harbor:               v${HARBOR_VERSION} (ns: ${HARBOR_NAMESPACE})"
 echo "  ArgoCD:               v${ARGOCD_VERSION} (ns: ${ARGOCD_NAMESPACE})"
 echo "  GitLab Operator:      v${GITLAB_OPERATOR_VERSION} (ns: ${GITLAB_NAMESPACE})"
@@ -1034,7 +1184,7 @@ echo "  Helm Charts Repo:     ${HELM_CHARTS_REPO_URL}"
 echo "============================================="
 echo ""
 echo "  Infrastructure deployed (self-contained):"
-echo "    - Contour ingress controller (Helm chart v${CONTOUR_VERSION})"
+echo "    - Contour ingress controller (VKS package, shared with Scenario 2)"
 echo "    - Harbor container registry (Helm chart v${HARBOR_VERSION})"
 echo "    - ArgoCD GitOps controller (Helm chart v${ARGOCD_VERSION})"
 echo "    - Self-signed CA and wildcard certificates (${CERT_DIR})"

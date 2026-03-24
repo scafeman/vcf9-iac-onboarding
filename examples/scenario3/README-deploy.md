@@ -2,9 +2,9 @@
 
 ## Overview
 
-`scenario3-argocd-deploy.sh` installs the full self-contained ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Scenario 1. All infrastructure services (Contour, Harbor, ArgoCD) are installed from scratch via Helm — no Supervisor platform services are required.
+`scenario3-argocd-deploy.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Scenario 2. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 
-The script orchestrates: self-signed certificate generation, Contour ingress controller installation, Harbor container registry installation, ArgoCD GitOps controller installation, ArgoCD CLI auto-download, CoreDNS configuration for internal DNS resolution, GitLab (Operator + Runner) deployment for CI/CD, ArgoCD application synchronization, and Google Microservices Demo (Online Boutique) deployment via GitOps.
+The script orchestrates: self-signed certificate generation, VKS package installation (cert-manager, Contour), envoy-lb LoadBalancer service creation, Harbor container registry installation, ArgoCD GitOps controller installation, ArgoCD CLI auto-download, CoreDNS configuration for internal DNS resolution, GitLab and GitLab Runner deployment for CI/CD, ArgoCD application synchronization, and Google Microservices Demo (Online Boutique) deployment via GitOps.
 
 The script is fully non-interactive. All configuration is driven by environment variables defined in the variable block at the top of the script. No user input or confirmation prompts are required during execution.
 
@@ -17,13 +17,13 @@ The self-contained ArgoCD Consumption Model has a strict dependency chain. Each 
 ```
 Kubeconfig Setup
   └─► Self-Signed Certificate Generation (CA + wildcard cert via openssl)
-        └─► Contour Installation (Helm, Envoy LoadBalancer)
+        └─► VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
               └─► Harbor Installation (Helm, TLS via Contour Ingress)
                     └─► CoreDNS Configuration (static DNS using Contour LB IP)
                           └─► ArgoCD Installation (Helm, ingress via Contour)
                                 └─► ArgoCD CLI Installation (auto-download)
                                       └─► Certificate Distribution (Harbor CA, GitLab TLS)
-                                            └─► GitLab Operator (Helm)
+                                            └─► GitLab (Helm)
                                                   └─► Harbor Proxy Patching (image registry)
                                                         └─► GitLab Runner (Helm)
                                                               └─► GitLab Sign-Up Disabled (API)
@@ -33,19 +33,19 @@ Kubeconfig Setup
 ```
 
 - **Certificates** are generated first so all subsequent Helm installs can use TLS from the start.
-- **Contour** provides the ingress controller and LoadBalancer IP used by all services.
+- **VKS Packages** (cert-manager, Contour) are installed as shared VKS standard packages. If Scenario 2 has already been deployed, these packages already exist and installation is skipped. A separate `envoy-lb` LoadBalancer service is created for external access (the VKS Contour package creates Envoy as NodePort by default).
 - **Harbor** is installed with TLS via Contour Ingress and serves as the container registry.
 - **CoreDNS** is patched with static entries using the auto-detected Contour LB IP for all service hostnames.
 - **ArgoCD** is installed with ingress via Contour and its admin password is auto-retrieved from the K8s Secret.
 - **ArgoCD CLI** is auto-downloaded if not already in PATH.
 - **Certificate Distribution** creates Harbor CA and GitLab wildcard TLS secrets in application namespaces.
-- **GitLab Operator** must be running before the Runner can register with it.
+- **GitLab** must be running before the Runner can register with it.
 - **Harbor Proxy** configuration ensures GitLab images pull from Harbor instead of DockerHub.
 - **GitLab Runner** must be running before CI pipelines can execute.
 - **ArgoCD Cluster Registration** must complete before ArgoCD can deploy applications to the VKS cluster.
 - **ArgoCD Application Bootstrap** triggers the GitOps sync that deploys the Microservices Demo.
 
-The teardown script (`scenario3-argocd-teardown.sh`) reverses this order and also removes Contour, Harbor, and ArgoCD.
+The teardown script (`scenario3-argocd-teardown.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Scenario 2's teardown — Scenario 3 teardown does not remove them.
 
 ---
 
@@ -59,9 +59,9 @@ Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced
 
 Generates a self-signed CA certificate and a wildcard TLS certificate for `*.${DOMAIN}` using openssl. If the CA certificate already exists in `CERT_DIR`, the entire phase is skipped (idempotent). Creates: CA key+cert, wildcard CSR (using `examples/scenario3/wildcard.cnf`), signed wildcard cert, and fullchain cert. Exits with code 3 on failure.
 
-### Phase 3: Contour Installation
+### Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 
-Adds the Project Contour Helm repository and installs Contour via `helm upgrade --install` with the configured version and values file. Waits for the Contour Envoy LoadBalancer service to receive an external IP address. Stores the IP in `CONTOUR_LB_IP` for use in CoreDNS configuration. Exits with code 4 if installation fails or the LB IP is not assigned within the timeout.
+Installs cert-manager and Contour as VKS standard packages (the same packages used by Scenario 2). If Scenario 2 has already been deployed, these packages already exist and installation is skipped. Creates the package namespace and registers the VKS standard package repository if not already present. Creates a separate `envoy-lb` LoadBalancer service in `tanzu-system-ingress` to provide external access — the VKS Contour package creates Envoy as a DaemonSet with NodePort service by default, and kapp-controller reverts direct patches. Waits for the envoy-lb service to receive an external IP address. Stores the IP in `CONTOUR_LB_IP` for use in CoreDNS configuration. Exits with code 4 if package installation fails or the LB IP is not assigned within the timeout.
 
 ### Phase 4: Harbor Installation
 
@@ -83,9 +83,9 @@ Checks if the `argocd` CLI is already in PATH. If not, downloads it from GitHub 
 
 Creates Harbor CA certificate secrets in the GitLab and GitLab Runner namespaces. Creates the GitLab wildcard TLS secret in the GitLab namespace. Creates namespaces with PodSecurity labels if they do not already exist. Uses `--dry-run=client -o yaml | kubectl apply -f -` for idempotent Secret creation. Exits with code 9 on failure.
 
-### Phase 9: GitLab Operator Installation
+### Phase 9: GitLab Installation
 
-Adds the GitLab Helm repository, then installs the GitLab Operator via `helm upgrade --install` with the configured version and values file. Waits for the Operator pod to reach Running state, then waits for the GitLab webservice pod to reach Ready state. Exits with code 10 if installation fails or pods do not start.
+Adds the GitLab Helm repository, then installs GitLab via `helm upgrade --install` with the configured version and values file. Waits for the GitLab webservice pod to reach Running state. Exits with code 10 if installation fails or pods do not start.
 
 ### Phase 10: GitLab Image Patching / Harbor Proxy Configuration
 
@@ -121,11 +121,12 @@ Prints a summary of all deployed components, their namespaces, versions, and acc
 
 - **Scenario 1 completed successfully** — a VKS cluster must be running and accessible with LoadBalancer support and `nfs` storageClass. The deploy script does not create a cluster; it installs the ArgoCD Consumption Model stack on an existing one.
 - **Valid admin kubeconfig file** for the target VKS cluster (produced by Scenario 1). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
-- **Helm v3 installed** — required for Contour, Harbor, ArgoCD, GitLab Operator, and GitLab Runner installation.
+- **Helm v3 installed** — required for Harbor, ArgoCD, GitLab, and GitLab Runner installation.
 - **kubectl installed** — required for all Kubernetes operations.
 - **openssl installed** — required for self-signed certificate generation.
+- **vcf CLI installed** — required for VKS package installation (cert-manager, Contour).
 
-No Supervisor services are required. The script installs Contour, Harbor, and ArgoCD from scratch. The ArgoCD CLI is auto-downloaded if not already in PATH.
+The ArgoCD CLI is auto-downloaded if not already in PATH.
 
 ---
 
@@ -141,27 +142,28 @@ No Supervisor services are required. The script installs Contour, Harbor, and Ar
 |---|---|---|
 | `KUBECONFIG_FILE` | `./kubeconfig-${CLUSTER_NAME}.yaml` | Path to admin kubeconfig |
 | `DOMAIN` | `lab.local` | Base domain for all service hostnames |
-| `CONTOUR_VERSION` | `0.3.0` | Contour Helm chart version |
 | `HARBOR_VERSION` | `1.16.2` | Harbor Helm chart version |
 | `ARGOCD_VERSION` | `7.8.13` | ArgoCD Helm chart version |
 | `HARBOR_ADMIN_PASSWORD` | (auto-generated) | Harbor admin password (random 24-char if not set) |
 | `HARBOR_SECRET_KEY` | (auto-generated) | Harbor secret key for encryption (random 32-char hex if not set) |
 | `HARBOR_DB_PASSWORD` | `changeit` | Harbor database password |
 | `CERT_DIR` | `./certs` | Directory for generated certificate files |
-| `CONTOUR_NAMESPACE` | `projectcontour` | Namespace for Contour |
+| `CONTOUR_INGRESS_NAMESPACE` | `tanzu-system-ingress` | Namespace for Contour Envoy (VKS package default) |
 | `HARBOR_NAMESPACE` | `harbor` | Namespace for Harbor |
-| `GITLAB_OPERATOR_VERSION` | `9.10.0` | GitLab Operator Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `9.10.0` | GitLab Helm chart version |
 | `GITLAB_RUNNER_VERSION` | `0.75.0` | GitLab Runner Helm chart version |
 | `GITLAB_RUNNER_TOKEN` | (auto-retrieved) | GitLab Runner registration token (auto-retrieved from GitLab instance if not set) |
-| `GITLAB_NAMESPACE` | `gitlab-system` | Namespace for GitLab Operator |
+| `GITLAB_NAMESPACE` | `gitlab-system` | Namespace for GitLab |
 | `GITLAB_RUNNER_NAMESPACE` | `gitlab-runners` | Namespace for GitLab Runner |
 | `ARGOCD_NAMESPACE` | `argocd` | ArgoCD namespace |
 | `APP_NAMESPACE` | `microservices-demo` | Namespace for the Microservices Demo |
 | `HELM_CHARTS_REPO_URL` | `https://github.com/GoogleCloudPlatform/microservices-demo.git` | URL of the Helm charts Git repository |
-| `CONTOUR_VALUES_FILE` | `examples/scenario3/contour-values.yaml` | Path to Contour Helm values |
+| `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for VKS package repository |
+| `PACKAGE_REPO_NAME` | `tkg-packages` | VKS standard package repository name |
+| `PACKAGE_REPO_URL` | (platform-specific) | VKS standard package repository URL |
 | `HARBOR_VALUES_FILE` | `examples/scenario3/harbor-values.yaml` | Path to Harbor Helm values |
 | `ARGOCD_VALUES_FILE` | `examples/scenario3/argocd-values.yaml` | Path to ArgoCD Helm values |
-| `GITLAB_OPERATOR_VALUES_FILE` | `examples/scenario3/gitlab-operator-values.yaml` | Path to GitLab Operator Helm values |
+| `GITLAB_OPERATOR_VALUES_FILE` | `examples/scenario3/gitlab-operator-values.yaml` | Path to GitLab Helm values |
 | `GITLAB_RUNNER_VALUES_FILE` | `examples/scenario3/gitlab-runner-values.yaml` | Path to GitLab Runner Helm values |
 | `ARGOCD_APP_MANIFEST` | `examples/scenario3/argocd-microservices-demo.yaml` | Path to ArgoCD Application manifest |
 | `PACKAGE_TIMEOUT` | `900` | Wait loop timeout (seconds) |
@@ -174,7 +176,7 @@ No Supervisor services are required. The script installs Contour, Harbor, and Ar
 | `HARBOR_HOSTNAME` | `harbor.${DOMAIN}` | Harbor registry hostname |
 | `GITLAB_HOSTNAME` | `gitlab.${DOMAIN}` | GitLab hostname |
 | `ARGOCD_HOSTNAME` | `argocd.${DOMAIN}` | ArgoCD server hostname |
-| `CONTOUR_LB_IP` | Auto-detected from Contour Envoy LB service | Used for CoreDNS static entries |
+| `CONTOUR_LB_IP` | Auto-detected from `envoy-lb` LoadBalancer service | Used for CoreDNS static entries |
 | `ARGOCD_PASSWORD` | Auto-retrieved from `argocd-initial-admin-secret` K8s Secret | ArgoCD admin password |
 
 ---
@@ -199,7 +201,6 @@ Override the domain and versions:
 ```bash
 CLUSTER_NAME=my-cluster \
 DOMAIN=mylab.example.com \
-CONTOUR_VERSION=0.3.0 \
 HARBOR_VERSION=1.16.2 \
 ARGOCD_VERSION=7.8.13 \
   bash examples/scenario3/scenario3-argocd-deploy.sh
@@ -220,9 +221,11 @@ A successful run produces output similar to:
 ✓ Wildcard certificate signed by CA
 ✓ Fullchain certificate created
 ✓ Certificates ready in './certs'
-[Step 3] Installing Contour ingress controller...
-✓ Contour Helm release installed
-  Waiting for Contour Envoy LoadBalancer to get external IP... (0s/900s elapsed)
+[Step 3] Installing VKS package prerequisites (cert-manager, Contour)...
+✓ cert-manager installed and reconciled
+✓ Contour installed and reconciled
+✓ Envoy LoadBalancer service 'envoy-lb' created
+  Waiting for Envoy LoadBalancer to get external IP... (0s/900s elapsed)
 ✓ Contour installed and Envoy LoadBalancer IP: 10.0.0.50
 [Step 4] Installing Harbor container registry...
 ✓ Harbor Helm release installed
@@ -240,11 +243,9 @@ A successful run produces output similar to:
 ✓ ArgoCD CLI is available
 [Step 8] Distributing certificates to application namespaces...
 ✓ Certificates distributed: Harbor CA in 'gitlab-system' and 'gitlab-runners', GitLab wildcard TLS in 'gitlab-system'
-[Step 9] Installing GitLab Operator...
-  Waiting for GitLab Operator pod to be running... (0s/900s elapsed)
-✓ GitLab Operator installed and running
-  Waiting for GitLab webservice pod to be ready... (0s/900s elapsed)
-✓ GitLab Operator and webservice are running in namespace 'gitlab-system'
+[Step 9] Installing GitLab...
+  Waiting for GitLab webservice pod to be running... (0s/900s elapsed)
+✓ GitLab installed and webservice is running in namespace 'gitlab-system'
 [Step 10] Configuring Harbor proxy for GitLab images...
 ✓ Harbor proxy configuration verified for GitLab images
 [Step 11] Installing GitLab Runner...
@@ -276,13 +277,13 @@ A successful run produces output similar to:
 |---|---|---|
 | Phase 1: Kubeconfig Setup | < 5 seconds | |
 | Phase 2: Certificate Generation | < 5 seconds | Skipped if certs already exist |
-| Phase 3: Contour Installation | 1–3 minutes | Includes LB IP assignment wait |
+| Phase 3: VKS Package Prerequisites | 1–3 minutes | Skipped if Scenario 2 already deployed |
 | Phase 4: Harbor Installation | 3–5 minutes | Includes pod startup wait |
 | Phase 5: CoreDNS Configuration | 15–30 seconds | Includes pod restart wait |
 | Phase 6: ArgoCD Installation | 1–3 minutes | Includes pod startup wait |
 | Phase 7: ArgoCD CLI Installation | < 15 seconds | Skipped if already in PATH |
 | Phase 8: Certificate Distribution | < 15 seconds | Includes namespace creation |
-| Phase 9: GitLab Operator | 5–10 minutes | Webservice pod takes 5–10 minutes |
+| Phase 9: GitLab | 5–10 minutes | Webservice pod takes 5–10 minutes |
 | Phase 10: Harbor Proxy | < 5 seconds | Verification only |
 | Phase 11: GitLab Runner | 1–2 minutes | |
 | Phase 11b: Disable Sign-Up | < 5 seconds | API call to GitLab |
@@ -290,7 +291,7 @@ A successful run produces output similar to:
 | Phase 13: ArgoCD App Bootstrap | 2–5 minutes | Depends on Helm chart sync time |
 | Phase 14: Demo Verification | 30s–5 minutes | Includes frontend LB IP wait |
 | Phase 15: Summary | < 1 second | |
-| **Total** | **~20–35 minutes** | GitLab Operator startup dominates |
+| **Total** | **~20–35 minutes** | GitLab startup dominates |
 
 ---
 
@@ -316,6 +317,6 @@ To use your own certificates instead, pre-populate `CERT_DIR` with `ca.crt`, `wi
 
 - **DockerHub rate limits**: GitLab component images default to DockerHub. The script configures Harbor as a proxy cache to avoid rate limits. If Harbor proxy is not configured, image pulls may fail with `429 Too Many Requests`.
 - **CoreDNS restart timing**: After patching the CoreDNS ConfigMap, pods need a few seconds to restart. DNS resolution may be briefly unavailable during the restart window.
-- **GitLab pod startup time**: The GitLab webservice pod can take 5–10+ minutes to reach Ready state. This is normal — the Operator provisions multiple sub-components sequentially.
+- **GitLab pod startup time**: The GitLab webservice pod can take 5–10+ minutes to reach Ready state. This is normal — the Helm chart provisions multiple sub-components sequentially.
 - **Self-signed certificates**: The generated certificates are self-signed and not trusted by browsers or external clients. For production use, replace with certificates from a trusted CA.
 - **Single cluster target**: The script targets one VKS cluster at a time. To deploy to multiple clusters, run the script once per cluster with different `CLUSTER_NAME` and `KUBECONFIG_FILE` values.

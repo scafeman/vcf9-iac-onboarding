@@ -32,9 +32,6 @@ GITLAB_RUNNER_VALUES_PATH = os.path.join(
 ARGOCD_APP_MANIFEST_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-microservices-demo.yaml"
 )
-CONTOUR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "contour-values.yaml"
-)
 HARBOR_VALUES_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "scenario3", "harbor-values.yaml"
 )
@@ -150,16 +147,14 @@ class TestVariableDefaults:
     VARIABLES_WITH_DEFAULTS = [
         "KUBECONFIG_FILE",
         "DOMAIN",
-        "CONTOUR_VERSION",
         "HARBOR_VERSION",
         "ARGOCD_VERSION",
         "HARBOR_ADMIN_PASSWORD",
         "HARBOR_SECRET_KEY",
         "HARBOR_DB_PASSWORD",
         "CERT_DIR",
-        "CONTOUR_NAMESPACE",
+        "CONTOUR_INGRESS_NAMESPACE",
         "HARBOR_NAMESPACE",
-        "CONTOUR_VALUES_FILE",
         "HARBOR_VALUES_FILE",
         "ARGOCD_VALUES_FILE",
         "GITLAB_OPERATOR_VERSION",
@@ -173,6 +168,9 @@ class TestVariableDefaults:
         "ARGOCD_APP_MANIFEST",
         "PACKAGE_TIMEOUT",
         "POLL_INTERVAL",
+        "PACKAGE_NAMESPACE",
+        "PACKAGE_REPO_NAME",
+        "PACKAGE_REPO_URL",
     ]
 
     def test_default_variables_use_default_pattern(self, scenario3_deploy_text):
@@ -349,27 +347,27 @@ class TestCertificateGeneration:
 
 
 class TestContourInstallation:
-    """Phase 3 installs Contour via Helm.
+    """Phase 3 installs Contour via VKS package (shared with Scenario 2).
     Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 14.4"""
 
-    def test_helm_upgrade_install_contour(self, scenario3_deploy_text):
-        assert re.search(r"helm\s+upgrade\s+--install\s+contour\s+contour/contour", scenario3_deploy_text), (
-            "Deploy script missing 'helm upgrade --install contour contour/contour'"
+    def test_vcf_package_install_contour(self, scenario3_deploy_text):
+        assert re.search(r"vcf\s+package\s+install\s+contour", scenario3_deploy_text), (
+            "Deploy script missing 'vcf package install contour'"
         )
 
-    def test_contour_version_flag(self, scenario3_deploy_text):
-        assert re.search(r"--version.*CONTOUR_VERSION", scenario3_deploy_text), (
-            "Deploy script missing --version flag for Contour"
+    def test_vcf_package_install_cert_manager(self, scenario3_deploy_text):
+        assert re.search(r"vcf\s+package\s+install\s+cert-manager", scenario3_deploy_text), (
+            "Deploy script missing 'vcf package install cert-manager'"
         )
 
-    def test_contour_values_file_flag(self, scenario3_deploy_text):
-        assert re.search(r"--values.*contour-values\.yaml", scenario3_deploy_text), (
-            "Deploy script missing --values flag for Contour"
+    def test_envoy_lb_service_creation(self, scenario3_deploy_text):
+        assert re.search(r"envoy-lb", scenario3_deploy_text), (
+            "Deploy script missing envoy-lb LoadBalancer service"
         )
 
     def test_contour_lb_ip_auto_detection(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+get\s+svc.*contour-envoy", scenario3_deploy_text), (
-            "Deploy script missing Contour Envoy LB IP auto-detection"
+        assert re.search(r"kubectl\s+get\s+svc.*envoy-lb", scenario3_deploy_text), (
+            "Deploy script missing envoy-lb LB IP auto-detection"
         )
 
     def test_contour_lb_ip_variable(self, scenario3_deploy_text):
@@ -380,6 +378,16 @@ class TestContourInstallation:
     def test_exit_code_4_for_contour_failures(self, scenario3_deploy_text):
         assert "exit 4" in scenario3_deploy_text, (
             "Deploy script missing 'exit 4' for Contour installation failures"
+        )
+
+    def test_package_namespace_setup(self, scenario3_deploy_text):
+        assert "PACKAGE_NAMESPACE" in scenario3_deploy_text, (
+            "Deploy script missing PACKAGE_NAMESPACE for VKS package repository"
+        )
+
+    def test_package_repo_setup(self, scenario3_deploy_text):
+        assert re.search(r"vcf\s+package\s+repository\s+add", scenario3_deploy_text), (
+            "Deploy script missing 'vcf package repository add' for VKS package repository"
         )
 
 
@@ -936,21 +944,13 @@ class TestTeardownOrdering:
             "CoreDNS restore should appear before Harbor uninstall"
         )
 
-    def test_harbor_before_contour(self, scenario3_teardown_text):
+    def test_harbor_before_cert_secrets(self, scenario3_teardown_text):
         harbor_match = re.search(r"helm\s+uninstall\s+harbor", scenario3_teardown_text)
-        contour_match = re.search(r"helm\s+uninstall\s+contour", scenario3_teardown_text)
-        assert harbor_match and contour_match, "Missing Harbor or Contour uninstall"
-        assert harbor_match.start() < contour_match.start(), (
-            "Harbor uninstall should appear before Contour uninstall"
-        )
-
-    def test_contour_before_cert_secrets(self, scenario3_teardown_text):
-        contour_match = re.search(r"helm\s+uninstall\s+contour", scenario3_teardown_text)
         # Match the actual phase section divider, not the top-of-file comment listing
-        cert_match = re.search(r"^#{3,}\n# Phase 9: Delete Certificate Secrets", scenario3_teardown_text, re.MULTILINE)
-        assert contour_match and cert_match, "Missing Contour uninstall or certificate secrets delete phase"
-        assert contour_match.start() < cert_match.start(), (
-            "Contour uninstall should appear before certificate secrets deletion"
+        cert_match = re.search(r"^#{3,}\n# Phase 8: Delete Certificate Secrets", scenario3_teardown_text, re.MULTILINE)
+        assert harbor_match and cert_match, "Missing Harbor uninstall or certificate secrets delete phase"
+        assert harbor_match.start() < cert_match.start(), (
+            "Harbor uninstall should appear before certificate secrets deletion"
         )
 
 
@@ -984,7 +984,7 @@ class TestTeardownIdempotency:
             line.strip() for line in scenario3_teardown_text.splitlines()
             if re.search(r"^\s*helm\s+uninstall\s+", line)
         ]
-        assert len(helm_lines) >= 5, "Expected at least 5 helm uninstall commands"
+        assert len(helm_lines) >= 4, "Expected at least 4 helm uninstall commands"
         for line in helm_lines:
             assert "|| true" in line or "2>/dev/null" in line, (
                 f"Helm uninstall missing error suppression: {line}"
@@ -998,13 +998,9 @@ class TestTeardownIdempotency:
 
 
 class TestTeardownNewPhases:
-    """Teardown script includes Contour, Harbor, ArgoCD uninstall commands.
+    """Teardown script includes Harbor, ArgoCD uninstall commands.
+    Contour is a shared VKS package (scenario2 teardown handles it).
     Validates: Requirements 12.1, 12.2, 12.3, 14.11"""
-
-    def test_teardown_contour_uninstall(self, scenario3_teardown_text):
-        assert re.search(r"helm\s+uninstall\s+contour", scenario3_teardown_text), (
-            "Teardown script missing 'helm uninstall contour'"
-        )
 
     def test_teardown_harbor_uninstall(self, scenario3_teardown_text):
         assert re.search(r"helm\s+uninstall\s+harbor", scenario3_teardown_text), (
@@ -1016,9 +1012,9 @@ class TestTeardownNewPhases:
             "Teardown script missing 'helm uninstall argocd'"
         )
 
-    def test_teardown_contour_namespace_deletion(self, scenario3_teardown_text):
-        assert "CONTOUR_NAMESPACE" in scenario3_teardown_text, (
-            "Teardown script missing CONTOUR_NAMESPACE reference"
+    def test_teardown_contour_ingress_namespace_reference(self, scenario3_teardown_text):
+        assert "CONTOUR_INGRESS_NAMESPACE" in scenario3_teardown_text, (
+            "Teardown script missing CONTOUR_INGRESS_NAMESPACE reference"
         )
 
     def test_teardown_harbor_namespace_deletion(self, scenario3_teardown_text):
@@ -1029,6 +1025,12 @@ class TestTeardownNewPhases:
     def test_teardown_cert_cleanup(self, scenario3_teardown_text):
         assert "CERT_DIR" in scenario3_teardown_text, (
             "Teardown script missing CERT_DIR reference for certificate cleanup"
+        )
+
+    def test_teardown_does_not_uninstall_contour(self, scenario3_teardown_text):
+        """Contour is a shared VKS package — scenario3 teardown should NOT uninstall it."""
+        assert not re.search(r"helm\s+uninstall\s+contour", scenario3_teardown_text), (
+            "Teardown script should NOT uninstall Contour (shared VKS package)"
         )
 
 
@@ -1114,11 +1116,6 @@ class TestSupportingYAMLFiles:
             "ArgoCD Application manifest not found at examples/scenario3/argocd-microservices-demo.yaml"
         )
 
-    def test_contour_values_exists(self):
-        assert os.path.isfile(CONTOUR_VALUES_PATH), (
-            "Contour values not found at examples/scenario3/contour-values.yaml"
-        )
-
     def test_harbor_values_exists(self):
         assert os.path.isfile(HARBOR_VALUES_PATH), (
             "Harbor values not found at examples/scenario3/harbor-values.yaml"
@@ -1133,16 +1130,6 @@ class TestSupportingYAMLFiles:
         assert os.path.isfile(WILDCARD_CNF_PATH), (
             "Wildcard CNF not found at examples/scenario3/wildcard.cnf"
         )
-
-    def test_contour_values_is_valid_yaml(self):
-        with open(CONTOUR_VALUES_PATH, encoding="utf-8") as f:
-            text = f.read()
-        try:
-            result = yaml.safe_load(text)
-        except yaml.YAMLError as exc:
-            pytest.fail(f"Contour values file is not valid YAML: {exc}")
-        assert result is not None, "Contour values file parsed to None"
-        assert isinstance(result, dict), f"Expected a dict, got {type(result).__name__}"
 
     def test_harbor_values_is_valid_yaml(self):
         with open(HARBOR_VALUES_PATH, encoding="utf-8") as f:
@@ -1213,7 +1200,6 @@ class TestSupportingYAMLFiles:
             (GITLAB_OPERATOR_VALUES_PATH, "GitLab Operator values"),
             (GITLAB_RUNNER_VALUES_PATH, "GitLab Runner values"),
             (ARGOCD_APP_MANIFEST_PATH, "ArgoCD Application manifest"),
-            (CONTOUR_VALUES_PATH, "Contour values"),
             (HARBOR_VALUES_PATH, "Harbor values"),
             (ARGOCD_VALUES_PATH, "ArgoCD values"),
         ]:

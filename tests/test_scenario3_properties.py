@@ -76,7 +76,7 @@ class TestProperty2DistinctExitCodes:
         1: "Variable validation failure or prerequisite missing",
         2: "Kubeconfig not found or cluster unreachable",
         3: "Certificate generation failure",
-        4: "Contour installation failure",
+        4: "VKS package installation failure (cert-manager, Contour, envoy-lb)",
         5: "Harbor installation failure",
         6: "CoreDNS configuration failure",
         7: "ArgoCD installation failure",
@@ -317,19 +317,6 @@ class TestProperty4SupportingYAMLRoundTrip:
             f"Second parse: {second_parse}"
         )
 
-    def test_contour_values_round_trip(
-        self, contour_values_text: str, contour_values_parsed
-    ):
-        """Parse, serialize, parse again — assert deep equality."""
-        first_parse = yaml.safe_load(contour_values_text)
-        serialized = yaml.dump(first_parse, default_flow_style=False)
-        second_parse = yaml.safe_load(serialized)
-        assert first_parse == second_parse, (
-            f"YAML round-trip produced different objects.\n"
-            f"First parse:  {first_parse}\n"
-            f"Second parse: {second_parse}"
-        )
-
     def test_harbor_values_round_trip(
         self, harbor_values_text: str, harbor_values_parsed
     ):
@@ -389,17 +376,6 @@ class TestProperty4SupportingYAMLRoundTrip:
             f"Expected a dict, got {type(result).__name__}"
         )
 
-    def test_contour_values_is_valid_yaml(self, contour_values_text: str):
-        """The Contour values file must be valid, parseable YAML."""
-        try:
-            result = yaml.safe_load(contour_values_text)
-        except yaml.YAMLError as exc:
-            pytest.fail(f"Contour values file is not valid YAML: {exc}")
-        assert result is not None, "Contour values file parsed to None"
-        assert isinstance(result, dict), (
-            f"Expected a dict, got {type(result).__name__}"
-        )
-
     def test_harbor_values_is_valid_yaml(self, harbor_values_text: str):
         """The Harbor values file must be valid, parseable YAML."""
         try:
@@ -442,7 +418,6 @@ class TestProperty5DefaultVariablePattern:
     VARIABLES_WITH_DEFAULTS: list[str] = [
         "KUBECONFIG_FILE",
         "DOMAIN",
-        "CONTOUR_VERSION",
         "HARBOR_VERSION",
         "ARGOCD_VERSION",
         "HARBOR_ADMIN_PASSWORD",
@@ -451,13 +426,12 @@ class TestProperty5DefaultVariablePattern:
         "CERT_DIR",
         "GITLAB_OPERATOR_VERSION",
         "GITLAB_RUNNER_VERSION",
-        "CONTOUR_NAMESPACE",
+        "CONTOUR_INGRESS_NAMESPACE",
         "HARBOR_NAMESPACE",
         "GITLAB_NAMESPACE",
         "GITLAB_RUNNER_NAMESPACE",
         "ARGOCD_NAMESPACE",
         "APP_NAMESPACE",
-        "CONTOUR_VALUES_FILE",
         "HARBOR_VALUES_FILE",
         "ARGOCD_VALUES_FILE",
         "GITLAB_OPERATOR_VALUES_FILE",
@@ -465,6 +439,9 @@ class TestProperty5DefaultVariablePattern:
         "ARGOCD_APP_MANIFEST",
         "PACKAGE_TIMEOUT",
         "POLL_INTERVAL",
+        "PACKAGE_NAMESPACE",
+        "PACKAGE_REPO_NAME",
+        "PACKAGE_REPO_URL",
     ]
 
     @staticmethod
@@ -487,7 +464,7 @@ class TestProperty5DefaultVariablePattern:
                 f"pattern in the deploy script. Found: {sorted(defaults.keys())}"
             )
 
-    @given(idx=st.integers(min_value=0, max_value=24))
+    @given(idx=st.integers(min_value=0, max_value=25))
     @settings(max_examples=100)
     def test_variable_default_is_non_empty(
         self, scenario3_deploy_text: str, idx: int
@@ -527,11 +504,10 @@ class TestProperty6TeardownReverseDependencyOrder:
         ("argocd", "helm uninstall argocd"),
         ("coredns-restore", "rollout restart deployment/coredns"),
         ("harbor", "helm uninstall harbor"),
-        ("contour", "helm uninstall contour"),
         ("cert-secrets", "kubectl delete secret harbor-ca-cert"),
     ]
 
-    @given(idx=st.integers(min_value=0, max_value=6))
+    @given(idx=st.integers(min_value=0, max_value=5))
     @settings(max_examples=100)
     def test_adjacent_deletion_order(
         self, scenario3_teardown_text: str, idx: int
@@ -559,7 +535,7 @@ class TestProperty6TeardownReverseDependencyOrder:
     def test_all_deletion_patterns_present(
         self, scenario3_teardown_text: str
     ):
-        """All 8 deletion patterns must be present in the teardown script."""
+        """All 7 deletion patterns must be present in the teardown script."""
         for name, pattern in self.DELETION_ORDER:
             assert pattern in scenario3_teardown_text, (
                 f"Deletion pattern for '{name}' not found: '{pattern}'"
@@ -594,8 +570,6 @@ class TestProperty7TeardownIdempotency:
         ("argocd-ns", 'kubectl delete ns "${ARGOCD_NAMESPACE}"'),
         ("harbor-helm", "helm uninstall harbor"),
         ("harbor-ns", 'kubectl delete ns "${HARBOR_NAMESPACE}"'),
-        ("contour-helm", "helm uninstall contour"),
-        ("contour-ns", 'kubectl delete ns "${CONTOUR_NAMESPACE}"'),
         ("cert-secrets", "kubectl delete secret harbor-ca-cert"),
     ]
 
@@ -609,7 +583,7 @@ class TestProperty7TeardownIdempotency:
         end = min(len(script_text), pos + len(pattern) + context_chars)
         return script_text[start:end]
 
-    @given(idx=st.integers(min_value=0, max_value=12))
+    @given(idx=st.integers(min_value=0, max_value=10))
     @settings(max_examples=100)
     def test_deletion_step_has_idempotency_guard(
         self, scenario3_teardown_text: str, idx: int
