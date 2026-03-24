@@ -43,6 +43,11 @@ global:
   minio:
     enabled: true
 
+  # Disable public sign-up — only admins can create accounts.
+  # This prevents unauthorized users from registering on public-facing instances.
+  appConfig:
+    signupEnabled: false
+
   # Set storageClass globally for all PVCs (PostgreSQL, Redis, Gitaly, MinIO, etc.)
   storageClass: nfs
 
