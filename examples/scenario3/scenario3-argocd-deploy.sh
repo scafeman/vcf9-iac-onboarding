@@ -1,0 +1,1078 @@
+#!/bin/bash
+set -euo pipefail
+
+###############################################################################
+# VCF 9 Scenario 3 — Self-Contained ArgoCD Consumption Model Deploy Script
+#
+# This script installs the full self-contained ArgoCD Consumption Model stack
+# on an existing VKS cluster provisioned by Scenario 1. All infrastructure
+# (Contour, Harbor, ArgoCD) is installed from scratch — no Supervisor services
+# are required.
+#
+#   Phase 1:  Kubeconfig Setup & Connectivity Check
+#   Phase 2:  Self-Signed Certificate Generation
+#   Phase 3:  Contour Installation (Helm)
+#   Phase 4:  Harbor Installation (Helm)
+#   Phase 5:  CoreDNS Configuration (static DNS entries, pod restart)
+#   Phase 6:  ArgoCD Installation (Helm)
+#   Phase 7:  ArgoCD CLI Installation (auto-download)
+#   Phase 8:  Certificate Distribution (Harbor CA, GitLab wildcard TLS)
+#   Phase 9:  GitLab Installation (Helm)
+#   Phase 10: GitLab Image Patching / Harbor Proxy Configuration
+#   Phase 11: GitLab Runner Installation (Helm)
+#   Phase 11b: Disable GitLab Public Sign-Up (API)
+#   Phase 12: ArgoCD Cluster Registration
+#   Phase 13: ArgoCD Application Bootstrap
+#   Phase 14: Microservices Demo Verification
+#   Phase 15: Summary
+#
+# Prerequisites:
+#   - Scenario 1 completed successfully (VKS cluster running with LB support)
+#   - Valid admin kubeconfig file for the target cluster
+#   - Helm v3 installed
+#   - kubectl installed
+#   - openssl installed
+#
+# Edit the variable block below with your environment-specific values,
+# then run: bash examples/scenario3/scenario3-argocd-deploy.sh
+###############################################################################
+
+###############################################################################
+# Variable Block — Customer-Configurable Values
+#
+# Fill in the required variables below. Variables with defaults can be
+# overridden by setting them in your environment before running the script.
+###############################################################################
+
+# --- Cluster Identity ---
+CLUSTER_NAME="${CLUSTER_NAME:-}"
+KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME}.yaml}"
+
+# --- Domain ---
+DOMAIN="${DOMAIN:-lab.local}"
+
+# --- Infrastructure Versions ---
+CONTOUR_VERSION="${CONTOUR_VERSION:-0.3.0}"
+HARBOR_VERSION="${HARBOR_VERSION:-1.16.2}"
+ARGOCD_VERSION="${ARGOCD_VERSION:-7.8.13}"
+
+# --- Harbor Credentials ---
+# If HARBOR_ADMIN_PASSWORD is not set, a random 24-character password is
+# generated at runtime (similar to how ArgoCD and GitLab generate theirs
+# via K8s Secrets). Override with a specific value if needed.
+HARBOR_ADMIN_PASSWORD="${HARBOR_ADMIN_PASSWORD:-$(openssl rand -base64 18)}"
+HARBOR_SECRET_KEY="${HARBOR_SECRET_KEY:-$(openssl rand -hex 16)}"
+HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-changeit}"
+
+# --- Certificate Directory ---
+CERT_DIR="${CERT_DIR:-./certs}"
+
+# --- GitLab Versions ---
+GITLAB_OPERATOR_VERSION="${GITLAB_OPERATOR_VERSION:-9.10.0}"
+GITLAB_RUNNER_VERSION="${GITLAB_RUNNER_VERSION:-0.75.0}"
+# GITLAB_RUNNER_TOKEN is auto-retrieved from the GitLab instance after Phase 9.
+# Set it here only if you already have a token from a previous deployment.
+GITLAB_RUNNER_TOKEN="${GITLAB_RUNNER_TOKEN:-}"
+
+# --- Namespaces ---
+CONTOUR_NAMESPACE="${CONTOUR_NAMESPACE:-projectcontour}"
+HARBOR_NAMESPACE="${HARBOR_NAMESPACE:-harbor}"
+GITLAB_NAMESPACE="${GITLAB_NAMESPACE:-gitlab-system}"
+GITLAB_RUNNER_NAMESPACE="${GITLAB_RUNNER_NAMESPACE:-gitlab-runners}"
+ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
+APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
+
+# --- Repository URLs ---
+# Git repository containing the microservices demo Helm chart for ArgoCD.
+# Defaults to the Google Cloud Platform microservices-demo public repo.
+HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
+
+# --- Configuration File Paths ---
+CONTOUR_VALUES_FILE="${CONTOUR_VALUES_FILE:-examples/scenario3/contour-values.yaml}"
+HARBOR_VALUES_FILE="${HARBOR_VALUES_FILE:-examples/scenario3/harbor-values.yaml}"
+ARGOCD_VALUES_FILE="${ARGOCD_VALUES_FILE:-examples/scenario3/argocd-values.yaml}"
+GITLAB_OPERATOR_VALUES_FILE="${GITLAB_OPERATOR_VALUES_FILE:-examples/scenario3/gitlab-operator-values.yaml}"
+GITLAB_RUNNER_VALUES_FILE="${GITLAB_RUNNER_VALUES_FILE:-examples/scenario3/gitlab-runner-values.yaml}"
+ARGOCD_APP_MANIFEST="${ARGOCD_APP_MANIFEST:-examples/scenario3/argocd-microservices-demo.yaml}"
+
+# --- Timeouts and Polling ---
+PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-900}"
+POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+###############################################################################
+# Derived Variables (computed from DOMAIN — do not edit)
+###############################################################################
+
+HARBOR_HOSTNAME="harbor.${DOMAIN}"
+GITLAB_HOSTNAME="gitlab.${DOMAIN}"
+ARGOCD_HOSTNAME="argocd.${DOMAIN}"
+
+###############################################################################
+# Helper Functions
+###############################################################################
+
+log_step() {
+  local step_number="$1"
+  local message="$2"
+  echo "[Step ${step_number}] ${message}..."
+}
+
+log_success() {
+  local message="$1"
+  echo "✓ ${message}"
+}
+
+log_error() {
+  local message="$1"
+  echo "✗ ERROR: ${message}" >&2
+}
+
+log_warn() {
+  local message="$1"
+  echo "⚠ WARNING: ${message}"
+}
+
+validate_variables() {
+  local missing=0
+  local required_vars=(
+    "CLUSTER_NAME"
+  )
+
+  for var_name in "${required_vars[@]}"; do
+    if [[ -z "${!var_name:-}" ]]; then
+      log_error "Required variable ${var_name} is not set or is empty"
+      missing=1
+    fi
+  done
+
+  if [[ "${missing}" -eq 1 ]]; then
+    log_error "One or more required variables are missing. Please set them in the variable block above."
+    exit 1
+  fi
+}
+
+check_prerequisites() {
+  local missing=0
+
+  if ! command -v kubectl &>/dev/null; then
+    log_error "kubectl is not installed or not in PATH"
+    missing=1
+  fi
+
+  if ! command -v helm &>/dev/null; then
+    log_error "helm is not installed or not in PATH"
+    missing=1
+  fi
+
+  if ! command -v openssl &>/dev/null; then
+    log_error "openssl is not installed or not in PATH"
+    missing=1
+  fi
+
+  if [[ "${missing}" -eq 1 ]]; then
+    log_error "One or more required tools are missing. Install them and retry."
+    exit 1
+  fi
+}
+
+wait_for_condition() {
+  local description="$1"
+  local timeout="$2"
+  local interval="$3"
+  local check_command="$4"
+  local elapsed=0
+
+  while [[ "${elapsed}" -lt "${timeout}" ]]; do
+    if eval "${check_command}" >/dev/null 2>&1; then
+      return 0
+    fi
+    echo "  Waiting for ${description}... (${elapsed}s/${timeout}s elapsed)"
+    sleep "${interval}"
+    elapsed=$((elapsed + interval))
+  done
+
+  echo "  Timeout waiting for ${description} after ${elapsed}s"
+  return 1
+}
+
+###############################################################################
+# Temporary Values File Preparation
+#
+# The Helm values files and ArgoCD manifest contain placeholder variables
+# (HARBOR_HOSTNAME, GITLAB_HOSTNAME, ARGOCD_HOSTNAME, GITLAB_RUNNER_TOKEN,
+# HELM_CHARTS_REPO_URL, APP_NAMESPACE, GITLAB_DOMAIN, HARBOR_ADMIN_PASSWORD,
+# HARBOR_SECRET_KEY, HARBOR_DB_PASSWORD). This function creates temporary
+# copies with all placeholders replaced by actual runtime values.
+###############################################################################
+
+TEMP_DIR=""
+
+prepare_values_files() {
+  TEMP_DIR=$(mktemp -d)
+  log_success "Temporary values directory created at '${TEMP_DIR}'"
+
+  # Extract the base domain for GitLab (DOMAIN without leading dot)
+  local gitlab_domain="${DOMAIN}"
+
+  # List of placeholder → value mappings
+  # Each values file may use a subset of these
+  local -a sed_args=(
+    -e "s|HARBOR_HOSTNAME|${HARBOR_HOSTNAME}|g"
+    -e "s|GITLAB_HOSTNAME|${GITLAB_HOSTNAME}|g"
+    -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g"
+    -e "s|GITLAB_DOMAIN|${gitlab_domain}|g"
+    -e "s|HELM_CHARTS_REPO_URL|${HELM_CHARTS_REPO_URL}|g"
+    -e "s|APP_NAMESPACE|${APP_NAMESPACE}|g"
+    -e "s|Harbor12345|${HARBOR_ADMIN_PASSWORD}|g"
+    -e "s|not-a-secure-key|${HARBOR_SECRET_KEY}|g"
+    -e "s|changeit|${HARBOR_DB_PASSWORD}|g"
+  )
+
+  # Contour values — substitute harbor.lab.local with actual hostname
+  sed "${sed_args[@]}" -e "s|harbor\.lab\.local|${HARBOR_HOSTNAME}|g" \
+    "${CONTOUR_VALUES_FILE}" > "${TEMP_DIR}/contour-values.yaml"
+
+  # Harbor values — substitute hardcoded lab.local hostnames and credentials
+  sed "${sed_args[@]}" \
+    -e "s|harbor\.lab\.local|${HARBOR_HOSTNAME}|g" \
+    "${HARBOR_VALUES_FILE}" > "${TEMP_DIR}/harbor-values.yaml"
+
+  # ArgoCD values — substitute hardcoded argocd.lab.local hostname
+  sed "${sed_args[@]}" \
+    -e "s|argocd\.lab\.local|${ARGOCD_HOSTNAME}|g" \
+    "${ARGOCD_VALUES_FILE}" > "${TEMP_DIR}/argocd-values.yaml"
+
+  # GitLab Operator values — substitute placeholder hostnames
+  sed "${sed_args[@]}" \
+    "${GITLAB_OPERATOR_VALUES_FILE}" > "${TEMP_DIR}/gitlab-operator-values.yaml"
+
+  # ArgoCD Application manifest — substitute repo URL and namespace
+  sed "${sed_args[@]}" \
+    "${ARGOCD_APP_MANIFEST}" > "${TEMP_DIR}/argocd-microservices-demo.yaml"
+
+  log_success "Values files prepared with runtime variable substitution"
+}
+
+# Prepare the GitLab Runner values file separately (called after token retrieval)
+prepare_runner_values() {
+  local -a sed_args=(
+    -e "s|HARBOR_HOSTNAME|${HARBOR_HOSTNAME}|g"
+    -e "s|GITLAB_HOSTNAME|${GITLAB_HOSTNAME}|g"
+    -e "s|GITLAB_RUNNER_TOKEN|${GITLAB_RUNNER_TOKEN}|g"
+  )
+
+  sed "${sed_args[@]}" \
+    "${GITLAB_RUNNER_VALUES_FILE}" > "${TEMP_DIR}/gitlab-runner-values.yaml"
+
+  log_success "GitLab Runner values file prepared with runner token"
+}
+
+cleanup_temp() {
+  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" ]]; then
+    rm -rf "${TEMP_DIR}"
+  fi
+}
+
+trap cleanup_temp EXIT
+
+###############################################################################
+# Pre-Flight Validation
+###############################################################################
+
+validate_variables
+check_prerequisites
+
+###############################################################################
+# Phase 1: Kubeconfig Setup & Connectivity Check
+###############################################################################
+
+log_step 1 "Setting up kubeconfig"
+
+export KUBECONFIG="${KUBECONFIG_FILE}"
+
+if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
+  log_error "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+  exit 2
+fi
+
+if ! kubectl get namespaces >/dev/null 2>&1; then
+  log_error "Unable to reach cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_FILE}'. Verify the cluster is running and the kubeconfig is valid."
+  exit 2
+fi
+
+log_success "Kubeconfig set and cluster '${CLUSTER_NAME}' is reachable"
+
+# Prepare temporary values files with placeholder substitution
+prepare_values_files
+
+###############################################################################
+# Phase 2: Self-Signed Certificate Generation
+###############################################################################
+
+log_step 2 "Generating self-signed certificates"
+
+if [[ -f "${CERT_DIR}/ca.crt" ]]; then
+  log_success "CA certificate already exists at '${CERT_DIR}/ca.crt', skipping certificate generation"
+else
+  mkdir -p "${CERT_DIR}"
+
+  # Generate self-signed CA certificate and key
+  if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+    -days 3650 -subj "/CN=Self-Signed CA"; then
+    log_error "Failed to generate self-signed CA certificate"
+    exit 3
+  fi
+  log_success "Self-signed CA certificate generated"
+
+  # Generate wildcard certificate CSR using the OpenSSL config
+  if ! openssl req -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+    -config examples/scenario3/wildcard.cnf; then
+    log_error "Failed to generate wildcard certificate CSR"
+    exit 3
+  fi
+  log_success "Wildcard certificate CSR generated"
+
+  # Sign the wildcard certificate with the CA
+  if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+    -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+    -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+    -days 3650 -extensions v3_req -extfile examples/scenario3/wildcard.cnf; then
+    log_error "Failed to sign wildcard certificate"
+    exit 3
+  fi
+  log_success "Wildcard certificate signed by CA"
+
+  # Create fullchain certificate (wildcard + CA)
+  cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+  log_success "Fullchain certificate created"
+fi
+
+log_success "Certificates ready in '${CERT_DIR}'"
+
+###############################################################################
+# Phase 3: Contour Installation
+###############################################################################
+
+log_step 3 "Installing Contour ingress controller"
+
+# Add Project Contour Helm repository
+helm repo add contour https://projectcontour.github.io/helm-charts/ 2>/dev/null || true
+helm repo update 2>/dev/null || true
+
+# Install Contour via Helm (skip upgrade if already deployed to avoid unnecessary rollouts)
+if helm status contour -n "${CONTOUR_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Contour Helm release already deployed, skipping install"
+else
+  if ! helm upgrade --install contour contour/contour \
+    --namespace "${CONTOUR_NAMESPACE}" \
+    --create-namespace \
+    --version "${CONTOUR_VERSION}" \
+    --values "${TEMP_DIR}/contour-values.yaml" \
+    --timeout 10m; then
+    log_error "Failed to install Contour via Helm"
+    exit 4
+  fi
+  log_success "Contour Helm release installed"
+fi
+
+# Wait for Contour Envoy LoadBalancer to get an external IP
+if ! wait_for_condition "Contour Envoy LoadBalancer to get external IP" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get svc -n '${CONTOUR_NAMESPACE}' contour-envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
+  log_error "Contour Envoy LoadBalancer did not receive an external IP within ${PACKAGE_TIMEOUT}s"
+  exit 4
+fi
+
+# Store the Contour LB IP for CoreDNS configuration
+CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_NAMESPACE}" contour-envoy -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+log_success "Contour installed and Envoy LoadBalancer IP: ${CONTOUR_LB_IP}"
+
+###############################################################################
+# Phase 4: Harbor Installation
+###############################################################################
+
+log_step 4 "Installing Harbor container registry"
+
+# Create Harbor namespace
+kubectl create ns "${HARBOR_NAMESPACE}" 2>/dev/null || true
+
+# Create Harbor TLS secret from wildcard certificate (idempotent)
+kubectl create secret tls harbor-tls \
+  --cert="${CERT_DIR}/fullchain.crt" \
+  --key="${CERT_DIR}/wildcard.key" \
+  --namespace "${HARBOR_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Create Harbor CA secret (idempotent)
+kubectl create secret generic harbor-ca \
+  --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+  --namespace "${HARBOR_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Add Harbor Helm repository
+helm repo add harbor https://helm.goharbor.io 2>/dev/null || true
+helm repo update 2>/dev/null || true
+
+# Install Harbor via Helm (skip upgrade if already deployed to avoid RWO volume conflicts)
+if helm status harbor -n "${HARBOR_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Harbor Helm release already deployed, skipping install"
+else
+  if ! helm upgrade --install harbor harbor/harbor \
+    --namespace "${HARBOR_NAMESPACE}" \
+    --create-namespace \
+    --version "${HARBOR_VERSION}" \
+    --values "${TEMP_DIR}/harbor-values.yaml" \
+    --timeout 10m; then
+    log_error "Failed to install Harbor via Helm"
+    exit 5
+  fi
+  log_success "Harbor Helm release installed"
+fi
+
+# Wait for Harbor pods to reach Running state
+if ! wait_for_condition "Harbor pods to be running" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "test \"\$(kubectl get pods -n '${HARBOR_NAMESPACE}' --no-headers 2>/dev/null | grep -cv 'Running\|Completed')\" = '0'"; then
+  log_error "Harbor pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
+  exit 5
+fi
+
+log_success "Harbor installed and running in namespace '${HARBOR_NAMESPACE}'"
+
+###############################################################################
+# Phase 5: CoreDNS Configuration
+###############################################################################
+
+log_step 5 "Configuring CoreDNS with static host entries"
+
+# Backup current CoreDNS ConfigMap
+kubectl get configmap coredns -n kube-system -o yaml > /tmp/coredns-backup.yaml
+log_success "CoreDNS ConfigMap backed up to /tmp/coredns-backup.yaml"
+
+# Patch CoreDNS ConfigMap with static host entries for Harbor, GitLab, and ArgoCD
+# This allows pods to resolve all service hostnames without external DNS
+CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+
+# Check if hosts block already contains our entries
+if echo "${CURRENT_COREFILE}" | grep -q "${GITLAB_HOSTNAME}"; then
+  log_success "CoreDNS already contains entry for '${GITLAB_HOSTNAME}', skipping patch"
+else
+  # Build the hosts block to inject (all 3 hostnames use the Contour LB IP)
+  HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME}\n            ${CONTOUR_LB_IP} ${GITLAB_HOSTNAME}\n            ${CONTOUR_LB_IP} ${ARGOCD_HOSTNAME}\n            fallthrough\n        }"
+
+  # Inject the hosts block before the first "ready" directive
+  PATCHED_COREFILE=$(echo "${CURRENT_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
+
+  # Apply the patched ConfigMap
+  kubectl patch configmap coredns -n kube-system --type merge -p "{
+    \"data\": {
+      \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+    }
+  }" || {
+    log_error "Failed to patch CoreDNS ConfigMap"
+    exit 6
+  }
+
+  log_success "CoreDNS ConfigMap patched with static entries for '${HARBOR_HOSTNAME}', '${GITLAB_HOSTNAME}', and '${ARGOCD_HOSTNAME}'"
+fi
+
+# Restart CoreDNS pods to pick up the new configuration
+kubectl rollout restart deployment/coredns -n kube-system
+
+# Wait for CoreDNS pods to be running
+if ! wait_for_condition "CoreDNS pods to be running" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "test \"\$(kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers 2>/dev/null | grep -cv 'Running')\" = '0'"; then
+  log_error "CoreDNS pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
+  exit 6
+fi
+
+log_success "CoreDNS configured and running with static host entries"
+
+###############################################################################
+# Phase 6: ArgoCD Installation
+###############################################################################
+
+log_step 6 "Installing ArgoCD"
+
+# Add ArgoCD Helm repository
+helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+helm repo update 2>/dev/null || true
+
+# Install ArgoCD via Helm (skip upgrade if already deployed)
+if helm status argocd -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "ArgoCD Helm release already deployed, skipping install"
+else
+  if ! helm upgrade --install argocd argo/argo-cd \
+    --namespace "${ARGOCD_NAMESPACE}" \
+    --create-namespace \
+    --version "${ARGOCD_VERSION}" \
+    --values "${TEMP_DIR}/argocd-values.yaml" \
+    --timeout 10m; then
+    log_error "Failed to install ArgoCD via Helm"
+    exit 7
+  fi
+  log_success "ArgoCD Helm release installed"
+fi
+
+# Wait for ArgoCD server pods to reach Running state
+if ! wait_for_condition "ArgoCD server pods to be running" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get pods -n '${ARGOCD_NAMESPACE}' -l app.kubernetes.io/name=argocd-server --no-headers 2>/dev/null | grep -q 'Running'"; then
+  log_error "ArgoCD server pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
+  exit 7
+fi
+
+# Retrieve ArgoCD initial admin password from K8s Secret
+ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n "${ARGOCD_NAMESPACE}" -o jsonpath='{.data.password}' | base64 -d)
+log_success "ArgoCD installed and running in namespace '${ARGOCD_NAMESPACE}'"
+
+###############################################################################
+# Phase 7: ArgoCD CLI Installation
+###############################################################################
+
+log_step 7 "Installing ArgoCD CLI"
+
+if command -v argocd &>/dev/null; then
+  log_success "ArgoCD CLI already available in PATH"
+else
+  # Download ArgoCD CLI from GitHub releases
+  if ! curl -sSL -o /tmp/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64; then
+    log_error "Failed to download ArgoCD CLI from GitHub releases"
+    exit 8
+  fi
+
+  chmod +x /tmp/argocd
+  export PATH="/tmp:${PATH}"
+
+  # Verify the binary is executable
+  if ! command -v argocd &>/dev/null; then
+    log_error "ArgoCD CLI binary is not executable after installation"
+    exit 8
+  fi
+
+  log_success "ArgoCD CLI downloaded and installed to /tmp/argocd"
+fi
+
+log_success "ArgoCD CLI is available"
+
+###############################################################################
+# Phase 8: Certificate Distribution
+###############################################################################
+
+log_step 8 "Distributing certificates to application namespaces"
+
+# Create ArgoCD TLS secret from wildcard certificate (idempotent)
+# The ArgoCD Helm chart creates an Ingress that references 'argocd-server-tls'
+# by default when tls is enabled. This secret must exist before the Ingress
+# can serve HTTPS traffic through Contour.
+kubectl create secret tls argocd-server-tls \
+  --cert="${CERT_DIR}/wildcard.crt" \
+  --key="${CERT_DIR}/wildcard.key" \
+  --namespace "${ARGOCD_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+log_success "ArgoCD TLS secret created in namespace '${ARGOCD_NAMESPACE}'"
+
+# Create GitLab namespace with PodSecurity labels
+if kubectl get ns "${GITLAB_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Namespace '${GITLAB_NAMESPACE}' already exists, skipping creation"
+else
+  kubectl create ns "${GITLAB_NAMESPACE}"
+  log_success "Namespace '${GITLAB_NAMESPACE}' created"
+fi
+
+kubectl label ns "${GITLAB_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite >/dev/null 2>&1 || true
+
+# Create GitLab Runner namespace with PodSecurity labels
+if kubectl get ns "${GITLAB_RUNNER_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Namespace '${GITLAB_RUNNER_NAMESPACE}' already exists, skipping creation"
+else
+  kubectl create ns "${GITLAB_RUNNER_NAMESPACE}"
+  log_success "Namespace '${GITLAB_RUNNER_NAMESPACE}' created"
+fi
+
+kubectl label ns "${GITLAB_RUNNER_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite >/dev/null 2>&1 || true
+
+# Create Harbor CA secret in GitLab namespace (idempotent)
+if ! kubectl create secret generic harbor-ca-cert \
+  --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+  --namespace "${GITLAB_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -; then
+  log_error "Failed to create Harbor CA secret in namespace '${GITLAB_NAMESPACE}'"
+  exit 9
+fi
+
+# Create Harbor CA secret in GitLab Runner namespace (idempotent)
+if ! kubectl create secret generic harbor-ca-cert \
+  --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+  --namespace "${GITLAB_RUNNER_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -; then
+  log_error "Failed to create Harbor CA secret in namespace '${GITLAB_RUNNER_NAMESPACE}'"
+  exit 9
+fi
+
+# Create GitLab wildcard TLS secret (idempotent)
+if ! kubectl create secret tls gitlab-wildcard-tls \
+  --cert="${CERT_DIR}/wildcard.crt" \
+  --key="${CERT_DIR}/wildcard.key" \
+  --namespace "${GITLAB_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -; then
+  log_error "Failed to create GitLab wildcard TLS secret in namespace '${GITLAB_NAMESPACE}'"
+  exit 9
+fi
+
+log_success "Certificates distributed: Harbor CA in '${GITLAB_NAMESPACE}' and '${GITLAB_RUNNER_NAMESPACE}', GitLab wildcard TLS in '${GITLAB_NAMESPACE}'"
+
+###############################################################################
+# Phase 9: GitLab Installation
+###############################################################################
+
+log_step 9 "Installing GitLab"
+
+# Add GitLab Helm repository
+helm repo add gitlab https://charts.gitlab.io/ 2>/dev/null || true
+helm repo update 2>/dev/null || true
+
+# Install GitLab via Helm (skip upgrade if already deployed to avoid RWO volume conflicts)
+if helm status gitlab -n "${GITLAB_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "GitLab Helm release already deployed, skipping install"
+else
+  if ! helm upgrade --install gitlab gitlab/gitlab \
+    --namespace "${GITLAB_NAMESPACE}" \
+    --create-namespace \
+    --version "${GITLAB_OPERATOR_VERSION}" \
+    --values "${TEMP_DIR}/gitlab-operator-values.yaml" \
+    --timeout 10m; then
+    log_error "Failed to install GitLab via Helm"
+    exit 10
+  fi
+  log_success "GitLab Helm release installed"
+fi
+
+# Wait for GitLab webservice pod to reach Running state
+# The chart creates the GitLab instance which takes several minutes to start
+if ! wait_for_condition "GitLab webservice pod to be running" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get pods -n '${GITLAB_NAMESPACE}' -l app=webservice --no-headers 2>/dev/null | grep -q 'Running'"; then
+  log_error "GitLab webservice pod did not reach Running state within ${PACKAGE_TIMEOUT}s"
+  exit 10
+fi
+
+log_success "GitLab installed and webservice is running in namespace '${GITLAB_NAMESPACE}'"
+
+###############################################################################
+# Phase 10: GitLab Image Patching / Harbor Proxy Configuration
+###############################################################################
+
+log_step 10 "Configuring Harbor proxy for GitLab images"
+
+# The GitLab Helm values file (gitlab-operator-values.yaml) configures
+# Harbor as a proxy cache for DockerHub images. This avoids DockerHub rate limits
+# and keeps image traffic inside the lab network.
+#
+# Patched images (configured in gitlab-operator-values.yaml):
+#   postgresql : ${HARBOR_HOSTNAME}/proxy/bitnamilegacy/postgresql:16.6.0
+#   redis      : ${HARBOR_HOSTNAME}/proxy/bitnamilegacy/redis:7.2.5
+#   minio      : ${HARBOR_HOSTNAME}/proxy/minio/minio:RELEASE.2024-09-22T00-33-43Z
+#
+# The values file references HARBOR_HOSTNAME as a placeholder. If the Harbor
+# proxy cache project is not configured, images will fall back to DockerHub.
+
+# Verify the values file contains Harbor proxy configuration
+if grep -q "proxy/" "${TEMP_DIR}/gitlab-operator-values.yaml" 2>/dev/null; then
+  log_success "Harbor proxy cache configuration found in '${GITLAB_OPERATOR_VALUES_FILE}'"
+else
+  log_warn "Harbor proxy cache is not configured in '${GITLAB_OPERATOR_VALUES_FILE}'. DockerHub rate limits may cause image pull failures."
+fi
+
+# Verify Harbor hostname is set in the values file
+if grep -q "${HARBOR_HOSTNAME}" "${TEMP_DIR}/gitlab-operator-values.yaml" 2>/dev/null; then
+  log_success "Harbor hostname reference found in GitLab Operator values"
+else
+  log_warn "Harbor hostname not found in '${GITLAB_OPERATOR_VALUES_FILE}'. Harbor proxy may not be configured correctly."
+  exit 11
+fi
+
+log_success "Harbor proxy configuration verified for GitLab images"
+
+###############################################################################
+# Phase 11: GitLab Runner Token Retrieval & Runner Installation
+###############################################################################
+
+log_step 11 "Installing GitLab Runner"
+
+# Auto-retrieve the runner registration token from the GitLab instance
+# if one was not provided via environment variable
+if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
+  log_success "No GITLAB_RUNNER_TOKEN provided — retrieving from GitLab instance"
+
+  # The GitLab Operator stores the runner registration token in a K8s Secret.
+  # The secret name follows the pattern: <gitlab-release>-gitlab-runner-secret
+  RUNNER_SECRET_NAME=$(kubectl get secrets -n "${GITLAB_NAMESPACE}" --no-headers 2>/dev/null \
+    | grep -i 'runner.*secret\|runner-registration-token' \
+    | awk '{print $1}' \
+    | head -1)
+
+  if [[ -n "${RUNNER_SECRET_NAME}" ]]; then
+    GITLAB_RUNNER_TOKEN=$(kubectl get secret "${RUNNER_SECRET_NAME}" -n "${GITLAB_NAMESPACE}" \
+      -o jsonpath='{.data.runner-registration-token}' 2>/dev/null | base64 -d)
+  fi
+
+  # Fallback: try the shared-secrets runner token
+  if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
+    GITLAB_RUNNER_TOKEN=$(kubectl get secret gitlab-gitlab-runner-secret -n "${GITLAB_NAMESPACE}" \
+      -o jsonpath='{.data.runner-registration-token}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  fi
+
+  # Fallback: try the initial-root-token and use the GitLab API
+  if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
+    log_warn "Could not find runner registration token in K8s secrets. Attempting GitLab API..."
+    GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+    if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
+      # Authenticate to GitLab API and create a runner token
+      GITLAB_API_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+        -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+      if [[ -n "${GITLAB_API_TOKEN}" ]]; then
+        GITLAB_RUNNER_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/api/v4/runners" \
+          -H "Authorization: Bearer ${GITLAB_API_TOKEN}" \
+          -d "runner_type=instance_type&description=vks-runner" 2>/dev/null \
+          | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+      fi
+    fi
+  fi
+
+  if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
+    log_error "Failed to retrieve GitLab Runner registration token. Set GITLAB_RUNNER_TOKEN manually and re-run."
+    exit 12
+  fi
+
+  log_success "GitLab Runner registration token retrieved successfully"
+fi
+
+# Prepare the runner values file with the token
+prepare_runner_values
+
+# Install GitLab Runner via Helm (skip upgrade if already deployed)
+if helm status gitlab-runner -n "${GITLAB_RUNNER_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "GitLab Runner Helm release already deployed, skipping install"
+else
+  if ! helm upgrade --install gitlab-runner gitlab/gitlab-runner \
+    --namespace "${GITLAB_RUNNER_NAMESPACE}" \
+    --create-namespace \
+    --version "${GITLAB_RUNNER_VERSION}" \
+    --values "${TEMP_DIR}/gitlab-runner-values.yaml" \
+    --timeout 10m; then
+    log_error "Failed to install GitLab Runner via Helm"
+    exit 12
+  fi
+  log_success "GitLab Runner Helm release installed"
+fi
+
+# Wait for GitLab Runner pod to reach Running state
+if ! wait_for_condition "GitLab Runner pod to be running" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get pods -n '${GITLAB_RUNNER_NAMESPACE}' -l app=gitlab-runner --no-headers 2>/dev/null | grep -q 'Running'"; then
+  log_error "GitLab Runner pod did not reach Running state within ${PACKAGE_TIMEOUT}s"
+  exit 12
+fi
+
+log_success "GitLab Runner installed and running in namespace '${GITLAB_RUNNER_NAMESPACE}'"
+
+###############################################################################
+# Phase 11b: Disable GitLab Public Sign-Up (Security Hardening)
+###############################################################################
+
+# The GitLab Helm chart does not expose a values key for disabling sign-up.
+# It is an application-level setting stored in the GitLab database, so we
+# use the GitLab API to disable it after the instance is running.
+
+log_step "11b" "Disabling GitLab public sign-up registration"
+
+# Ensure we have the root password (may already be set from runner token retrieval)
+if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
+  GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+fi
+
+if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
+  # Obtain an OAuth access token for the root user
+  SIGNUP_API_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+    -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+  if [[ -n "${SIGNUP_API_TOKEN}" ]]; then
+    # Disable public sign-up via the Application Settings API
+    SIGNUP_RESULT=$(curl -sSk -X PUT \
+      "https://${GITLAB_HOSTNAME}/api/v4/application/settings?signup_enabled=false" \
+      -H "Authorization: Bearer ${SIGNUP_API_TOKEN}" 2>/dev/null \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('signup_enabled','unknown'))" 2>/dev/null || true)
+
+    if [[ "${SIGNUP_RESULT}" == "False" || "${SIGNUP_RESULT}" == "false" ]]; then
+      log_success "GitLab public sign-up disabled via API"
+    else
+      log_warn "GitLab sign-up API returned: ${SIGNUP_RESULT}. Verify manually in Admin > Settings > General > Sign-up restrictions."
+    fi
+  else
+    log_warn "Could not obtain GitLab API token. Disable sign-up manually in Admin > Settings > General > Sign-up restrictions."
+  fi
+else
+  log_warn "GitLab root password not found. Disable sign-up manually in Admin > Settings > General > Sign-up restrictions."
+fi
+
+###############################################################################
+# Phase 12: ArgoCD Cluster Registration
+###############################################################################
+
+log_step 12 "Registering cluster with ArgoCD"
+
+# All ArgoCD CLI commands are executed inside the ArgoCD server pod via
+# kubectl exec. This avoids kubectl port-forward, which suffers from
+# persistent "connection reset by peer" errors on some VKS clusters due to
+# stale CNI network namespace references in the kubelet.
+
+# Resolve the ArgoCD server pod name
+ARGOCD_POD=$(kubectl get pod -n "${ARGOCD_NAMESPACE}" \
+  -l app.kubernetes.io/name=argocd-server \
+  -o jsonpath='{.items[0].metadata.name}')
+
+# Helper: run an argocd CLI command inside the server pod.
+# The pod already contains the argocd binary and can reach localhost:8080.
+argocd_exec() {
+  kubectl exec -n "${ARGOCD_NAMESPACE}" "${ARGOCD_POD}" -- sh -c "$*"
+}
+
+# Authenticate to ArgoCD inside the pod
+if ! argocd_exec "argocd login localhost:8080 \
+  --username admin \
+  --password '${ARGOCD_PASSWORD}' \
+  --plaintext --insecure"; then
+  log_error "Failed to authenticate to ArgoCD"
+  exit 13
+fi
+log_success "Authenticated to ArgoCD via kubectl exec"
+
+# Copy the kubeconfig into the pod so argocd cluster add can read it
+kubectl cp "${KUBECONFIG_FILE}" "${ARGOCD_NAMESPACE}/${ARGOCD_POD}:/tmp/kubeconfig.yaml"
+
+# Get the cluster context from the kubeconfig
+CLUSTER_CONTEXT=$(kubectl config current-context)
+
+# Check if the cluster is already registered with ArgoCD
+if argocd_exec "argocd cluster list" 2>/dev/null | grep -q "${CLUSTER_NAME}"; then
+  log_success "Cluster '${CLUSTER_NAME}' is already registered with ArgoCD, skipping registration"
+else
+  # Register the VKS cluster with ArgoCD
+  if ! argocd_exec "argocd cluster add '${CLUSTER_CONTEXT}' \
+    --name '${CLUSTER_NAME}' \
+    --kubeconfig /tmp/kubeconfig.yaml \
+    --yes"; then
+    log_error "Failed to register cluster '${CLUSTER_NAME}' with ArgoCD"
+    exit 13
+  fi
+  log_success "Cluster '${CLUSTER_NAME}' registered with ArgoCD"
+fi
+
+# Wait for the cluster to be healthy in ArgoCD
+if ! wait_for_condition "ArgoCD cluster '${CLUSTER_NAME}' to be healthy" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl exec -n '${ARGOCD_NAMESPACE}' '${ARGOCD_POD}' -- argocd cluster list 2>/dev/null | grep '${CLUSTER_NAME}' | grep -qi 'successful\\|ok\\|healthy\\|unknown'"; then
+  log_error "ArgoCD cluster '${CLUSTER_NAME}' did not reach healthy state within ${PACKAGE_TIMEOUT}s"
+  exit 13
+fi
+
+log_success "Cluster '${CLUSTER_NAME}' registered and healthy in ArgoCD"
+
+###############################################################################
+# Phase 13: ArgoCD Application Bootstrap
+###############################################################################
+
+log_step 13 "Bootstrapping ArgoCD application for Microservices Demo"
+
+# Pre-create the application namespace with privileged PodSecurity labels.
+# The microservices-demo manifests do not set seccompProfile, which violates
+# the default "restricted" PodSecurity standard on VKS clusters.
+kubectl create ns "${APP_NAMESPACE}" 2>/dev/null || true
+kubectl label ns "${APP_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite >/dev/null 2>&1 || true
+log_success "Namespace '${APP_NAMESPACE}' labelled with privileged PodSecurity"
+
+# Check if the ArgoCD Application already exists
+if argocd_exec "argocd app get microservices-demo" >/dev/null 2>&1; then
+  log_success "ArgoCD Application 'microservices-demo' already exists, skipping creation"
+else
+  # Apply the ArgoCD Application manifest
+  if ! kubectl apply -f "${TEMP_DIR}/argocd-microservices-demo.yaml"; then
+    log_error "Failed to apply ArgoCD Application manifest from '${ARGOCD_APP_MANIFEST}'"
+    exit 14
+  fi
+  log_success "ArgoCD Application 'microservices-demo' created from '${ARGOCD_APP_MANIFEST}'"
+fi
+
+# Wait for the ArgoCD application to reach Synced and Healthy state
+if ! wait_for_condition "ArgoCD application 'microservices-demo' to be Synced and Healthy" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl exec -n '${ARGOCD_NAMESPACE}' '${ARGOCD_POD}' -- argocd app get microservices-demo 2>/dev/null | tee /tmp/argocd-app-status | grep -q 'Healthy' && grep -q 'Synced' /tmp/argocd-app-status"; then
+  log_error "ArgoCD application 'microservices-demo' did not reach Synced/Healthy state within ${PACKAGE_TIMEOUT}s"
+  exit 14
+fi
+
+log_success "ArgoCD application 'microservices-demo' is Synced and Healthy"
+
+###############################################################################
+# Phase 14: Microservices Demo Verification
+###############################################################################
+
+log_step 14 "Verifying Microservices Demo deployment"
+
+echo ""
+echo "--- Microservices Demo Pods ---"
+kubectl get pods -n "${APP_NAMESPACE}" 2>/dev/null || true
+echo ""
+
+# Check pods for all 11 microservices
+EXPECTED_SERVICES=(
+  "adservice"
+  "cartservice"
+  "checkoutservice"
+  "currencyservice"
+  "emailservice"
+  "frontend"
+  "loadgenerator"
+  "paymentservice"
+  "productcatalogservice"
+  "recommendationservice"
+  "shippingservice"
+)
+
+ALL_RUNNING=true
+for service in "${EXPECTED_SERVICES[@]}"; do
+  if kubectl get pods -n "${APP_NAMESPACE}" --no-headers 2>/dev/null | grep -q "${service}.*Running"; then
+    log_success "Service '${service}' is running"
+  else
+    log_warn "Service '${service}' is not in Running state"
+    ALL_RUNNING=false
+  fi
+done
+
+if [[ "${ALL_RUNNING}" == "false" ]]; then
+  log_warn "Some microservices are not yet running. They may still be starting up."
+  log_warn "Check pod status with: kubectl get pods -n ${APP_NAMESPACE}"
+fi
+
+# Display frontend endpoint
+echo ""
+echo "--- Frontend Access ---"
+# Wait for frontend-external LoadBalancer IP. The service is created by ArgoCD
+# sync moments before this phase runs, so NSX may need up to several minutes
+# to assign an external IP. Poll for up to 5 minutes (60 × 5s).
+FRONTEND_LB_IP=""
+for i in $(seq 1 60); do
+  FRONTEND_LB_IP=$(kubectl get svc -n "${APP_NAMESPACE}" frontend-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+  if [[ -n "${FRONTEND_LB_IP}" ]]; then
+    break
+  fi
+  if [[ "$((i % 6))" -eq 1 ]]; then
+    echo "  Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
+  fi
+  sleep 5
+done
+
+FRONTEND_SVC=$(kubectl get svc -n "${APP_NAMESPACE}" frontend -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+if [[ -n "${FRONTEND_LB_IP}" ]]; then
+  log_success "Frontend external LoadBalancer IP: ${FRONTEND_LB_IP}"
+  echo "  Open http://${FRONTEND_LB_IP} in your browser."
+elif [[ -n "${FRONTEND_SVC}" ]]; then
+  log_success "Frontend service ClusterIP: ${FRONTEND_SVC}"
+  echo "  To access the Online Boutique UI, run:"
+  echo "    kubectl --kubeconfig=${KUBECONFIG_FILE} port-forward -n ${APP_NAMESPACE} svc/frontend 8080:80"
+  echo "  Then open http://localhost:8080 in your browser."
+else
+  log_warn "Frontend service not found in namespace '${APP_NAMESPACE}'"
+fi
+
+log_success "Microservices Demo verification complete"
+
+###############################################################################
+# Phase 15: Summary Banner
+###############################################################################
+
+log_step 15 "Deployment summary"
+
+# Retrieve GitLab root password for the summary (may already be set from Phase 11)
+if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
+  GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "(secret not found)"  )
+fi
+
+echo ""
+echo "============================================="
+echo "  VCF 9 Scenario 3 — Deployment Complete"
+echo "============================================="
+echo "  Cluster:              ${CLUSTER_NAME}"
+echo "  Domain:               ${DOMAIN}"
+echo "  Contour:              v${CONTOUR_VERSION} (ns: ${CONTOUR_NAMESPACE})"
+echo "  Harbor:               v${HARBOR_VERSION} (ns: ${HARBOR_NAMESPACE})"
+echo "  ArgoCD:               v${ARGOCD_VERSION} (ns: ${ARGOCD_NAMESPACE})"
+echo "  GitLab Operator:      v${GITLAB_OPERATOR_VERSION} (ns: ${GITLAB_NAMESPACE})"
+echo "  GitLab Runner:        v${GITLAB_RUNNER_VERSION} (ns: ${GITLAB_RUNNER_NAMESPACE})"
+echo "  Microservices Demo:   ns: ${APP_NAMESPACE}"
+echo "  Helm Charts Repo:     ${HELM_CHARTS_REPO_URL}"
+echo "============================================="
+echo ""
+echo "  Infrastructure deployed (self-contained):"
+echo "    - Contour ingress controller (Helm chart v${CONTOUR_VERSION})"
+echo "    - Harbor container registry (Helm chart v${HARBOR_VERSION})"
+echo "    - ArgoCD GitOps controller (Helm chart v${ARGOCD_VERSION})"
+echo "    - Self-signed CA and wildcard certificates (${CERT_DIR})"
+echo ""
+echo "  Application components deployed:"
+echo "    - GitLab Operator (Helm chart v${GITLAB_OPERATOR_VERSION})"
+echo "    - GitLab Runner (Helm chart v${GITLAB_RUNNER_VERSION})"
+echo "    - Harbor CA certificates (in ${GITLAB_NAMESPACE}, ${GITLAB_RUNNER_NAMESPACE})"
+echo "    - GitLab wildcard TLS certificate (in ${GITLAB_NAMESPACE})"
+echo "    - CoreDNS static entries (${HARBOR_HOSTNAME}, ${GITLAB_HOSTNAME}, ${ARGOCD_HOSTNAME})"
+echo "    - ArgoCD cluster registration (${CLUSTER_NAME})"
+echo "    - ArgoCD Application (microservices-demo)"
+echo "    - Microservices Demo (11 services in ${APP_NAMESPACE})"
+echo ""
+echo "  Contour LoadBalancer IP: ${CONTOUR_LB_IP}"
+if [[ -n "${FRONTEND_LB_IP}" && "${FRONTEND_LB_IP}" != "${CONTOUR_LB_IP}" ]]; then
+  echo "  Frontend LoadBalancer IP: ${FRONTEND_LB_IP}"
+fi
+echo ""
+echo "  Access instructions:"
+echo "    GitLab:    https://${GITLAB_HOSTNAME}  (${CONTOUR_LB_IP})"
+echo "    Harbor:    https://${HARBOR_HOSTNAME}  (${CONTOUR_LB_IP})"
+echo "    ArgoCD:    https://${ARGOCD_HOSTNAME}  (${CONTOUR_LB_IP})"
+if [[ -n "${FRONTEND_LB_IP}" ]]; then
+  echo "    Online Boutique:  http://${FRONTEND_LB_IP}  (microservices-demo frontend-external)"
+else
+  echo "    Online Boutique:  http://${CONTOUR_LB_IP}  (microservices-demo — frontend-external LB IP not yet assigned)"
+fi
+echo ""
+echo "  DNS / hosts file entries (add to your local machine):"
+echo "    ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME} ${GITLAB_HOSTNAME} ${ARGOCD_HOSTNAME}"
+echo ""
+echo "  Login credentials:"
+echo "    Harbor:    admin / ${HARBOR_ADMIN_PASSWORD}"
+echo "    ArgoCD:    admin / ${ARGOCD_PASSWORD}"
+echo "    GitLab:    root  / ${GITLAB_ROOT_PASSWORD}"
+echo ""
+
+log_success "Scenario 3 deployment complete"
+
+exit 0

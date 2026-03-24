@@ -777,6 +777,16 @@ spec:
       # Storage class for persistent volumes on the cluster
       # (e.g., "nfs" for NFS-backed storage)
       value: <STORAGE_CLASS>
+    - name: volumes
+      # Additional disks attached to worker node VMs.
+      # A dedicated containerd volume prevents disk-pressure
+      # evictions when running image-heavy workloads such as
+      # GitLab, Harbor, and ArgoCD.
+      value:
+      - name: containerd-data
+        capacity: 100Gi
+        mountPath: /var/lib/containerd
+        storageClass: <STORAGE_CLASS>
 ```
 
 Replace the placeholders with your environment-specific values:
@@ -790,7 +800,7 @@ Replace the placeholders with your environment-specific values:
 | `<K8S_VERSION>` | Target Kubernetes version | `v1.33.6+vmware.1-fips` |
 | `<CONTENT_LIBRARY_ID>` | vSphere content library ID for OS images | (UUID from vSphere) |
 | `<MAX_NODES>` | Autoscaler maximum node count | `10` |
-| `<MIN_NODES>` | Autoscaler minimum node count | `2` |
+| `<MIN_NODES>` | Autoscaler minimum node count | `3` |
 | `<VM_CLASS>` | VM class for worker nodes | `best-effort-large` |
 | `<STORAGE_CLASS>` | Storage class for persistent volumes | `nfs` |
 
@@ -1283,7 +1293,7 @@ This table documents all 22 `<PLACEHOLDER>` variables used throughout the guide.
 | `<PODS_CIDR>` | Pod network CIDR — IP address range for pod networking; must be large enough for all pods across all nodes | `192.168.156.0/20` | Phase 6 |
 | `<VM_CLASS>` | VM class for worker nodes — determines CPU and memory allocation per worker node VM | `best-effort-large` | Phase 6 |
 | `<STORAGE_CLASS>` | Storage class name — the Kubernetes storage class used for persistent volume provisioning on the VKS cluster | `nfs` | Phase 6, Phase 7 |
-| `<MIN_NODES>` | Autoscaler minimum node count — lower bound for the cluster autoscaler on the worker node pool | `2` | Phase 6 |
+| `<MIN_NODES>` | Autoscaler minimum node count — lower bound for the cluster autoscaler on the worker node pool | `3` | Phase 6 |
 | `<MAX_NODES>` | Autoscaler maximum node count — upper bound for the cluster autoscaler on the worker node pool | `10` | Phase 6 |
 | `<IP_BLOCK_CIDR>` | IP block CIDR for VPC networking — defines the address range available for VPC subnet allocation from NSX IPBlock resources | `10.0.0.0/16` | Phase 4 |
 | `<KUBECONFIG_PATH>` | Path to downloaded VKS kubeconfig file — local filesystem path where the guest cluster kubeconfig is saved | `~/kubeconfigs/myproject-clus-01.yaml` | Phase 7 |

@@ -110,14 +110,14 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for TKG packages |
 | `PACKAGE_REPO_NAME` | `tkg-packages` | Package repository name |
 | `PACKAGE_REPO_URL` | `projects.packages.broadcom.com/...` | OCI repository URL |
-| `TELEGRAF_VALUES_FILE` | `examples/telegraf-values.yaml` | Path to Telegraf values file |
-| `PROMETHEUS_VALUES_FILE` | `examples/prometheus-values.yaml` | Path to Prometheus values file |
+| `TELEGRAF_VALUES_FILE` | `examples/scenario2/telegraf-values.yaml` | Path to Telegraf values file |
+| `PROMETHEUS_VALUES_FILE` | `examples/scenario2/prometheus-values.yaml` | Path to Prometheus values file |
 | `STORAGE_CLASS` | `nfs` | StorageClass for Prometheus |
 | `NODE_CPU_THRESHOLD` | `4000` | Advisory CPU threshold (millicores) |
 | `GRAFANA_NAMESPACE` | `grafana` | Namespace for Grafana |
-| `GRAFANA_INSTANCE_FILE` | `examples/grafana-instance.yaml` | Path to Grafana instance manifest |
-| `GRAFANA_DATASOURCE_FILE` | `examples/grafana-datasource-prometheus.yaml` | Path to Grafana datasource manifest |
-| `GRAFANA_DASHBOARDS_FILE` | `examples/grafana-dashboards-k8s.yaml` | Path to Grafana dashboards manifest |
+| `GRAFANA_INSTANCE_FILE` | `examples/scenario2/grafana-instance.yaml` | Path to Grafana instance manifest |
+| `GRAFANA_DATASOURCE_FILE` | `examples/scenario2/grafana-datasource-prometheus.yaml` | Path to Grafana datasource manifest |
+| `GRAFANA_DASHBOARDS_FILE` | `examples/scenario2/grafana-dashboards-k8s.yaml` | Path to Grafana dashboards manifest |
 | `PACKAGE_TIMEOUT` | `600` | Package reconciliation timeout (seconds) |
 | `POLL_INTERVAL` | `15` | Polling interval for wait loops (seconds) |
 
@@ -134,7 +134,7 @@ docker compose up -d --build
 ### Execute the deploy script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario2-vks-metrics-deploy.sh
+docker exec vcf9-dev bash examples/scenario2/scenario2-vks-metrics-deploy.sh
 ```
 
 ### Monitor from a second terminal (optional)

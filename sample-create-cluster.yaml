@@ -27,10 +27,16 @@ spec:
             annotations:
               run.tanzu.vmware.com/resolve-os-image: os-name=photon, content-library=cl-32ee3681364c701d0
               cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: '10'
-              cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: '2'
+              cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: '3'
     variables:
       - name: vmClass
         value: best-effort-large
       - name: storageClass
         value: nfs
+      - name: volumes
+        value:
+          - name: containerd-data
+            capacity: 100Gi
+            mountPath: /var/lib/containerd
+            storageClass: nfs
 

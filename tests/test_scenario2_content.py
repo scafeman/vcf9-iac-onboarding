@@ -9,19 +9,19 @@ import re
 # ===================================================================
 
 DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-deploy.sh"
 )
 TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-teardown.sh"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-teardown.sh"
 )
 TELEGRAF_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "telegraf-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "telegraf-values.yaml"
 )
 DEPLOY_README_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "README-scenario2-vks-metrics-deploy.md"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "README-deploy.md"
 )
 TEARDOWN_README_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "README-scenario2-vks-metrics-teardown.md"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "README-teardown.md"
 )
 
 
@@ -36,12 +36,12 @@ class TestScriptFileExists:
 
     def test_deploy_script_exists(self):
         assert os.path.isfile(DEPLOY_PATH), (
-            "Deploy script not found at examples/scenario2-vks-metrics-deploy.sh"
+            "Deploy script not found at examples/scenario2/scenario2-vks-metrics-deploy.sh"
         )
 
     def test_teardown_script_exists(self):
         assert os.path.isfile(TEARDOWN_PATH), (
-            "Teardown script not found at examples/scenario2-vks-metrics-teardown.sh"
+            "Teardown script not found at examples/scenario2/scenario2-vks-metrics-teardown.sh"
         )
 
 
@@ -571,12 +571,12 @@ class TestREADMEFileExists:
 
     def test_deploy_readme_exists(self):
         assert os.path.isfile(DEPLOY_README_PATH), (
-            "Deploy README not found at examples/README-scenario2-vks-metrics-deploy.md"
+            "Deploy README not found at examples/scenario2/README-deploy.md"
         )
 
     def test_teardown_readme_exists(self):
         assert os.path.isfile(TEARDOWN_README_PATH), (
-            "Teardown README not found at examples/README-scenario2-vks-metrics-teardown.md"
+            "Teardown README not found at examples/scenario2/README-teardown.md"
         )
 
 
@@ -636,7 +636,7 @@ class TestTelegrafValuesFile:
 
     def test_telegraf_values_file_exists(self):
         assert os.path.isfile(TELEGRAF_VALUES_PATH), (
-            "Telegraf values file not found at examples/telegraf-values.yaml"
+            "Telegraf values file not found at examples/scenario2/telegraf-values.yaml"
         )
 
     def test_contains_namespace_key(self, telegraf_values_parsed):
@@ -692,13 +692,13 @@ class TestNodeSizingAdvisoryLogWarn:
 # ===================================================================
 
 GRAFANA_INSTANCE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "grafana-instance.yaml"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "grafana-instance.yaml"
 )
 GRAFANA_DATASOURCE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "grafana-datasource-prometheus.yaml"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "grafana-datasource-prometheus.yaml"
 )
 GRAFANA_DASHBOARDS_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "grafana-dashboards-k8s.yaml"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "grafana-dashboards-k8s.yaml"
 )
 
 
@@ -707,17 +707,17 @@ class TestGrafanaManifestFiles:
 
     def test_grafana_instance_file_exists(self):
         assert os.path.isfile(GRAFANA_INSTANCE_PATH), (
-            "Grafana instance manifest not found at examples/grafana-instance.yaml"
+            "Grafana instance manifest not found at examples/scenario2/grafana-instance.yaml"
         )
 
     def test_grafana_datasource_file_exists(self):
         assert os.path.isfile(GRAFANA_DATASOURCE_PATH), (
-            "Grafana datasource manifest not found at examples/grafana-datasource-prometheus.yaml"
+            "Grafana datasource manifest not found at examples/scenario2/grafana-datasource-prometheus.yaml"
         )
 
     def test_grafana_dashboards_file_exists(self):
         assert os.path.isfile(GRAFANA_DASHBOARDS_PATH), (
-            "Grafana dashboards manifest not found at examples/grafana-dashboards-k8s.yaml"
+            "Grafana dashboards manifest not found at examples/scenario2/grafana-dashboards-k8s.yaml"
         )
 
 

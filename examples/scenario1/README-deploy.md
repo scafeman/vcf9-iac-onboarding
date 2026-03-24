@@ -73,7 +73,7 @@ Then waits up to 300 seconds for the guest cluster API server to become reachabl
 
 ### Phase 5b: Worker Node Readiness Wait
 
-After the API server is reachable, the script waits for at least `MIN_NODES` (default: 2) worker nodes to reach `Ready` status before proceeding. This prevents workload deployment failures caused by unschedulable pods. Timeout: 600 seconds.
+After the API server is reachable, the script waits for at least `MIN_NODES` (default: 3) worker nodes to reach `Ready` status before proceeding. This prevents workload deployment failures caused by unschedulable pods. Timeout: 600 seconds.
 
 ```
 kubectl get nodes --no-headers | grep -c ' Ready'
@@ -134,7 +134,7 @@ docker compose up -d --build
 ### Execute the deploy script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1-full-stack-deploy.sh
+docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-deploy.sh
 ```
 
 ### Monitor from a second terminal (optional)

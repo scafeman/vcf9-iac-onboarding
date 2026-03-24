@@ -1,0 +1,24 @@
+# ArgoCD Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# Chart: argo/argo-cd
+# Configures the ArgoCD server with ingress via Contour.
+
+server:
+  # Run ArgoCD server without internal TLS. Contour terminates TLS at the
+  # ingress level and forwards plain HTTP to the server. Without this flag
+  # the server redirects HTTP→HTTPS, which conflicts with the ingress TLS
+  # termination and causes an infinite redirect loop (ERR_TOO_MANY_REDIRECTS).
+  extraArgs:
+    - --insecure
+
+  ingress:
+    # Enable ingress so ArgoCD UI is accessible via the Contour LoadBalancer
+    enabled: true
+
+    # ArgoCD server hostname — must match the wildcard certificate
+    hostname: argocd.lab.local
+
+    # Use the Contour ingress class for routing
+    ingressClassName: contour
+
+    # Enable TLS termination at the ingress level
+    tls: true

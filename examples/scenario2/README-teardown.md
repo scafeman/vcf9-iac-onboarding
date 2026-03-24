@@ -77,7 +77,7 @@ The teardown script uses a subset of the deploy script's variables:
 ### Execute the teardown script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario2-vks-metrics-teardown.sh
+docker exec vcf9-dev bash examples/scenario2/scenario2-vks-metrics-teardown.sh
 ```
 
 ---

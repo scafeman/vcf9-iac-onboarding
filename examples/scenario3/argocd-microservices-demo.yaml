@@ -1,0 +1,57 @@
+# argocd-microservices-demo.yaml
+# ArgoCD Application manifest for the Google Microservices Demo (Online Boutique).
+#
+# This manifest tells ArgoCD to synchronize Kubernetes manifests from a Git
+# repository to the VKS cluster, deploying the 11-tier microservices demo
+# application.
+#
+# Placeholder variables (HELM_CHARTS_REPO_URL, APP_NAMESPACE) are substituted
+# by the deploy script at runtime via sed.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  # Application name as it appears in the ArgoCD dashboard
+  name: microservices-demo
+  # ArgoCD watches this namespace for Application resources
+  namespace: argocd
+spec:
+  # ArgoCD project — "default" allows access to all clusters and repos
+  project: default
+
+  # ---------------------------------------------------------------------------
+  # Source — where ArgoCD fetches the Kubernetes manifests
+  # ---------------------------------------------------------------------------
+  source:
+    # Git repository containing the microservices demo manifests
+    repoURL: HELM_CHARTS_REPO_URL
+    # Track the latest commit on the default branch
+    targetRevision: HEAD
+    # Path within the repository where the Kubernetes manifests live
+    path: release
+    # Exclude Istio-specific manifests (ServiceEntry, VirtualService, Gateway)
+    # since Istio is not installed on the VKS cluster
+    directory:
+      exclude: 'istio-manifests.yaml'
+
+  # ---------------------------------------------------------------------------
+  # Destination — the target cluster and namespace for deployment
+  # ---------------------------------------------------------------------------
+  destination:
+    # In-cluster API server (ArgoCD runs on the same VKS cluster)
+    server: "https://kubernetes.default.svc"
+    # Namespace where the microservices demo pods will be created
+    namespace: APP_NAMESPACE
+
+  # ---------------------------------------------------------------------------
+  # Sync policy — automated GitOps reconciliation
+  # ---------------------------------------------------------------------------
+  syncPolicy:
+    automated:
+      # selfHeal: revert manual changes made outside of Git
+      selfHeal: true
+      # prune: delete resources removed from the Git source
+      prune: true
+    syncOptions:
+      # Automatically create the target namespace if it does not exist
+      - CreateNamespace=true

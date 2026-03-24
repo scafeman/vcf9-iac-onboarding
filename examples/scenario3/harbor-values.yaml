@@ -1,0 +1,58 @@
+# Harbor Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# Chart: harbor/harbor
+# Installs Harbor as an in-cluster container registry exposed via Contour Ingress.
+
+expose:
+  # Use standard Kubernetes Ingress (served by the Contour ingress controller)
+  type: ingress
+
+  tls:
+    # TLS certificate is provided via a pre-created Kubernetes Secret
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+
+  ingress:
+    hosts:
+      # Harbor core service hostname — must match the wildcard certificate
+      core: harbor.lab.local
+    className: contour
+
+# External URL used by Harbor for generating links (e.g., docker pull commands)
+externalURL: https://harbor.lab.local
+
+persistence:
+  persistentVolumeClaim:
+    # All PVCs use the nfs storageClass available on VKS clusters
+    registry:
+      storageClass: nfs
+    jobservice:
+      jobLog:
+        storageClass: nfs
+    database:
+      storageClass: nfs
+    redis:
+      storageClass: nfs
+    trivy:
+      storageClass: nfs
+
+# Harbor admin account password
+harborAdminPassword: Harbor12345
+
+# Secret key used for encryption of sensitive data within Harbor
+secretKey: not-a-secure-key
+
+# Use Recreate strategy for components with RWO PVCs to avoid Multi-Attach
+# errors during Helm upgrades (RWO volumes can't be shared between old/new pods)
+registry:
+  updateStrategy:
+    type: Recreate
+
+jobservice:
+  updateStrategy:
+    type: Recreate
+
+database:
+  internal:
+    # Password for the internal Harbor database
+    password: changeit

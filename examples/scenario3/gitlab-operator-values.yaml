@@ -1,0 +1,115 @@
+# gitlab-operator-values.yaml
+# Helm values for the GitLab chart deployed on VKS clusters.
+# Chart: gitlab/gitlab (direct Helm chart)
+#
+# This file configures the GitLab instance with:
+#   - Custom domain and hostname for the GitLab web interface
+#   - Harbor CA certificate trust (customCAs) so GitLab can pull from Harbor
+#   - GitLab wildcard TLS certificate for HTTPS ingress
+#   - Contour ingress class (disables bundled NGINX)
+#   - Disabled cert-manager (we supply our own wildcard certificate)
+#   - Harbor proxy cache for DockerHub images (PostgreSQL, Redis)
+#   - Resource limits for the webservice component
+#   - Persistent storage configuration
+#
+# Placeholder variables (GITLAB_HOSTNAME, HARBOR_HOSTNAME, etc.) are
+# substituted by the deploy script via sed before applying.
+
+# ---------------------------------------------------------------------------
+# Global settings — domain, hostnames, ingress, and registry
+# ---------------------------------------------------------------------------
+global:
+  # Base domain used to derive GitLab sub-service hostnames
+  hosts:
+    domain: GITLAB_DOMAIN
+    gitlab:
+      name: GITLAB_HOSTNAME
+
+  # Use Contour ingress class instead of the bundled NGINX
+  ingress:
+    class: contour
+    configureCertmanager: false
+    tls:
+      secretName: gitlab-wildcard-tls
+
+  # ---------------------------------------------------------------------------
+  # Custom CA certificates — trust the Harbor CA so GitLab can reach Harbor
+  # ---------------------------------------------------------------------------
+  certificates:
+    customCAs:
+      - secret: harbor-ca-cert
+
+  # Use built-in MinIO for object storage (lab environment)
+  minio:
+    enabled: true
+
+  # NOTE: Sign-up is disabled via the GitLab API in the deploy script (Phase 11b).
+  # The Helm chart does not expose a values key for this setting — it is an
+  # application-level setting stored in the GitLab database, not in gitlab.yml.
+
+  # Set storageClass globally for all PVCs (PostgreSQL, Redis, Gitaly, MinIO, etc.)
+  storageClass: nfs
+
+# ---------------------------------------------------------------------------
+# Disable bundled components we already have (NGINX, cert-manager)
+# ---------------------------------------------------------------------------
+nginx-ingress:
+  enabled: false
+
+installCertmanager: false
+
+certmanager-issuer:
+  email: false
+
+# ---------------------------------------------------------------------------
+# Harbor proxy cache for DockerHub images (optional)
+# If Harbor proxy cache is configured, uncomment the image overrides below
+# to pull PostgreSQL and Redis through Harbor instead of DockerHub directly.
+# ---------------------------------------------------------------------------
+# postgresql:
+#   image:
+#     registry: HARBOR_HOSTNAME
+#     repository: proxy/bitnamilegacy/postgresql
+#     tag: "16.6.0"
+#
+# redis:
+#   image:
+#     registry: HARBOR_HOSTNAME
+#     repository: proxy/bitnamilegacy/redis
+#     tag: "7.2.5"
+
+# ---------------------------------------------------------------------------
+# GitLab webservice resource limits
+# ---------------------------------------------------------------------------
+gitlab:
+  webservice:
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+
+  # ---------------------------------------------------------------------------
+  # Persistent storage configuration
+  # ---------------------------------------------------------------------------
+  gitaly:
+    persistence:
+      storageClass: nfs
+      size: 50Gi
+
+# ---------------------------------------------------------------------------
+# MinIO object storage persistence (lab environment)
+# ---------------------------------------------------------------------------
+minio:
+  persistence:
+    storageClass: nfs
+
+# ---------------------------------------------------------------------------
+# Prometheus monitoring persistence
+# ---------------------------------------------------------------------------
+prometheus:
+  server:
+    persistentVolume:
+      storageClass: nfs

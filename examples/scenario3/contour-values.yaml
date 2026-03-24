@@ -1,0 +1,22 @@
+# Contour Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# Chart: contour/contour (official Project Contour Helm chart)
+# Installs Envoy as a Deployment with LoadBalancer service for ingress traffic.
+
+# Override the fullname to keep service names consistent (contour-envoy, not contour-contour-envoy)
+fullnameOverride: contour
+
+envoy:
+  # Run Envoy as a deployment (not daemonset) for flexibility on VKS clusters
+  kind: deployment
+
+  service:
+    # Expose Envoy via a LoadBalancer service so external traffic can reach the cluster
+    type: LoadBalancer
+
+    # Use single-stack IPv4 networking (no dual-stack)
+    ipFamilyPolicy: SingleStack
+    ipFamilies:
+      - IPv4
+
+  # Run 2 Envoy replicas for basic availability
+  replicaCount: 2

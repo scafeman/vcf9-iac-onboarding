@@ -97,7 +97,7 @@ The teardown script uses a subset of the deploy script's variables:
 ### Execute the teardown script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1-full-stack-teardown.sh
+docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
 ```
 
 ### Monitor from a second terminal (optional)

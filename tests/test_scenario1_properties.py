@@ -617,7 +617,7 @@ class TestProperty7APIVersionConsistency:
             "K8S_VERSION": "v1.33.6+vmware.1-fips",
             "CONTENT_LIBRARY_ID": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
             "MAX_NODES": "10",
-            "MIN_NODES": "2",
+            "MIN_NODES": "3",
             "VM_CLASS": "best-effort-large",
             "STORAGE_CLASS": "nfs",
         }
