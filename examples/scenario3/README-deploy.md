@@ -26,7 +26,8 @@ Kubeconfig Setup
                                             └─► GitLab Operator (Helm)
                                                   └─► Harbor Proxy Patching (image registry)
                                                         └─► GitLab Runner (Helm)
-                                                              └─► ArgoCD Cluster Registration
+                                                              └─► GitLab Sign-Up Disabled (API)
+                                                                    └─► ArgoCD Cluster Registration
                                                                     └─► ArgoCD Application Bootstrap
                                                                           └─► Microservices Demo Verification
 ```
@@ -93,6 +94,10 @@ Verifies that the GitLab Operator values file contains Harbor proxy cache config
 ### Phase 11: GitLab Runner Installation
 
 Installs the GitLab Runner via `helm upgrade --install` with the configured version and values file. The Runner is configured with the Kubernetes executor, privileged mode, and CA certificate trust for both GitLab and Harbor. Waits for the Runner pod to reach Running state. Exits with code 12 if installation fails or the pod does not start.
+
+### Phase 11b: Disable GitLab Public Sign-Up (Security Hardening)
+
+Disables public user registration on the GitLab instance via the GitLab Application Settings API (`PUT /api/v4/application/settings?signup_enabled=false`). The GitLab Helm chart does not expose a values key for this setting — it is an application-level setting stored in the GitLab database. The script authenticates using the root password (auto-retrieved from the `gitlab-gitlab-initial-root-password` K8s Secret) and calls the API to disable sign-up. Prints a warning if the API call fails, with instructions to disable sign-up manually via Admin > Settings > General > Sign-up restrictions.
 
 ### Phase 12: ArgoCD Cluster Registration
 
@@ -280,6 +285,7 @@ A successful run produces output similar to:
 | Phase 9: GitLab Operator | 5–10 minutes | Webservice pod takes 5–10 minutes |
 | Phase 10: Harbor Proxy | < 5 seconds | Verification only |
 | Phase 11: GitLab Runner | 1–2 minutes | |
+| Phase 11b: Disable Sign-Up | < 5 seconds | API call to GitLab |
 | Phase 12: ArgoCD Registration | 15–30 seconds | |
 | Phase 13: ArgoCD App Bootstrap | 2–5 minutes | Depends on Helm chart sync time |
 | Phase 14: Demo Verification | 30s–5 minutes | Includes frontend LB IP wait |

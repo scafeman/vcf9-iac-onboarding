@@ -43,10 +43,9 @@ global:
   minio:
     enabled: true
 
-  # Disable public sign-up — only admins can create accounts.
-  # This prevents unauthorized users from registering on public-facing instances.
-  appConfig:
-    signupEnabled: false
+  # NOTE: Sign-up is disabled via the GitLab API in the deploy script (Phase 11b).
+  # The Helm chart does not expose a values key for this setting — it is an
+  # application-level setting stored in the GitLab database, not in gitlab.yml.
 
   # Set storageClass globally for all PVCs (PostgreSQL, Redis, Gitaly, MinIO, etc.)
   storageClass: nfs

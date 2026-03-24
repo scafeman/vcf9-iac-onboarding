@@ -20,6 +20,7 @@ set -euo pipefail
 #   Phase 9:  GitLab Installation (Helm)
 #   Phase 10: GitLab Image Patching / Harbor Proxy Configuration
 #   Phase 11: GitLab Runner Installation (Helm)
+#   Phase 11b: Disable GitLab Public Sign-Up (API)
 #   Phase 12: ArgoCD Cluster Registration
 #   Phase 13: ArgoCD Application Bootstrap
 #   Phase 14: Microservices Demo Verification
@@ -788,6 +789,47 @@ if ! wait_for_condition "GitLab Runner pod to be running" \
 fi
 
 log_success "GitLab Runner installed and running in namespace '${GITLAB_RUNNER_NAMESPACE}'"
+
+###############################################################################
+# Phase 11b: Disable GitLab Public Sign-Up (Security Hardening)
+###############################################################################
+
+# The GitLab Helm chart does not expose a values key for disabling sign-up.
+# It is an application-level setting stored in the GitLab database, so we
+# use the GitLab API to disable it after the instance is running.
+
+log_step "11b" "Disabling GitLab public sign-up registration"
+
+# Ensure we have the root password (may already be set from runner token retrieval)
+if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
+  GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+fi
+
+if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
+  # Obtain an OAuth access token for the root user
+  SIGNUP_API_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+    -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+  if [[ -n "${SIGNUP_API_TOKEN}" ]]; then
+    # Disable public sign-up via the Application Settings API
+    SIGNUP_RESULT=$(curl -sSk -X PUT \
+      "https://${GITLAB_HOSTNAME}/api/v4/application/settings?signup_enabled=false" \
+      -H "Authorization: Bearer ${SIGNUP_API_TOKEN}" 2>/dev/null \
+      | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('signup_enabled','unknown'))" 2>/dev/null || true)
+
+    if [[ "${SIGNUP_RESULT}" == "False" || "${SIGNUP_RESULT}" == "false" ]]; then
+      log_success "GitLab public sign-up disabled via API"
+    else
+      log_warn "GitLab sign-up API returned: ${SIGNUP_RESULT}. Verify manually in Admin > Settings > General > Sign-up restrictions."
+    fi
+  else
+    log_warn "Could not obtain GitLab API token. Disable sign-up manually in Admin > Settings > General > Sign-up restrictions."
+  fi
+else
+  log_warn "GitLab root password not found. Disable sign-up manually in Admin > Settings > General > Sign-up restrictions."
+fi
 
 ###############################################################################
 # Phase 12: ArgoCD Cluster Registration
