@@ -1,0 +1,9 @@
+# Force LF line endings for shell scripts (bash cannot parse CRLF)
+*.sh text eol=lf
+
+# Force LF for YAML files used inside containers
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Force LF for config files used inside containers
+*.cnf text eol=lf
