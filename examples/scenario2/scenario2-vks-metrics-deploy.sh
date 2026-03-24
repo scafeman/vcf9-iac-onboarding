@@ -13,9 +13,11 @@ set -euo pipefail
 #   Phase 5:  Telegraf Installation (metrics collection)
 #   Phase 6:  cert-manager Installation (Prometheus prerequisite)
 #   Phase 7:  Contour Installation (Prometheus prerequisite)
+#   Phase 7b: Self-Signed Certificate Generation
+#   Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
 #   Phase 8:  Prometheus Installation (metrics storage & querying)
 #   Phase 9:  Grafana Operator Installation (dashboards)
-#   Phase 10: Grafana Instance, Datasource & Dashboards
+#   Phase 10: Grafana Instance, Datasource, Dashboards & Ingress
 #   Phase 11: Verification
 #
 # Prerequisites:
@@ -38,6 +40,9 @@ set -euo pipefail
 CLUSTER_NAME="${CLUSTER_NAME:-}"
 KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME}.yaml}"
 
+# --- Domain ---
+DOMAIN="${DOMAIN:-lab.local}"
+
 # --- Package Repository ---
 PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
 PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
@@ -57,10 +62,23 @@ GRAFANA_NAMESPACE="${GRAFANA_NAMESPACE:-grafana}"
 GRAFANA_INSTANCE_FILE="${GRAFANA_INSTANCE_FILE:-examples/scenario2/grafana-instance.yaml}"
 GRAFANA_DATASOURCE_FILE="${GRAFANA_DATASOURCE_FILE:-examples/scenario2/grafana-datasource-prometheus.yaml}"
 GRAFANA_DASHBOARDS_FILE="${GRAFANA_DASHBOARDS_FILE:-examples/scenario2/grafana-dashboards-k8s.yaml}"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(openssl rand -base64 18)}"
+
+# --- Certificate Directory ---
+CERT_DIR="${CERT_DIR:-./certs}"
 
 # --- Timeouts and Polling ---
 PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-600}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+# --- Contour Ingress (VKS package) ---
+CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
+
+###############################################################################
+# Derived Variables (computed from DOMAIN — do not edit)
+###############################################################################
+
+GRAFANA_HOSTNAME="grafana.${DOMAIN}"
 
 ###############################################################################
 # Helper Functions
@@ -125,6 +143,11 @@ check_prerequisites() {
     missing=1
   fi
 
+  if ! command -v openssl &>/dev/null; then
+    log_error "openssl is not installed or not in PATH (required for certificate generation)"
+    missing=1
+  fi
+
   if [[ "${missing}" -eq 1 ]]; then
     log_error "One or more required tools are missing. Install them and retry."
     exit 1
@@ -149,6 +172,40 @@ wait_for_condition() {
 
   echo "  Timeout waiting for ${description} after ${elapsed}s"
   return 1
+}
+
+# Wait for the API server to become reachable. CoreDNS restarts and other
+# cluster operations can cause transient "connection refused" errors on the
+# VKS control plane. This helper blocks until kubectl can reach the API
+# server, preventing subsequent vcf/kubectl commands from failing.
+wait_for_api_server() {
+  if ! wait_for_condition "API server to be reachable" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get ns"; then
+    log_error "API server did not become reachable within ${PACKAGE_TIMEOUT}s"
+    exit 2
+  fi
+}
+
+# Install a VKS package with automatic retry. The vcf CLI can fail with
+# transient "connection refused" errors after CoreDNS restarts or during
+# brief API server unavailability windows. This wrapper retries the install
+# command up to 3 times with a pause between attempts.
+install_package_with_retry() {
+  local max_retries=3
+  local attempt=1
+  while [[ "${attempt}" -le "${max_retries}" ]]; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${max_retries}" ]]; then
+      log_warn "Package install failed (attempt ${attempt}/${max_retries}), waiting for API server before retry..."
+      wait_for_api_server
+      attempt=$((attempt + 1))
+    else
+      return 1
+    fi
+  done
 }
 
 ###############################################################################
@@ -259,7 +316,7 @@ fi
 
 log_step 5 "Installing Telegraf"
 
-if ! vcf package install telegraf \
+if ! install_package_with_retry vcf package install telegraf \
   -p telegraf.kubernetes.vmware.com \
   -v "${TELEGRAF_VERSION}" \
   --values-file "${TELEGRAF_VALUES_FILE}" \
@@ -283,7 +340,7 @@ log_success "Telegraf installed and reconciled"
 
 log_step 6 "Installing cert-manager"
 
-if ! vcf package install cert-manager \
+if ! install_package_with_retry vcf package install cert-manager \
   -p cert-manager.kubernetes.vmware.com \
   -n "${PACKAGE_NAMESPACE}"; then
   log_error "Failed to install cert-manager package"
@@ -305,7 +362,7 @@ log_success "cert-manager installed and reconciled"
 
 log_step 7 "Installing Contour"
 
-if ! vcf package install contour \
+if ! install_package_with_retry vcf package install contour \
   -p contour.kubernetes.vmware.com \
   -n "${PACKAGE_NAMESPACE}"; then
   log_error "Failed to install Contour package"
@@ -321,13 +378,170 @@ fi
 
 log_success "Contour installed and reconciled"
 
+# The VKS Contour package creates the Envoy service as NodePort by default,
+# and kapp-controller will revert any direct patches. Create a separate
+# LoadBalancer service that targets the same Envoy pods for external access.
+if kubectl get svc envoy-lb -n "${CONTOUR_INGRESS_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Envoy LoadBalancer service 'envoy-lb' already exists"
+else
+  cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-lb
+  namespace: ${CONTOUR_INGRESS_NAMESPACE}
+spec:
+  type: LoadBalancer
+  selector:
+    app: envoy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+EOF
+  log_success "Envoy LoadBalancer service 'envoy-lb' created"
+fi
+
+###############################################################################
+# Phase 7b: Self-Signed Certificate Generation
+###############################################################################
+
+log_step "7b" "Generating self-signed certificates"
+
+if [[ -f "${CERT_DIR}/ca.crt" ]]; then
+  log_success "CA certificate already exists at '${CERT_DIR}/ca.crt', skipping certificate generation"
+else
+  mkdir -p "${CERT_DIR}"
+
+  # Generate self-signed CA certificate and key
+  if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+    -days 3650 -subj "/CN=Self-Signed CA"; then
+    log_error "Failed to generate self-signed CA certificate"
+    exit 7
+  fi
+  log_success "Self-signed CA certificate generated"
+
+  # Generate wildcard certificate CSR with SAN
+  cat > /tmp/wildcard-s2.cnf <<EOF
+[req]
+default_bits       = 2048
+prompt             = no
+distinguished_name = dn
+req_extensions     = v3_req
+
+[dn]
+CN = *.${DOMAIN}
+
+[v3_req]
+subjectAltName = DNS:*.${DOMAIN},DNS:${DOMAIN}
+EOF
+
+  if ! openssl req -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+    -config /tmp/wildcard-s2.cnf; then
+    log_error "Failed to generate wildcard certificate CSR"
+    exit 7
+  fi
+  log_success "Wildcard certificate CSR generated"
+
+  # Sign the wildcard certificate with the CA
+  if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+    -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+    -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+    -days 3650 -extensions v3_req -extfile /tmp/wildcard-s2.cnf; then
+    log_error "Failed to sign wildcard certificate"
+    exit 7
+  fi
+  log_success "Wildcard certificate signed by CA"
+
+  # Create fullchain certificate (wildcard + CA)
+  cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+  log_success "Fullchain certificate created"
+fi
+
+log_success "Certificates ready in '${CERT_DIR}'"
+
+###############################################################################
+# Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
+###############################################################################
+
+log_step "7c" "Retrieving Contour LoadBalancer IP and configuring CoreDNS"
+
+# The VKS Contour package creates an 'envoy' NodePort service in
+# tanzu-system-ingress. We created a separate 'envoy-lb' LoadBalancer
+# service targeting the same pods. Wait for it to get an external IP.
+if ! wait_for_condition "Envoy LoadBalancer to get external IP" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get svc -n '${CONTOUR_INGRESS_NAMESPACE}' envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
+  log_error "Envoy LoadBalancer did not receive an external IP within ${PACKAGE_TIMEOUT}s"
+  exit 7
+fi
+
+CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_INGRESS_NAMESPACE}" envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+log_success "Contour Envoy LoadBalancer IP: ${CONTOUR_LB_IP}"
+
+# Patch CoreDNS with a static host entry for grafana.<DOMAIN>
+CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+
+if echo "${CURRENT_COREFILE}" | grep -q "${GRAFANA_HOSTNAME}"; then
+  log_success "CoreDNS already contains entry for '${GRAFANA_HOSTNAME}', skipping patch"
+else
+  # First, remove any stale empty hosts blocks left by previous teardowns.
+  # Without this, repeated teardown/deploy cycles accumulate empty
+  # hosts { fallthrough } blocks, causing CoreDNS to crash with
+  # "this plugin can only be used once per Server Block".
+  CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
+import re, sys
+corefile = sys.stdin.read()
+cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+print(cleaned, end="")
+')
+
+  HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}\n            fallthrough\n        }"
+
+  # Inject the hosts block before the first "ready" directive
+  PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
+
+  kubectl patch configmap coredns -n kube-system --type merge -p "{
+    \"data\": {
+      \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+    }
+  }" || {
+    log_error "Failed to patch CoreDNS ConfigMap"
+    exit 7
+  }
+
+  # Restart CoreDNS pods to pick up the new configuration
+  kubectl rollout restart deployment/coredns -n kube-system
+
+  if ! wait_for_condition "CoreDNS pods to be running" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "test \"\$(kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers 2>/dev/null | grep -cv 'Running')\" = '0'"; then
+    log_error "CoreDNS pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
+    exit 7
+  fi
+
+  log_success "CoreDNS patched with static entry for '${GRAFANA_HOSTNAME}' → ${CONTOUR_LB_IP}"
+fi
+
+# After CoreDNS restart, the API server may be briefly unreachable.
+# Wait for connectivity to stabilize before proceeding.
+wait_for_api_server
+
 ###############################################################################
 # Phase 8: Prometheus Installation
 ###############################################################################
 
 log_step 8 "Installing Prometheus"
 
-if ! vcf package install prometheus \
+if ! install_package_with_retry vcf package install prometheus \
   -p prometheus.kubernetes.vmware.com \
   --values-file "${PROMETHEUS_VALUES_FILE}" \
   -n "${PACKAGE_NAMESPACE}"; then
@@ -388,7 +602,22 @@ log_success "Grafana Operator installed and running"
 
 log_step 10 "Configuring Grafana instance, datasource and dashboards"
 
-kubectl apply -f "${GRAFANA_INSTANCE_FILE}" || { log_error "Failed to apply Grafana instance manifest"; exit 10; }
+# Create Grafana TLS secret from wildcard certificate (idempotent)
+kubectl create secret tls grafana-tls \
+  --cert="${CERT_DIR}/fullchain.crt" \
+  --key="${CERT_DIR}/wildcard.key" \
+  --namespace "${GRAFANA_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+log_success "Grafana TLS secret created in namespace '${GRAFANA_NAMESPACE}'"
+
+# Prepare the Grafana instance manifest with runtime values
+TEMP_GRAFANA_INSTANCE=$(mktemp)
+sed -e "s|GRAFANA_HOSTNAME|${GRAFANA_HOSTNAME}|g" \
+    -e "s|GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD}|g" \
+    "${GRAFANA_INSTANCE_FILE}" > "${TEMP_GRAFANA_INSTANCE}"
+
+kubectl apply -f "${TEMP_GRAFANA_INSTANCE}" || { log_error "Failed to apply Grafana instance manifest"; exit 10; }
+rm -f "${TEMP_GRAFANA_INSTANCE}"
 
 if ! wait_for_condition "Grafana pod to be ready" \
   "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
@@ -399,6 +628,34 @@ fi
 
 kubectl apply -f "${GRAFANA_DATASOURCE_FILE}" || { log_error "Failed to apply Grafana datasource manifest"; exit 10; }
 kubectl apply -f "${GRAFANA_DASHBOARDS_FILE}" || { log_error "Failed to apply Grafana dashboards manifest"; exit 10; }
+
+# Create Grafana Ingress for external access via Contour
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: ${GRAFANA_NAMESPACE}
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - ${GRAFANA_HOSTNAME}
+      secretName: grafana-tls
+  rules:
+    - host: ${GRAFANA_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana-service
+                port:
+                  number: 80
+EOF
+
+log_success "Grafana Ingress created for https://${GRAFANA_HOSTNAME}"
 
 log_success "Grafana instance, Prometheus datasource and K8s dashboards configured"
 
@@ -453,6 +710,7 @@ echo "============================================="
 echo "  VCF 9 Scenario 2 — Deployment Complete"
 echo "============================================="
 echo "  Cluster:      ${CLUSTER_NAME}"
+echo "  Domain:       ${DOMAIN}"
 echo "  Namespace:    ${PACKAGE_NAMESPACE}"
 echo "  Telegraf:     ${TELEGRAF_VERSION}"
 echo "  cert-manager: (latest from repo)"
@@ -461,9 +719,17 @@ echo "  Prometheus:   (latest from repo)"
 echo "  Grafana:      Operator + dashboards (ns: ${GRAFANA_NAMESPACE})"
 echo "============================================="
 echo ""
-echo "To access Grafana, run on your workstation:"
-echo "  kubectl --kubeconfig=<KUBECONFIG_FILE> port-forward -n ${GRAFANA_NAMESPACE} svc/grafana-service 3000:3000"
-echo "Then open http://localhost:3000 in your browser."
+echo "  Contour LoadBalancer IP: ${CONTOUR_LB_IP}"
+echo ""
+echo "  Access instructions:"
+echo "    Grafana:     https://${GRAFANA_HOSTNAME}  (${CONTOUR_LB_IP})"
+echo "    Prometheus:  http://prometheus-server.${PACKAGE_NAMESPACE}.svc.cluster.local:80  (cluster-internal)"
+echo ""
+echo "  DNS / hosts file entries (add to your local machine):"
+echo "    ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}"
+echo ""
+echo "  Login credentials:"
+echo "    Grafana:   admin / ${GRAFANA_ADMIN_PASSWORD}"
 echo ""
 
 exit 0

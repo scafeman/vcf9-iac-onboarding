@@ -4,6 +4,8 @@
 
 `scenario2-vks-metrics-deploy.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
 
+Grafana is exposed externally via a Contour Ingress with TLS termination using a self-signed wildcard certificate (same pattern as Scenario 3). Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
+
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
 ---
@@ -50,7 +52,15 @@ Installs cert-manager (`cert-manager.kubernetes.vmware.com`) as a prerequisite f
 
 ### Phase 7: Contour Installation
 
-Installs Contour (`contour.kubernetes.vmware.com`) as a prerequisite for Prometheus HTTP ingress. Polls until reconciled. Contour depends on cert-manager, so it is installed after cert-manager.
+Installs Contour (`contour.kubernetes.vmware.com`) as a prerequisite for Prometheus HTTP ingress and Grafana external access. Polls until reconciled. Contour depends on cert-manager, so it is installed after cert-manager.
+
+### Phase 7b: Self-Signed Certificate Generation
+
+Generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DOMAIN>`). If certificates already exist in the `./certs` directory (e.g., from a previous Scenario 3 deployment), this phase is skipped. The wildcard certificate is used for TLS termination on the Grafana Ingress.
+
+### Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
+
+Waits for the Contour Envoy LoadBalancer service (in `tanzu-system-ingress`) to receive an external IP from NSX. Patches the CoreDNS ConfigMap with a static host entry mapping `grafana.<DOMAIN>` to the Contour LB IP, then restarts CoreDNS pods. Skips the patch if the entry already exists.
 
 ### Phase 8: Prometheus Installation
 
@@ -67,20 +77,22 @@ vcf package install prometheus \
 
 Creates the `grafana` namespace, labels it with the `baseline` PodSecurity standard, and installs the [Grafana Operator](https://grafana.github.io/grafana-operator/) via Helm. The operator manages Grafana instances, datasources, and dashboards as Kubernetes custom resources. Waits for the operator pod to reach Running state.
 
-### Phase 10: Grafana Instance, Datasource & Dashboards
+### Phase 10: Grafana Instance, Datasource, Dashboards & Ingress
 
-Applies three manifests to configure Grafana:
+Creates a TLS secret from the wildcard certificate, then applies three manifests to configure Grafana:
 
-1. **`grafana-instance.yaml`** — Creates a Grafana instance with anonymous viewer access and a ClusterIP service on port 3000.
+1. **`grafana-instance.yaml`** — Creates a Grafana instance with authentication enabled (anonymous access disabled). The admin password is substituted at runtime from the `GRAFANA_ADMIN_PASSWORD` variable.
 2. **`grafana-datasource-prometheus.yaml`** — Configures Prometheus (running in `tkg-packages`) as the default Grafana datasource.
 3. **`grafana-dashboards-k8s.yaml`** — Imports community Kubernetes dashboards:
    - K8s Global Overview (cluster-wide resource usage)
    - Node Exporter Full (detailed node CPU/memory/disk/network)
    - K8s Pods Overview (per-pod resource usage)
 
+Finally, creates a Kubernetes Ingress resource with `ingressClassName: contour` and TLS termination, routing `grafana.<DOMAIN>` to the Grafana ClusterIP service.
+
 ### Phase 11: Verification
 
-Lists all installed packages via `vcf package installed list`, checks that Telegraf, Prometheus, and Grafana pods are in a Running state, and prints warnings for any pods that are not Running. Prints a summary banner with all installed components and instructions for accessing Grafana.
+Lists all installed packages via `vcf package installed list`, checks that Telegraf, Prometheus, and Grafana pods are in a Running state, and prints warnings for any pods that are not Running. Prints a summary banner with all installed components, the Contour LB IP, Grafana URL, and login credentials.
 
 ---
 
@@ -89,7 +101,8 @@ Lists all installed packages via `vcf package installed list`, checks that Teleg
 - **Scenario 1 completed successfully** — a VKS cluster must be running and accessible. The deploy script does not create a cluster; it installs observability packages on an existing one.
 - **Valid admin kubeconfig file** for the target VKS cluster (produced by Scenario 1's Phase 5). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
 - **Docker and Docker Compose installed** — the script runs inside the `vcf9-dev` container.
-- **Helm v3** — required for the Grafana Operator installation (Phase 9). Helm is pre-installed in the `vcf9-dev` container via the Dockerfile. The deploy script validates that `helm` is available before starting.
+- **Helm v3** — required for the Grafana Operator installation (Phase 9). Helm is pre-installed in the `vcf9-dev` container via the Dockerfile.
+- **openssl** — required for self-signed certificate generation (Phase 7b). Pre-installed in the `vcf9-dev` container.
 
 ---
 
@@ -99,7 +112,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
-| `CLUSTER_NAME` | Yes | VKS cluster name (from Scenario 1) | `uniphore-dev-project-01-clus-01` |
+| `CLUSTER_NAME` | Yes | VKS cluster name (from Scenario 1) | `my-cluster-01` |
 | `TELEGRAF_VERSION` | Yes | Telegraf package version | `1.37.1+vmware.1-vks.1` |
 
 ### Optional Variables (with defaults)
@@ -107,6 +120,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | Variable | Default | Description |
 |---|---|---|
 | `KUBECONFIG_FILE` | `./kubeconfig-${CLUSTER_NAME}.yaml` | Path to admin kubeconfig |
+| `DOMAIN` | `lab.local` | Base domain for Grafana hostname |
 | `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for VKS standard packages |
 | `PACKAGE_REPO_NAME` | `tkg-packages` | Package repository name |
 | `PACKAGE_REPO_URL` | `projects.packages.broadcom.com/...` | OCI repository URL |
@@ -115,6 +129,9 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `STORAGE_CLASS` | `nfs` | StorageClass for Prometheus |
 | `NODE_CPU_THRESHOLD` | `4000` | Advisory CPU threshold (millicores) |
 | `GRAFANA_NAMESPACE` | `grafana` | Namespace for Grafana |
+| `GRAFANA_ADMIN_PASSWORD` | (auto-generated) | Grafana admin password (random 24-char base64) |
+| `CERT_DIR` | `./certs` | Directory for TLS certificates |
+| `CONTOUR_INGRESS_NAMESPACE` | `tanzu-system-ingress` | Namespace for VKS Contour Envoy service |
 | `GRAFANA_INSTANCE_FILE` | `examples/scenario2/grafana-instance.yaml` | Path to Grafana instance manifest |
 | `GRAFANA_DATASOURCE_FILE` | `examples/scenario2/grafana-datasource-prometheus.yaml` | Path to Grafana datasource manifest |
 | `GRAFANA_DASHBOARDS_FILE` | `examples/scenario2/grafana-dashboards-k8s.yaml` | Path to Grafana dashboards manifest |
@@ -151,29 +168,42 @@ docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml
 
 ## Accessing Grafana
 
-After the deploy completes, Grafana is running inside the cluster as a ClusterIP service. To access it from your workstation, use `kubectl port-forward` with the kubeconfig you downloaded for the cluster:
+After the deploy completes, Grafana is accessible via HTTPS through the Contour ingress controller.
 
-```bash
-kubectl --kubeconfig=./kubeconfig-<CLUSTER_NAME>.yaml \
-  port-forward -n grafana svc/grafana-service 3000:3000
+### 1. Add DNS entry to your local machine
+
+The deployment summary prints the Contour LoadBalancer IP and the required hosts file entry. Add it to your local machine:
+
+**Windows (PowerShell as Administrator):**
+```powershell
+Add-Content C:\Windows\System32\drivers\etc\hosts "<CONTOUR_LB_IP> grafana.lab.local"
 ```
 
-Then open **http://localhost:3000** in your browser.
-
-If port 3000 is already in use on your machine, pick a different local port:
-
+**Linux/macOS:**
 ```bash
-kubectl --kubeconfig=./kubeconfig-<CLUSTER_NAME>.yaml \
-  port-forward -n grafana svc/grafana-service 8080:3000
+echo "<CONTOUR_LB_IP> grafana.lab.local" | sudo tee -a /etc/hosts
 ```
 
-Then open **http://localhost:8080**.
+### 2. Import the CA certificate (optional, removes browser warnings)
 
-Anonymous viewer access is enabled by default, so no login is required to view dashboards. To make changes (create dashboards, add datasources), log in with the default admin credentials: `admin` / `admin`.
+If you haven't already imported the self-signed CA certificate from Scenario 3:
+
+**Windows (PowerShell as Administrator):**
+```powershell
+Import-Certificate -FilePath ".\certs\ca.crt" -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+### 3. Open Grafana
+
+Navigate to **https://grafana.lab.local** in your browser.
+
+Login with the credentials shown in the deployment summary:
+- Username: `admin`
+- Password: (shown in deployment output)
 
 ### Accessing Prometheus directly
 
-You can also port-forward to the Prometheus query UI:
+Prometheus is not exposed externally. Use `kubectl port-forward` to access the query UI:
 
 ```bash
 kubectl --kubeconfig=./kubeconfig-<CLUSTER_NAME>.yaml \
@@ -190,13 +220,15 @@ The observability stack has a specific dependency chain that the script respects
 
 ```
 Package Repository → Telegraf (independent)
-Package Repository → cert-manager → Contour → Prometheus → Grafana (datasource)
+Package Repository → cert-manager → Contour → Certificates → CoreDNS → Prometheus → Grafana (Ingress + datasource)
 ```
 
 - The **Package Repository** must be registered first — all VKS standard packages are sourced from it.
 - **Telegraf** is independent of the Prometheus chain and is installed immediately after the repository.
 - **cert-manager** must be installed before Contour and Prometheus (provides TLS certificate management).
-- **Contour** must be installed before Prometheus (provides HTTP ingress).
+- **Contour** must be installed before Prometheus (provides HTTP ingress) and before Grafana (provides external access).
+- **Certificates** must be generated before the Grafana Ingress can serve HTTPS traffic.
+- **CoreDNS** must be patched with the Grafana hostname before Grafana is accessible by name.
 - **Prometheus** must be installed before Grafana (Grafana uses it as a datasource).
 - **Grafana** is installed last, after Prometheus is reconciled and serving metrics.
 

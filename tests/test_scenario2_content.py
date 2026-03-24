@@ -736,7 +736,7 @@ class TestGrafanaDeployContent:
         )
 
     def test_kubectl_apply_grafana_instance(self, scenario2_deploy_text):
-        assert re.search(r"kubectl\s+apply\s+-f.*GRAFANA_INSTANCE_FILE", scenario2_deploy_text), (
+        assert re.search(r"kubectl\s+apply\s+-f.*GRAFANA_INSTANCE", scenario2_deploy_text), (
             "Deploy script missing kubectl apply for Grafana instance"
         )
 

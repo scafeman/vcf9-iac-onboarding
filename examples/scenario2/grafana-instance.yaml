@@ -1,6 +1,7 @@
 # grafana-instance.yaml
 # Grafana instance managed by the Grafana Operator.
-# Exposes Grafana on a ClusterIP service (port-forward to access).
+# Exposed via Contour Ingress with TLS termination.
+# Authentication is enabled — anonymous access is disabled.
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana
 metadata:
@@ -11,10 +12,12 @@ metadata:
 spec:
   config:
     server:
-      root_url: "http://localhost:3000"
+      root_url: "https://GRAFANA_HOSTNAME"
     auth.anonymous:
-      enabled: "true"
-      org_role: "Viewer"
+      enabled: "false"
+    security:
+      admin_user: "admin"
+      admin_password: "GRAFANA_ADMIN_PASSWORD"
   service:
     spec:
       type: ClusterIP

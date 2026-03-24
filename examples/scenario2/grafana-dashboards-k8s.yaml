@@ -1,10 +1,10 @@
 # grafana-dashboards-k8s.yaml
 # Community Kubernetes dashboards imported via the Grafana Operator.
-# These pull JSON definitions from public sources and wire them to our
+# These pull JSON definitions from grafana.com and wire them to our
 # Prometheus datasource automatically.
 
 ---
-# Global cluster overview (dotdc: k8s-views-global)
+# Global cluster overview — dotdc: k8s-views-global (Grafana.com #15757)
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -15,7 +15,8 @@ spec:
     matchLabels:
       dashboards: "grafana"
   folder: "Kubernetes"
-  url: "https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-global.json"
+  grafanaCom:
+    id: 15757
   datasources:
     - inputName: "DS_PROMETHEUS"
       datasourceName: "Prometheus"
@@ -39,7 +40,7 @@ spec:
       datasourceName: "Prometheus"
 
 ---
-# Kubernetes Pods overview (dotdc: k8s-views-pods)
+# Kubernetes Pods overview — dotdc: k8s-views-pods (Grafana.com #15760)
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
@@ -50,7 +51,8 @@ spec:
     matchLabels:
       dashboards: "grafana"
   folder: "Kubernetes"
-  url: "https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/master/dashboards/k8s-views-pods.json"
+  grafanaCom:
+    id: 15760
   datasources:
     - inputName: "DS_PROMETHEUS"
       datasourceName: "Prometheus"
