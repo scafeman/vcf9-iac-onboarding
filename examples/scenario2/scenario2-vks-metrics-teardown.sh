@@ -160,7 +160,7 @@ log_success "Grafana removed (namespace '${GRAFANA_NAMESPACE}' deleted)"
 ###############################################################################
 # Phase 3: Delete Packages
 #
-# Delete all TKG packages in reverse dependency order. Each package's
+# Delete all VKS standard packages in reverse dependency order. Each package's
 # PackageInstall and App resources have their finalizers stripped before
 # deletion so kapp-controller does NOT trigger a reconcile-delete. This
 # prevents the cascading namespace deletion that breaks other packages.

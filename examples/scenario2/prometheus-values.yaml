@@ -8,7 +8,7 @@
 # The full list of parameters and an example data values file are
 # available at the URL above.
 
-# Deploy into the same namespace as the other TKG packages.
+# Deploy into the same namespace as the other VKS standard packages.
 namespace: tkg-packages
 
 # Prometheus persistent volume — use the NFS storage class available

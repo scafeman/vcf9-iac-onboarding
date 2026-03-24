@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario2-vks-metrics-deploy.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the TKG standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+`scenario2-vks-metrics-deploy.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
@@ -20,11 +20,11 @@ Queries the cluster's worker nodes for total allocatable CPU (in millicores). If
 
 ### Phase 3: Package Namespace Creation
 
-Creates the `tkg-packages` namespace (or the value of `PACKAGE_NAMESPACE`) where all TKG packages will be installed. Labels the namespace with the `privileged` PodSecurity standard so that Telegraf and other system-level packages can schedule pods. Skips creation if the namespace already exists.
+Creates the `tkg-packages` namespace (or the value of `PACKAGE_NAMESPACE`) where all VKS standard packages will be installed. Labels the namespace with the `privileged` PodSecurity standard so that Telegraf and other system-level packages can schedule pods. Skips creation if the namespace already exists.
 
-### Phase 4: TKG Package Repository Registration
+### Phase 4: VKS Package Repository Registration
 
-Registers the TKG standard packages OCI repository using `vcf package repository add`. Polls the repository status until it reaches a reconciled state or the timeout is reached. Skips registration if the repository already exists.
+Registers the VKS standard packages OCI repository using `vcf package repository add`. Polls the repository status until it reaches a reconciled state or the timeout is reached. Skips registration if the repository already exists.
 
 ```
 vcf package repository add <PACKAGE_REPO_NAME> \
@@ -107,7 +107,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | Variable | Default | Description |
 |---|---|---|
 | `KUBECONFIG_FILE` | `./kubeconfig-${CLUSTER_NAME}.yaml` | Path to admin kubeconfig |
-| `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for TKG packages |
+| `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for VKS standard packages |
 | `PACKAGE_REPO_NAME` | `tkg-packages` | Package repository name |
 | `PACKAGE_REPO_URL` | `projects.packages.broadcom.com/...` | OCI repository URL |
 | `TELEGRAF_VALUES_FILE` | `examples/scenario2/telegraf-values.yaml` | Path to Telegraf values file |
@@ -193,7 +193,7 @@ Package Repository → Telegraf (independent)
 Package Repository → cert-manager → Contour → Prometheus → Grafana (datasource)
 ```
 
-- The **Package Repository** must be registered first — all TKG packages are sourced from it.
+- The **Package Repository** must be registered first — all VKS standard packages are sourced from it.
 - **Telegraf** is independent of the Prometheus chain and is installed immediately after the repository.
 - **cert-manager** must be installed before Contour and Prometheus (provides TLS certificate management).
 - **Contour** must be installed before Prometheus (provides HTTP ingress).

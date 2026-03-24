@@ -9,7 +9,7 @@ set -euo pipefail
 #   Phase 1:  Kubeconfig Setup & Connectivity Check
 #   Phase 2:  Node Sizing Advisory
 #   Phase 3:  Package Namespace Creation
-#   Phase 4:  TKG Package Repository Registration
+#   Phase 4:  VKS Package Repository Registration
 #   Phase 5:  Telegraf Installation (metrics collection)
 #   Phase 6:  cert-manager Installation (Prometheus prerequisite)
 #   Phase 7:  Contour Installation (Prometheus prerequisite)
@@ -228,7 +228,7 @@ kubectl label ns "${PACKAGE_NAMESPACE}" \
 log_success "Namespace '${PACKAGE_NAMESPACE}' labelled with privileged PodSecurity standard"
 
 ###############################################################################
-# Phase 4: TKG Package Repository Registration
+# Phase 4: VKS Package Repository Registration
 ###############################################################################
 
 log_step 4 "Registering package repository"

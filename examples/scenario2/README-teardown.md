@@ -20,7 +20,7 @@ Removes all Grafana custom resources (dashboards, datasources, instances), unins
 
 ### Phase 3: Delete Packages (Prometheus, Contour, cert-manager, Telegraf)
 
-All four TKG packages are deleted in reverse dependency order using a shared `delete_package` helper that:
+All four VKS standard packages are deleted in reverse dependency order using a shared `delete_package` helper that:
 
 1. Lists all PackageInstall resources in the namespace and greps for the package name (more reliable than exact-name lookup)
 2. If found, strips finalizers from the PackageInstall and its companion App resource first — this prevents kapp-controller from triggering a reconcile-delete that would cascade into deleting the shared namespace and its service accounts
@@ -66,7 +66,7 @@ The teardown script uses a subset of the deploy script's variables:
 |---|---|---|---|
 | `CLUSTER_NAME` | Yes | (none) | VKS cluster name |
 | `KUBECONFIG_FILE` | No | `./kubeconfig-${CLUSTER_NAME}.yaml` | Path to admin kubeconfig |
-| `PACKAGE_NAMESPACE` | No | `tkg-packages` | Namespace for TKG packages |
+| `PACKAGE_NAMESPACE` | No | `tkg-packages` | Namespace for VKS standard packages |
 | `PACKAGE_REPO_NAME` | No | `tkg-packages` | Package repository name |
 | `GRAFANA_NAMESPACE` | No | `grafana` | Namespace for Grafana |
 

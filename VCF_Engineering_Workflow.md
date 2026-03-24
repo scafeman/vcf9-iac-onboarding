@@ -1,6 +1,6 @@
 # VCF 9 Engineering Workflow: Infrastructure & VKS Deployment
 
-This guide provides the standardized steps to initialize the VCF context, provision infrastructure, and deploy Tanzu Kubernetes Grid (TKG) clusters.
+This guide provides the standardized steps to initialize the VCF context, provision infrastructure, and deploy VMware Kubernetes Service (VKS) clusters.
 
 ---
 
@@ -43,7 +43,7 @@ kubectl create -f sample-create-project-ns.yaml --validate=false
 ---
 
 ## Phase 3: The "Context Bridge" (CRITICAL)
-VCF 9 scopes Kubernetes Cluster APIs (TKG) strictly to the namespace level. You cannot see the `Cluster` kind from the global `my-dev` context. You must "pivot" into the new namespace to enable these APIs.
+VCF 9 scopes Kubernetes Cluster APIs (VKS) strictly to the namespace level. You cannot see the `Cluster` kind from the global `my-dev` context. You must "pivot" into the new namespace to enable these APIs.
 
 ### Step 4: Refresh and Identify the Dynamic Context
 The VCF CLI must discover the newly created infrastructure. **Pay close attention to the name, as VCF appends a unique 5-character suffix to your namespace prefix (e.g., `-frywy`).**
