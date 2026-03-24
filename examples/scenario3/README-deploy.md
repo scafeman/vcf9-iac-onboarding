@@ -113,7 +113,7 @@ Checks that pods for all 11 microservices are in a Running state: adservice, car
 
 ### Phase 15: Summary Banner
 
-Prints a summary of all deployed components, their namespaces, versions, and access instructions for GitLab, Harbor, ArgoCD, and the Online Boutique frontend. Displays the Contour LoadBalancer IP and the frontend-external LoadBalancer IP (if different). Lists login credentials for Harbor, ArgoCD, and GitLab (retrieved from K8s Secrets). Lists DNS/hosts file entries to add to your local machine.
+Prints a summary of all deployed components, their namespaces, versions, and access instructions for GitLab, Harbor, ArgoCD, and the Online Boutique frontend. Displays the Contour LoadBalancer IP and the frontend-external LoadBalancer IP (if different). Lists login credentials for GitLab, Harbor, and ArgoCD (retrieved from K8s Secrets). Lists DNS/hosts file entries to add to your local machine.
 
 ---
 
