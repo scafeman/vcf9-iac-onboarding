@@ -1,0 +1,58 @@
+# gitlab-runner-values.yaml
+# Helm values for the GitLab Runner deployed on VKS clusters.
+#
+# This file configures the GitLab Runner with:
+#   - GitLab URL and registration token for connecting to the GitLab instance
+#   - Kubernetes executor running in privileged mode (required for Docker-in-Docker)
+#   - CA certificate trust for both GitLab and Harbor
+#   - TOML config fragment for advanced runner settings
+#   - Resource limits for the runner manager pod
+#
+# Placeholder variables (GITLAB_HOSTNAME, HARBOR_HOSTNAME, GITLAB_RUNNER_TOKEN)
+# should be substituted by the deploy script via envsubst or sed before applying.
+
+# ---------------------------------------------------------------------------
+# GitLab connection settings
+# ---------------------------------------------------------------------------
+
+# URL of the GitLab instance the runner registers with
+gitlabUrl: "https://GITLAB_HOSTNAME"
+
+# Runner registration token — replace with a valid token from GitLab
+runnerToken: "GITLAB_RUNNER_TOKEN"
+
+# ---------------------------------------------------------------------------
+# CA certificate trust
+# The runner needs to trust both the GitLab TLS certificate and the Harbor CA
+# so it can pull images from Harbor and communicate with GitLab over HTTPS.
+# This references a Kubernetes Secret containing the CA bundle.
+# ---------------------------------------------------------------------------
+certsSecretName: harbor-ca-cert
+
+# ---------------------------------------------------------------------------
+# Kubernetes executor configuration
+# ---------------------------------------------------------------------------
+runners:
+  # TOML config fragment merged into the runner configuration.
+  # The Kubernetes executor runs CI jobs as pods in the cluster.
+  # Privileged mode is required for Docker-in-Docker image builds.
+  config: |
+    [[runners]]
+      executor = "kubernetes"
+      [runners.kubernetes]
+        namespace = "gitlab-runners"
+        image = "ubuntu:22.04"
+        helper_image = "HARBOR_HOSTNAME/library/gitlab-runner-helper:x86_64-latest"
+        poll_timeout = 600
+        privileged = true
+
+# ---------------------------------------------------------------------------
+# Resource limits for the runner manager pod
+# ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"

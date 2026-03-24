@@ -13,7 +13,7 @@ set -euo pipefail
 #   Phase 6: Functional Validation Workload Deployment
 #
 # Edit the variable block below with your environment-specific values,
-# then run: bash examples/scenario1-full-stack-deploy.sh
+# then run: bash examples/scenario1/scenario1-full-stack-deploy.sh
 ###############################################################################
 
 ###############################################################################
@@ -58,8 +58,9 @@ SERVICES_CIDR="${SERVICES_CIDR:-10.96.0.0/12}"
 PODS_CIDR="${PODS_CIDR:-192.168.156.0/20}"
 VM_CLASS="${VM_CLASS:-best-effort-large}"
 STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
-MIN_NODES="${MIN_NODES:-2}"
+MIN_NODES="${MIN_NODES:-3}"
 MAX_NODES="${MAX_NODES:-10}"
+NODE_DISK_SIZE="${NODE_DISK_SIZE:-100Gi}"
 
 # --- Timeouts and Polling ---
 CLUSTER_TIMEOUT="${CLUSTER_TIMEOUT:-1800}"
@@ -325,6 +326,12 @@ spec:
       value: ${VM_CLASS}
     - name: storageClass
       value: ${STORAGE_CLASS}
+    - name: volumes
+      value:
+      - name: containerd-data
+        capacity: ${NODE_DISK_SIZE}
+        mountPath: /var/lib/containerd
+        storageClass: ${STORAGE_CLASS}
 EOF
   then
     log_error "Failed to apply VKS cluster manifest for '${CLUSTER_NAME}'"

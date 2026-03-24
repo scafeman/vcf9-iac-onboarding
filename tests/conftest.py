@@ -34,7 +34,7 @@ def yaml_blocks(guide_text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 SCRIPT_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario1-full-stack-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "scenario1", "scenario1-full-stack-deploy.sh"
 )
 
 # Matches heredoc blocks: cat <<EOF ... EOF  or  cat <<'EOF' ... EOF
@@ -120,15 +120,15 @@ def script_phases(script_text: str) -> dict[int, str]:
 # ---------------------------------------------------------------------------
 
 SCENARIO2_DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-deploy.sh"
 )
 
 SCENARIO2_TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2-vks-metrics-teardown.sh"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-teardown.sh"
 )
 
 TELEGRAF_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "telegraf-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "scenario2", "telegraf-values.yaml"
 )
 
 
@@ -163,3 +163,138 @@ def telegraf_values_text() -> str:
 def telegraf_values_parsed(telegraf_values_text: str):
     """Return the parsed YAML object from the Telegraf values file."""
     return yaml.safe_load(telegraf_values_text)
+
+
+# ---------------------------------------------------------------------------
+# Scenario 3 Fixtures
+# ---------------------------------------------------------------------------
+
+SCENARIO3_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-deploy.sh"
+)
+
+SCENARIO3_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-teardown.sh"
+)
+
+GITLAB_OPERATOR_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-operator-values.yaml"
+)
+
+GITLAB_RUNNER_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-runner-values.yaml"
+)
+
+ARGOCD_APP_MANIFEST_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-microservices-demo.yaml"
+)
+
+CONTOUR_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "contour-values.yaml"
+)
+
+HARBOR_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "harbor-values.yaml"
+)
+
+ARGOCD_VALUES_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-values.yaml"
+)
+
+
+@pytest.fixture(scope="session")
+def scenario3_deploy_text() -> str:
+    """Return the full text of the Scenario 3 deploy script."""
+    with open(SCENARIO3_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def scenario3_teardown_text() -> str:
+    """Return the full text of the Scenario 3 teardown script."""
+    with open(SCENARIO3_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def scenario3_deploy_phases(scenario3_deploy_text: str) -> dict[int, str]:
+    """Return phase sections from the Scenario 3 deploy script keyed by phase number."""
+    return _extract_phases(scenario3_deploy_text)
+
+
+@pytest.fixture(scope="session")
+def gitlab_operator_values_text() -> str:
+    """Return the raw text of the GitLab Operator values YAML file."""
+    with open(GITLAB_OPERATOR_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def gitlab_operator_values_parsed(gitlab_operator_values_text: str):
+    """Return the parsed YAML object from the GitLab Operator values file."""
+    return yaml.safe_load(gitlab_operator_values_text)
+
+
+@pytest.fixture(scope="session")
+def gitlab_runner_values_text() -> str:
+    """Return the raw text of the GitLab Runner values YAML file."""
+    with open(GITLAB_RUNNER_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def gitlab_runner_values_parsed(gitlab_runner_values_text: str):
+    """Return the parsed YAML object from the GitLab Runner values file."""
+    return yaml.safe_load(gitlab_runner_values_text)
+
+
+@pytest.fixture(scope="session")
+def argocd_app_manifest_text() -> str:
+    """Return the raw text of the ArgoCD Application manifest."""
+    with open(ARGOCD_APP_MANIFEST_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def argocd_app_manifest_parsed(argocd_app_manifest_text: str):
+    """Return the parsed YAML object from the ArgoCD Application manifest."""
+    return yaml.safe_load(argocd_app_manifest_text)
+
+
+@pytest.fixture(scope="session")
+def contour_values_text() -> str:
+    """Return the raw text of the Contour values YAML file."""
+    with open(CONTOUR_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def contour_values_parsed(contour_values_text: str):
+    """Return the parsed YAML object from the Contour values file."""
+    return yaml.safe_load(contour_values_text)
+
+
+@pytest.fixture(scope="session")
+def harbor_values_text() -> str:
+    """Return the raw text of the Harbor values YAML file."""
+    with open(HARBOR_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def harbor_values_parsed(harbor_values_text: str):
+    """Return the parsed YAML object from the Harbor values file."""
+    return yaml.safe_load(harbor_values_text)
+
+
+@pytest.fixture(scope="session")
+def argocd_values_text() -> str:
+    """Return the raw text of the ArgoCD values YAML file."""
+    with open(ARGOCD_VALUES_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def argocd_values_parsed(argocd_values_text: str):
+    """Return the parsed YAML object from the ArgoCD values file."""
+    return yaml.safe_load(argocd_values_text)

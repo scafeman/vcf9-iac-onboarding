@@ -12,7 +12,7 @@ set -euo pipefail
 #   Phase 4: VCF CLI Context & Local Artifact Cleanup
 #
 # Uses the same .env / environment variables as the deploy script.
-# Run: bash examples/scenario1-full-stack-teardown.sh
+# Run: bash examples/scenario1/scenario1-full-stack-teardown.sh
 ###############################################################################
 
 ###############################################################################

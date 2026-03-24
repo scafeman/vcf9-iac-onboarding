@@ -52,7 +52,7 @@ CLUSTER_NAME=<cluster-name>
 CONTENT_LIBRARY_ID=<content-library-id>
 ```
 
-See the [deploy script README](examples/README-scenario1-full-stack-deploy.md) for the full variable reference including optional variables with defaults.
+See the [deploy script README](examples/scenario1/README-deploy.md) for the full variable reference including optional variables with defaults.
 
 ### 2. Build and start the dev container
 
@@ -65,7 +65,7 @@ This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2) and kubectl (v1.33.0
 ### 3. Deploy the full stack
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1-full-stack-deploy.sh
+docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-deploy.sh
 ```
 
 Typical deployment time: 5–18 minutes. The script provisions a VCF project, supervisor namespace, VKS cluster with autoscaling workers, and validates the stack with a test workload.
@@ -73,7 +73,7 @@ Typical deployment time: 5–18 minutes. The script provisions a VCF project, su
 ### 4. Tear it all down
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1-full-stack-teardown.sh
+docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
 ```
 
 Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempotent).
@@ -90,10 +90,34 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 ├── .env                               # Environment variables (not committed)
 ├── .gitignore                         # Git ignore rules
 ├── examples/
-│   ├── scenario1-full-stack-deploy.sh          # Automated full-stack deploy script
-│   ├── scenario1-full-stack-teardown.sh        # Automated full-stack teardown script
-│   ├── README-scenario1-full-stack-deploy.md   # Deploy script documentation
-│   └── README-scenario1-full-stack-teardown.md # Teardown script documentation
+│   ├── scenario1/                               # Scenario 1: Full Stack Deploy
+│   │   ├── scenario1-full-stack-deploy.sh       #   Deploy script
+│   │   ├── scenario1-full-stack-teardown.sh     #   Teardown script
+│   │   ├── README-deploy.md                     #   Deploy documentation
+│   │   └── README-teardown.md                   #   Teardown documentation
+│   ├── scenario2/                               # Scenario 2: VKS Metrics Observability
+│   │   ├── scenario2-vks-metrics-deploy.sh      #   Deploy script
+│   │   ├── scenario2-vks-metrics-teardown.sh    #   Teardown script
+│   │   ├── README-deploy.md                     #   Deploy documentation
+│   │   ├── README-teardown.md                   #   Teardown documentation
+│   │   ├── telegraf-values.yaml                 #   Telegraf Helm values
+│   │   ├── prometheus-values.yaml               #   Prometheus Helm values
+│   │   ├── grafana-instance.yaml                #   Grafana instance manifest
+│   │   ├── grafana-datasource-prometheus.yaml   #   Grafana datasource manifest
+│   │   └── grafana-dashboards-k8s.yaml          #   Grafana dashboards manifest
+│   ├── scenario3/                               # Scenario 3: ArgoCD Consumption Model
+│   │   ├── scenario3-argocd-deploy.sh           #   Deploy script
+│   │   ├── scenario3-argocd-teardown.sh         #   Teardown script
+│   │   ├── README-deploy.md                     #   Deploy documentation
+│   │   ├── README-teardown.md                   #   Teardown documentation
+│   │   ├── contour-values.yaml                  #   Contour Helm values
+│   │   ├── harbor-values.yaml                   #   Harbor Helm values
+│   │   ├── argocd-values.yaml                   #   ArgoCD Helm values
+│   │   ├── gitlab-operator-values.yaml          #   GitLab Operator Helm values
+│   │   ├── gitlab-runner-values.yaml            #   GitLab Runner Helm values
+│   │   ├── argocd-microservices-demo.yaml       #   ArgoCD Application manifest
+│   │   └── wildcard.cnf                         #   OpenSSL wildcard cert config
+│   └── AWS-EKS-to-VCF-VKS-Migration-Checklist.md  # Migration success criteria checklist
 ├── sample-create-project-ns.yaml    # Project + RBAC + Supervisor Namespace manifest
 ├── sample-create-cluster.yaml       # VKS Cluster API manifest
 ├── sample-vks-functional-test.yaml  # Functional validation workload manifest
@@ -102,8 +126,12 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
     ├── requirements.txt               # Python test dependencies
     ├── test_content.py                # Content-presence tests for the onboarding guide
     ├── test_properties.py             # Property-based tests for guide YAML manifests
-    ├── test_scenario1_content.py      # Content-presence tests for the deploy script
-    └── test_scenario1_properties.py   # Property-based tests for the deploy script
+    ├── test_scenario1_content.py      # Content-presence tests for Scenario 1 scripts
+    ├── test_scenario1_properties.py   # Property-based tests for Scenario 1 scripts
+    ├── test_scenario2_content.py      # Content-presence tests for Scenario 2 scripts
+    ├── test_scenario2_properties.py   # Property-based tests for Scenario 2 scripts
+    ├── test_scenario3_content.py      # Content-presence tests for Scenario 3 scripts
+    └── test_scenario3_properties.py   # Property-based tests for Scenario 3 scripts
 ```
 
 ## Documentation
@@ -112,8 +140,14 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 |---|---|
 | [VCF 9 IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) | Full walkthrough of the VCF 9 IaC workflow with annotated manifests, CLI commands, troubleshooting, and an EKS-to-VKS migration mapping |
 | [Engineering Workflow](VCF_Engineering_Workflow.md) | Condensed step-by-step engineering workflow |
-| [Deploy Script README](examples/README-scenario1-full-stack-deploy.md) | Detailed breakdown of each deploy phase, expected output, and timing |
-| [Teardown Script README](examples/README-scenario1-full-stack-teardown.md) | Detailed breakdown of each teardown phase with idempotency notes |
+| [Examples Overview](examples/README.md) | Summary of all scenarios, dependency chain, and deploy/teardown commands |
+| [Scenario 1 Deploy README](examples/scenario1/README-deploy.md) | Detailed breakdown of each Scenario 1 deploy phase, expected output, and timing |
+| [Scenario 1 Teardown README](examples/scenario1/README-teardown.md) | Detailed breakdown of each Scenario 1 teardown phase with idempotency notes |
+| [Scenario 2 Deploy README](examples/scenario2/README-deploy.md) | VKS Metrics Observability deploy documentation |
+| [Scenario 2 Teardown README](examples/scenario2/README-teardown.md) | VKS Metrics Observability teardown documentation |
+| [Scenario 3 Deploy README](examples/scenario3/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
+| [Scenario 3 Teardown README](examples/scenario3/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
+| [EKS to VKS Migration Checklist](examples/AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
 
 ## Testing
 
