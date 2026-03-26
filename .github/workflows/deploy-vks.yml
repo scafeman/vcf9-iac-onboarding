@@ -74,6 +74,10 @@ jobs:
       credentials:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+      options: --entrypoint ""
+    defaults:
+      run:
+        shell: bash
 
     env:
       # --- Unified Parameter Resolution (workflow_dispatch || repository_dispatch) ---

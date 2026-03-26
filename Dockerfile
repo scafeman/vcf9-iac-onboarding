@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gzip \
     vim \
     less \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Install kubectl
