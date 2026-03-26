@@ -90,6 +90,16 @@ jobs:
       - name: Validate Inputs
         run: |
           set -euo pipefail
+          # Trim leading/trailing whitespace from input parameters
+          PROJECT_NAME="$(echo -n "$PROJECT_NAME" | xargs)"
+          CLUSTER_NAME="$(echo -n "$CLUSTER_NAME" | xargs)"
+          NAMESPACE_PREFIX="$(echo -n "$NAMESPACE_PREFIX" | xargs)"
+          ENVIRONMENT="$(echo -n "$ENVIRONMENT" | xargs)"
+          # Export trimmed values for subsequent steps
+          echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+          echo "NAMESPACE_PREFIX=$NAMESPACE_PREFIX" >> "$GITHUB_ENV"
+          echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
           MISSING=""
           for var in PROJECT_NAME CLUSTER_NAME NAMESPACE_PREFIX VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME USER_IDENTITY CONTENT_LIBRARY_ID ZONE_NAME; do
             if [ -z "${!var:-}" ]; then
@@ -102,6 +112,9 @@ jobs:
             exit 1
           fi
           echo "All required inputs validated successfully"
+          echo "  PROJECT_NAME=$PROJECT_NAME"
+          echo "  CLUSTER_NAME=$CLUSTER_NAME"
+          echo "  NAMESPACE_PREFIX=$NAMESPACE_PREFIX"
 
       # Phase 2: Create VCF CLI Context
       - name: Create VCF CLI Context
