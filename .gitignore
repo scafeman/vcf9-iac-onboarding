@@ -30,3 +30,4 @@ Thumbs.db
 # GitHub Actions runner work directory artifacts
 _actions/
 _PipelineMapping/
+vcf9-iac-onboarding/

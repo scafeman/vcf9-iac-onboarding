@@ -51,21 +51,29 @@ on:
 
 jobs:
   build:
-    name: Build VCF Tooling Image
+    name: Build and Push VCF Tooling Image
     runs-on: [self-hosted, vcf]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Build vcf9-dev Image
-        run: docker build -t vcf9-dev:latest .
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build and Push vcf9-dev Image
+        run: |
+          docker build -t scafeman/vcf9-dev:latest .
+          docker push scafeman/vcf9-dev:latest
 
   deploy:
     name: Deploy VKS Cluster
     needs: build
     runs-on: [self-hosted, vcf]
     container:
-      image: vcf9-dev:latest
+      image: scafeman/vcf9-dev:latest
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     env:
       # --- Unified Parameter Resolution (workflow_dispatch || repository_dispatch) ---
