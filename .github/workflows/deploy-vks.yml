@@ -53,6 +53,7 @@ jobs:
   deploy:
     name: Deploy VKS Cluster
     runs-on: [self-hosted, vcf]
+    environment: vcf-production
     defaults:
       run:
         shell: bash
