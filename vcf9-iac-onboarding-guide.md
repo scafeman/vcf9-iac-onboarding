@@ -896,24 +896,29 @@ Before deploying workloads to the VKS cluster, you need a kubeconfig that target
 
 **Option A: VCF CLI (Simplest)**
 
-The fastest way to retrieve a VKS cluster kubeconfig is with the VCF CLI. This downloads the kubeconfig directly to stdout, which you can redirect to a file.
+The fastest way to retrieve a VKS cluster kubeconfig is with the VCF CLI. The `--export-file` flag saves the kubeconfig to a standalone file that works on any OS.
 
-```bash
-# Download the kubeconfig for a VKS cluster using the VCF CLI
-# Replace <CLUSTER_NAME> with the name of your VKS cluster
-# The --admin flag is optional and provides admin-level credentials
-vcf cluster kubeconfig get <CLUSTER_NAME> [--admin]
+**Windows (PowerShell):**
+
+```powershell
+# Download the admin kubeconfig to a file
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file "$env:USERPROFILE\kubeconfig-<CLUSTER_NAME>.yaml"
+
+# Set the KUBECONFIG environment variable for this session
+$env:KUBECONFIG = "$env:USERPROFILE\kubeconfig-<CLUSTER_NAME>.yaml"
 ```
 
-To save the kubeconfig to a file and set it as the active context:
+**Linux / macOS (Bash):**
 
 ```bash
-# Save the kubeconfig to a file
-vcf cluster kubeconfig get <CLUSTER_NAME> > ~/kubeconfigs/<CLUSTER_NAME>.yaml
+# Download the admin kubeconfig to a file
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file ~/kubeconfig-<CLUSTER_NAME>.yaml
 
-# Set the KUBECONFIG environment variable to target the VKS guest cluster
-export KUBECONFIG=~/kubeconfigs/<CLUSTER_NAME>.yaml
+# Set the KUBECONFIG environment variable for this session
+export KUBECONFIG=~/kubeconfig-<CLUSTER_NAME>.yaml
 ```
+
+> **Note:** The `--admin` flag provides admin-level credentials. Omit it for standard user credentials. Without `--export-file`, the command merges the context into your default `~/.kube/config` file instead of creating a standalone file.
 
 Verify connectivity to the VKS guest cluster:
 
@@ -928,15 +933,20 @@ kubectl get namespaces
 1. Log in to the VCFA portal at `https://<VCFA_ENDPOINT>`
 2. Navigate to your Project and locate the VKS cluster under the Kubernetes Clusters section
 3. Click the cluster name and select **Download Kubeconfig** from the actions menu
-4. Save the kubeconfig file to your workstation (e.g., `~/kubeconfigs/<CLUSTER_NAME>.yaml`)
+4. Save the kubeconfig file to your workstation
 
 Set the `KUBECONFIG` environment variable to point to the downloaded file:
 
+**Windows (PowerShell):**
+
+```powershell
+$env:KUBECONFIG = "C:\Users\<USERNAME>\Downloads\<CLUSTER_NAME>-kubeconfig.yaml"
+```
+
+**Linux / macOS (Bash):**
+
 ```bash
-# Set the KUBECONFIG environment variable to target the VKS guest cluster
-# Replace <KUBECONFIG_PATH> with the path where you saved the kubeconfig
-# (e.g., ~/kubeconfigs/myproject-clus-01.yaml)
-export KUBECONFIG=<KUBECONFIG_PATH>
+export KUBECONFIG=~/Downloads/<CLUSTER_NAME>-kubeconfig.yaml
 ```
 
 Verify connectivity to the VKS guest cluster:

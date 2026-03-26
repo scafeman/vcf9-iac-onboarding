@@ -28,7 +28,7 @@ metadata:
   # This is the generateName result with the random 5-character suffix
   # (e.g., "sample-vcf-project-01-ns-a1b2c") -- NOT the prefix you specified.
   # Retrieve it with:  kubectl get supervisornamespaces -n <PROJECT_NAME>
-  namespace: sample-vcf-project-01-ns-bns2v
+  namespace: sample-vcf-project-01-ns-635dr
 spec:
   clusterNetwork:
     services:
