@@ -403,23 +403,15 @@ If VPC creation fails or subnets cannot be allocated, the IP address pool may be
 kubectl get ipblocks -o wide
 
 # For detailed allocation status of a specific IP block:
-# kubectl describe ipblock <IPBLOCK_NAME>
+kubectl describe ipblock <IPBLOCK_NAME>
 ```
 
-2. Check VPC-level IP address consumption:
-
-```bash
-# View IP address usage per VPC
-# Shows allocated vs available addresses within each VPC
-kubectl get vpcipaddressusages
-```
-
-3. If IP blocks are exhausted:
+2. If IP blocks are exhausted:
    - Request additional IPBlock resources from your NSX administrator
    - Consider reducing `defaultSubnetSize` in the VPC spec to allocate smaller subnets
    - Review and reclaim unused VPCs or subnets that are no longer needed
 
-4. If the VPC has available capacity but pods still lack IPs, check the subnet allocation within the VPC and verify that the `privateIPs` range is large enough for your workload count
+3. If the VPC has available capacity but pods still lack IPs, check the subnet allocation within the VPC and verify that the `privateIPs` range is large enough for your workload count
 
 
 ---
@@ -1460,7 +1452,7 @@ This section consolidates all error scenarios documented throughout the guide in
 | 1 — Environment Initialization | Invalid tenant name | Context creates successfully but `kubectl` commands return 401/403 Unauthorized | Confirm the tenant name matches the SSO organization configured in VCFA |
 | 1 — Environment Initialization | Missing API token | First `kubectl` command fails with authentication error | Generate an API token from the VCFA portal before using the VCF CLI |
 | 1 — Environment Initialization | Missing fleet certificate | TLS verification fails on CLI or `kubectl` commands | Download the fleet certificate (`restbaseuri.1`) from the provider interface and configure it locally |
-| 3 — VPC & Network Provisioning | IP address exhaustion | VPC creation fails or subnets/pods cannot receive IP addresses | Check `kubectl get ipblocks -o wide` and `kubectl get vpcipaddressusages` to identify exhausted IP blocks; request additional IPBlock resources from your NSX administrator |
+| 3 — VPC & Network Provisioning | IP address exhaustion | VPC creation fails or subnets/pods cannot receive IP addresses | Check `kubectl get ipblocks -o wide` to identify exhausted IP blocks; request additional IPBlock resources from your NSX administrator |
 | 3 — VPC & Network Provisioning | Transit Gateway connectivity failure | VPCAttachment remains in a pending state | Verify the Tier-0 gateway path is correct and check NSX Edge cluster health |
 | 4 — Project & Namespace Provisioning | Project naming conflict | `kubectl create` returns `AlreadyExists` error | List existing projects with `kubectl get projects` and choose a unique name |
 | 4 — Project & Namespace Provisioning | Invalid region, zone, or class | SupervisorNamespace creation fails with a validation error | Re-run Phase 2 topology discovery commands to verify valid values for `regionName`, `className`, and zone `name` |
