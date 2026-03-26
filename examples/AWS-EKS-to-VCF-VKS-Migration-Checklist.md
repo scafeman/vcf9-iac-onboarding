@@ -82,6 +82,8 @@ This re-prompts for your API token and refreshes the credentials for the given c
 
 In AWS, resource isolation is handled by AWS accounts and IAM policies. In VCF, the **Project** is the governance boundary. A **ProjectRoleBinding** grants access to SSO users (replacing IAM role mappings), and a **SupervisorNamespace** provisions the compute, storage, and network resources (replacing the VPC + subnet setup that EKS relies on).
 
+> **Note:** The SupervisorNamespace references a VPC by name. If you need to create a new VPC (rather than using an existing one), complete Phase 4 (VPC and Network Provisioning) before this phase. See the [VCF 9 IaC Onboarding Guide](../vcf9-iac-onboarding-guide.md) Phase 3 for VPC creation steps.
+
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
 | 2.1 | Project exists | `kubectl get projects` | Project name appears with `Ready` or `Active` status |
@@ -124,8 +126,8 @@ In AWS, you create a VPC with subnets, route tables, internet/NAT gateways, and 
 
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
-| 4.1 | VPC exists | `kubectl get vpcs` | VPC resource appears for your project/namespace |
-| 4.2 | NAT rules configured | `kubectl get vpcnatrules` | SNAT rule exists for outbound internet access |
+| 4.1 | VPC exists | `kubectl get vpcs` | VPC resource appears with `loadBalancerVPCEndpoint.enabled: true` (required for LoadBalancer services) |
+| 4.2 | NAT rules configured (optional) | `kubectl get vpcnatrules` | A default outbound SNAT is auto-created with the VPC. Custom rules are optional — only needed for advanced networking |
 | 4.3 | Connectivity profile set | `kubectl get vpcconnectivityprofiles` | Profile exists with external access enabled |
 | 4.4 | IP blocks allocated | `kubectl get ipblocks` | IP block resources show available CIDR ranges |
 
@@ -138,7 +140,7 @@ In AWS, you create a VPC with subnets, route tables, internet/NAT gateways, and 
 | NAT Gateway | VPCNATRule (SNAT/DNAT) | Explicit rules instead of a managed gateway |
 | Security Groups | VPCConnectivityProfile + NSX DFW | Policy-based at VPC level, not per-ENI |
 | ALB / NLB | NSX LoadBalancer | Auto-provisioned for `Service` type `LoadBalancer` |
-| Transit Gateway | NSX TransitGateway + VPCAttachment | Explicit attachment resources required |
+| Transit Gateway | NSX TransitGateway + VPCAttachment | VPCAttachment associates VPC with a VPCConnectivityProfile. Name must follow `<vpcName>:<attachmentName>` format |
 
 
 ---
@@ -182,29 +184,38 @@ In AWS, the kubeconfig is generated via the AWS CLI and uses IAM-based authentic
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
 | 6.1 | Kubeconfig retrieved | `ls ./kubeconfig-<CLUSTER_NAME>.yaml` | File exists |
-| 6.2 | KUBECONFIG exported | `echo $KUBECONFIG` | Points to the correct kubeconfig file path |
+| 6.2 | KUBECONFIG exported | `echo $KUBECONFIG` (Bash) or `echo $env:KUBECONFIG` (PowerShell) | Points to the correct kubeconfig file path |
 | 6.3 | API server reachable | `kubectl get namespaces` | Returns system namespaces (`kube-system`, `default`, etc.) without errors |
 | 6.4 | Worker nodes Ready | `kubectl get nodes` | All nodes show `Ready` status in the `STATUS` column |
 | 6.5 | Node count matches spec | `kubectl get nodes --no-headers \| wc -l` | Count equals or exceeds `MIN_NODES` from cluster manifest |
 
 ### Kubeconfig Retrieval Methods
 
-**Method A — VCFA Portal (UI):**
+**Method A — VCF CLI (Simplest):**
+
+```powershell
+# Windows (PowerShell)
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file "$env:USERPROFILE\kubeconfig-<CLUSTER_NAME>.yaml"
+$env:KUBECONFIG = "$env:USERPROFILE\kubeconfig-<CLUSTER_NAME>.yaml"
+```
+
+```bash
+# Linux / macOS (Bash)
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file ~/kubeconfig-<CLUSTER_NAME>.yaml
+export KUBECONFIG=~/kubeconfig-<CLUSTER_NAME>.yaml
+```
+
+**Method B — VCFA Portal (UI):**
 1. Log in to `https://<VCFA_ENDPOINT>`
 2. Navigate to your Project → Kubernetes Clusters
 3. Click the cluster → Download Kubeconfig
 
-**Method B — Programmatic (VksCredentialRequest):**
+**Method C — Programmatic (VksCredentialRequest):**
 ```bash
 # From the Supervisor namespace-scoped context (not the guest cluster)
 kubectl create -f vks-cred-request.yaml --validate=false
 kubectl get vkscredentialrequest <CLUSTER_NAME>-creds \
   -n <GENERATED_NS_NAME> -o jsonpath='{.status.kubeconfig}' > ./kubeconfig-<CLUSTER_NAME>.yaml
-```
-
-**Method C — VCF CLI:**
-```bash
-vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file ./kubeconfig-<CLUSTER_NAME>.yaml
 ```
 
 ### Option: Run Phases 7–9 from Your Workstation
