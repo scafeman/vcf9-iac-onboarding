@@ -58,32 +58,33 @@ jobs:
         shell: bash
 
     env:
-      # --- Unified Parameter Resolution (workflow_dispatch || repository_dispatch) ---
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
       PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name }}
       CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
       NAMESPACE_PREFIX: ${{ github.event.inputs.namespace_prefix || github.event.client_payload.namespace_prefix }}
       ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
 
-      # --- Secrets (sensitive values from GitHub Actions encrypted secrets) ---
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
       VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
-      VCFA_ENDPOINT: ${{ secrets.VCFA_ENDPOINT }}
-      TENANT_NAME: ${{ secrets.TENANT_NAME }}
-      USER_IDENTITY: ${{ secrets.USER_IDENTITY }}
-      CONTENT_LIBRARY_ID: ${{ secrets.CONTENT_LIBRARY_ID }}
-      ZONE_NAME: ${{ secrets.ZONE_NAME }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+      # --- Infrastructure parameters (client_payload > secret > default) ---
+      USER_IDENTITY: ${{ github.event.client_payload.user_identity || secrets.USER_IDENTITY }}
+      CONTENT_LIBRARY_ID: ${{ github.event.client_payload.content_library_id || secrets.CONTENT_LIBRARY_ID }}
+      ZONE_NAME: ${{ github.event.client_payload.zone_name || secrets.ZONE_NAME }}
+      REGION_NAME: ${{ github.event.client_payload.region_name || secrets.REGION_NAME || 'region-us1-a' }}
+      VPC_NAME: ${{ github.event.client_payload.vpc_name || secrets.VPC_NAME || 'region-us1-a-default-vpc' }}
+      RESOURCE_CLASS: ${{ github.event.client_payload.resource_class || secrets.RESOURCE_CLASS || 'xxlarge' }}
+      K8S_VERSION: ${{ github.event.client_payload.k8s_version || secrets.K8S_VERSION || 'v1.33.6+vmware.1-fips' }}
+      VM_CLASS: ${{ github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-large' }}
+      STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
+      MIN_NODES: ${{ github.event.client_payload.min_nodes || secrets.MIN_NODES || '2' }}
+      MAX_NODES: ${{ github.event.client_payload.max_nodes || secrets.MAX_NODES || '10' }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: gh-actions-deploy
-
-      # --- Configurable Defaults (override via secrets if needed) ---
-      REGION_NAME: ${{ secrets.REGION_NAME || 'region-us1-a' }}
-      VPC_NAME: ${{ secrets.VPC_NAME || 'region-us1-a-default-vpc' }}
-      RESOURCE_CLASS: ${{ secrets.RESOURCE_CLASS || 'xxlarge' }}
-      K8S_VERSION: ${{ secrets.K8S_VERSION || 'v1.33.6+vmware.1-fips' }}
-      VM_CLASS: ${{ secrets.VM_CLASS || 'best-effort-large' }}
-      STORAGE_CLASS: ${{ secrets.STORAGE_CLASS || 'nfs' }}
-      MIN_NODES: ${{ secrets.MIN_NODES || '2' }}
-      MAX_NODES: ${{ secrets.MAX_NODES || '10' }}
 
     steps:
       # Phase 1: Validate Inputs
