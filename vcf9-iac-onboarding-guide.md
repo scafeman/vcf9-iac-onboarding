@@ -4,6 +4,8 @@
 
 This guide walks DevOps engineers through the complete Infrastructure-as-Code (IaC) workflow for migrating container workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with VMware Kubernetes Service (VKS). It covers the full lifecycle from environment initialization through VKS cluster deployment and functional validation.
 
+> **Companion documents:** Working sample manifests are in the [`examples/`](examples/) folder — see the [Examples README](examples/README.md) for deployment order and details. For a pass/fail validation checklist, see the [AWS EKS to VCF VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md).
+
 ---
 
 ## Phase 1: Environment Initialization

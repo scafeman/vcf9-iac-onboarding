@@ -83,8 +83,9 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 ```
 .
 ├── README.md                          # This file
-├── vcf9-iac-onboarding-guide.md       # Comprehensive IaC onboarding guide (7 phases + appendices)
+├── vcf9-iac-onboarding-guide.md       # Comprehensive IaC onboarding guide (8 phases + appendices)
 ├── VCF_Engineering_Workflow.md         # Quick-reference engineering workflow
+├── AWS-EKS-to-VCF-VKS-Migration-Checklist.md  # Migration success criteria checklist
 ├── Dockerfile                         # Dev container with VCF CLI + kubectl
 ├── docker-compose.yml                 # Container orchestration config
 ├── .env                               # Environment variables (not committed)
@@ -117,10 +118,14 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 │   │   ├── gitlab-runner-values.yaml            #   GitLab Runner Helm values
 │   │   ├── argocd-microservices-demo.yaml       #   ArgoCD Application manifest
 │   │   └── wildcard.cnf                         #   OpenSSL wildcard cert config
-│   └── AWS-EKS-to-VCF-VKS-Migration-Checklist.md  # Migration success criteria checklist
-├── sample-create-project-ns.yaml    # Project + RBAC + Supervisor Namespace manifest
-├── sample-create-cluster.yaml       # VKS Cluster API manifest
-├── sample-vks-functional-test.yaml  # Functional validation workload manifest
+│   ├── sample-create-vpc.yaml                   # Sample VPC manifest
+│   ├── sample-vpc-connectivity-profile.yaml     # Sample VPC Connectivity Profile manifest
+│   ├── sample-vpc-attachment.yaml               # Sample VPCAttachment manifest
+│   ├── sample-create-project-ns.yaml            # Sample Project + RBAC + Namespace manifest
+│   ├── sample-nat-rules.yaml                    # Sample NAT rules manifest (optional)
+│   ├── sample-create-cluster.yaml               # Sample VKS Cluster manifest
+│   ├── sample-vks-functional-test.yaml          # Sample functional test workload manifest
+│   └── README.md                                # Examples overview and sample manifest guide
 └── tests/
     ├── conftest.py                    # Shared pytest fixtures
     ├── requirements.txt               # Python test dependencies
@@ -147,7 +152,7 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 | [Scenario 2 Teardown README](examples/scenario2/README-teardown.md) | VKS Metrics Observability teardown documentation |
 | [Scenario 3 Deploy README](examples/scenario3/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
 | [Scenario 3 Teardown README](examples/scenario3/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
-| [EKS to VKS Migration Checklist](examples/AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
+| [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
 
 ## Testing
 

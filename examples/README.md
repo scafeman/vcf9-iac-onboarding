@@ -267,9 +267,3 @@ Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructur
 | Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |
 
 ---
-
-## Additional Resources
-
-| Document | Description |
-|---|---|
-| [AWS EKS to VCF VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
