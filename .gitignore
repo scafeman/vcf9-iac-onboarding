@@ -26,3 +26,7 @@ Thumbs.db
 
 # Kiro specs (development artifacts)
 .kiro/
+
+# GitHub Actions runner work directory artifacts
+_actions/
+_PipelineMapping/

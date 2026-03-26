@@ -50,7 +50,19 @@ on:
     types: [deploy-vks]
 
 jobs:
+  build:
+    name: Build VCF Tooling Image
+    runs-on: [self-hosted, vcf]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Build vcf9-dev Image
+        run: docker build -t vcf9-dev:latest .
+
   deploy:
+    name: Deploy VKS Cluster
+    needs: build
     runs-on: [self-hosted, vcf]
     container:
       image: vcf9-dev:latest
