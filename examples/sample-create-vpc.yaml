@@ -1,0 +1,39 @@
+# =============================================================================
+# Sample VPC Manifest — NSX Virtual Private Cloud
+# =============================================================================
+#
+# This manifest creates an NSX VPC (Virtual Private Cloud) that provides
+# network isolation for your project workloads. It corresponds to
+# Phase 3, Step 3 of the VCF 9 IaC Onboarding Guide.
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl create -f sample-create-vpc.yaml --validate=false
+#      (--validate=false is required for NSX custom resources)
+#
+# NOTE: This manifest uses the corrected API structure with spec.privateIPs
+# and spec.regionName. The deprecated fields (defaultGatewayPath,
+# defaultSubnetSize, shortID, privateCIDRs) are NOT used.
+# =============================================================================
+
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPC
+metadata:
+  # CHANGE: Replace with your VPC name. Convention: <region>-<project>-vpc
+  name: region-us1-a-sample-vpc  # CHANGE: Replace with your VPC name
+spec:
+  # Private IP CIDR blocks allocated to this VPC.
+  # These must fall within an available IPBlock range provisioned by
+  # your platform administrator (see Phase 3, Step 1 of the guide).
+  # You may specify one or more CIDR ranges.
+  privateIPs:
+  - "10.10.0.0/16"  # CHANGE: Replace with your allocated CIDR range
+  # The region where this VPC will be provisioned.
+  # Obtain the region name from your Phase 2 topology discovery.
+  regionName: region-us1-a  # CHANGE: Replace with your region name
+  # Enable the NSX load balancer endpoint for this VPC.
+  # Without this, Supervisor Namespaces referencing this VPC will fail
+  # with "no compatible Load balancer providers" when creating workloads
+  # that use LoadBalancer Services.
+  loadBalancerVPCEndpoint:
+    enabled: true

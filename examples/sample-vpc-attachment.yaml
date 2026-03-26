@@ -1,0 +1,38 @@
+# =============================================================================
+# Sample VPCAttachment Manifest — NSX VPC Connectivity Profile Association
+# =============================================================================
+#
+# This manifest creates a VPCAttachment that associates your VPC with a
+# VPC Connectivity Profile. The connectivity profile defines external
+# access policies, IP block assignments, and Transit Gateway routing.
+# It corresponds to Phase 3, Step 4 of the VCF 9 IaC Onboarding Guide.
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl create -f sample-vpc-attachment.yaml --validate=false
+#      (--validate=false is required for NSX custom resources)
+#
+# NOTE: This manifest uses spec.vpcConnectivityProfileName to reference
+# the connectivity profile. The deprecated field transitGatewayName is
+# NOT used — the connectivity profile manages the Transit Gateway
+# relationship for you.
+# =============================================================================
+
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCAttachment
+metadata:
+  # CHANGE: The name MUST follow the pattern <vpcName>:<attachmentName>.
+  # The prefix before the colon must match the VPC name in spec.vpcName.
+  name: "region-us1-a-sample-vpc:sample-attachment"  # CHANGE: Replace vpc name and attachment name
+spec:
+  # The region where the VPC and connectivity profile reside.
+  regionName: region-us1-a  # CHANGE: Replace with your region name
+  # Name of the VPC Connectivity Profile to associate with.
+  # Discover available profiles with:
+  #   kubectl get vpcconnectivityprofiles
+  # If none exist, you can create a custom VPCConnectivityProfile that
+  # references the desired public IP blocks and Transit Gateway.
+  vpcConnectivityProfileName: default@region-us1-a  # CHANGE: Replace with your connectivity profile name
+  # Name of the VPC to attach (from Phase 3, Step 3).
+  # Must match the metadata.name of an existing VPC resource.
+  vpcName: region-us1-a-sample-vpc  # CHANGE: Replace with your VPC name

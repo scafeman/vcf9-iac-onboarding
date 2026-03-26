@@ -45,12 +45,17 @@ kubectl create -f sample-create-project-ns.yaml --validate=false
 ## Phase 3: The "Context Bridge" (CRITICAL)
 VCF 9 scopes Kubernetes Cluster APIs (VKS) strictly to the namespace level. You cannot see the `Cluster` kind from the global `my-dev` context. You must "pivot" into the new namespace to enable these APIs.
 
-### Step 4: Refresh and Identify the Dynamic Context
+### Step 4: Re-register and Identify the Dynamic Context
 The VCF CLI must discover the newly created infrastructure. **Pay close attention to the name, as VCF appends a unique 5-character suffix to your namespace prefix (e.g., `-frywy`).**
 
+> **Note:** `vcf context refresh` does NOT re-enumerate namespaces when the token is still valid. You must delete and recreate the context to pick up newly created namespaces.
+
 ```powershell
-# Refresh the CLI cache to see the new project/namespace
-vcf context refresh my-dev
+# Delete the existing context
+vcf context delete my-dev --yes
+
+# Recreate the context — this performs a full login and discovers all namespaces
+vcf context create my-dev --endpoint https://<VCFA_ENDPOINT> --type cci --tenant-name <TENANT_NAME> --api-token <API_TOKEN> --set-current
 
 # Find the full context string in the list
 vcf context list

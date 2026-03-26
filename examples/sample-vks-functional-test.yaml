@@ -1,0 +1,149 @@
+# =============================================================================
+# Sample VKS Functional Test Manifest — Storage, Compute & Networking
+# =============================================================================
+#
+# This manifest deploys a functional test workload to validate that storage,
+# compute, and networking are working correctly on a VKS cluster. It
+# corresponds to Phase 7 of the VCF 9 IaC Onboarding Guide.
+#
+# The test creates three resources:
+#   1. A PersistentVolumeClaim — validates dynamic volume provisioning
+#      (CSI driver and storage backend).
+#   2. A Deployment — validates pod scheduling with a hardened security
+#      context (non-root, seccomp, dropped capabilities).
+#   3. A LoadBalancer Service — validates NSX LoadBalancer ingress and
+#      external IP assignment.
+#
+# Prerequisites:
+#   • VKS cluster must be provisioned (Phase 6 complete).
+#   • kubeconfig must be set for the target VKS cluster.
+#     Retrieve it with:  vcf cluster kubeconfig get <CLUSTER_NAME>
+#
+# Usage:
+#   1. Change the storageClassName value below to match an available
+#      storage class on your VKS cluster (check with: kubectl get storageclasses).
+#   2. Apply with:  kubectl apply -f sample-vks-functional-test.yaml
+#   3. Verify:
+#        kubectl get pvc vks-test-pvc          # STATUS should be Bound
+#        kubectl get deploy vks-test-app       # READY should be 1/1
+#        kubectl get svc vks-test-lb           # EXTERNAL-IP should be assigned
+#   4. Clean up:  kubectl delete -f sample-vks-functional-test.yaml
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# PersistentVolumeClaim — Validate Dynamic Volume Provisioning
+# -----------------------------------------------------------------------------
+# This PVC requests a 1Gi volume to confirm that the CSI driver and the
+# underlying storage backend (e.g., NFS, vSAN) are functioning correctly.
+# A successful Bound status proves that dynamic provisioning is operational.
+# -----------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vks-test-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # Storage class for the PVC — must match an available storage class on
+  # your VKS cluster. Check available classes with:
+  #   kubectl get storageclasses
+  storageClassName: nfs  # CHANGE: Replace with your available storage class
+---
+# -----------------------------------------------------------------------------
+# Deployment — Validate Pod Scheduling with Hardened Security Context
+# -----------------------------------------------------------------------------
+# This Deployment runs an nginx pod that serves a test page from the PVC.
+# It validates that the Kubernetes scheduler can place pods on worker nodes
+# and that the hardened security context (non-root user, seccomp profile,
+# dropped capabilities) is accepted by the cluster's admission policies.
+#
+# An init container writes a test HTML page to the PVC-backed volume,
+# and the main nginx container serves it on port 8080.
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vks-test-app
+  labels:
+    app: vks-test-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vks-test-app
+  template:
+    metadata:
+      labels:
+        app: vks-test-app
+    spec:
+      # Pod-level security context — enforces non-root execution
+      # and the RuntimeDefault seccomp profile for all containers.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+      initContainers:
+        # Init container writes a test HTML page to the PVC volume.
+        # This confirms the volume is writable and the init container
+        # lifecycle works correctly.
+        - name: init-html
+          image: busybox:latest
+          command: ['sh', '-c', 'echo "Hello from VKS On-Premises Cluster! The Persistent Volume is working successfully." > /usr/share/nginx/html/index.html']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: html-volume
+              mountPath: /usr/share/nginx/html
+      containers:
+        # Main container — serves the test page via nginx on port 8080.
+        # Uses the unprivileged nginx image to comply with non-root policy.
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: html-volume
+              mountPath: /usr/share/nginx/html
+      volumes:
+        # Volume backed by the PVC created above — proves the PVC
+        # successfully bound to a PersistentVolume.
+        - name: html-volume
+          persistentVolumeClaim:
+            claimName: vks-test-pvc
+---
+# -----------------------------------------------------------------------------
+# Service (LoadBalancer) — Validate NSX LoadBalancer Ingress
+# -----------------------------------------------------------------------------
+# This Service exposes the test app via an NSX LoadBalancer. A successful
+# deployment assigns an EXTERNAL-IP, proving that the NSX load balancer
+# integration and external IP assignment are working correctly.
+#
+# Verify with:  kubectl get svc vks-test-lb
+# The EXTERNAL-IP column should show a routable IP address (not <pending>).
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: vks-test-lb
+spec:
+  # Type LoadBalancer triggers NSX to provision an external load balancer
+  # and assign a routable IP from the configured External IP block.
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: vks-test-app

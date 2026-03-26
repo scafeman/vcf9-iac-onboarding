@@ -1,0 +1,94 @@
+# =============================================================================
+# Sample VKS Cluster Manifest - Cluster API (cluster.x-k8s.io)
+# =============================================================================
+#
+# This manifest creates a VKS (VMware Kubernetes Service) cluster via the
+# Cluster API. VKS uses a topology-based approach where the cluster class
+# defines the infrastructure blueprint and you customize it with variables
+# and overrides. It corresponds to Phase 6 of the VCF 9 IaC Onboarding Guide.
+#
+# Prerequisites:
+#   - Complete Phase 5 (Context Bridge Execution) -- your kubectl session must
+#     be scoped to the Supervisor Namespace targeting the generated namespace.
+#   - Verify with:  kubectl get clusters  (should not return "unknown resource")
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl apply -f sample-create-cluster.yaml
+#
+# =============================================================================
+
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  # CHANGE: Replace with your cluster name. Convention: <project>-clus-<number>
+  name: sample-vcf-project-clus-01
+  # CHANGE: Replace xxxxx with your actual generated namespace suffix.
+  # MUST be the Dynamic Namespace Name from Phase 5 Context Bridge.
+  # This is the generateName result with the random 5-character suffix
+  # (e.g., "sample-vcf-project-01-ns-a1b2c") -- NOT the prefix you specified.
+  # Retrieve it with:  kubectl get supervisornamespaces -n <PROJECT_NAME>
+  namespace: sample-vcf-project-01-ns-bns2v
+spec:
+  clusterNetwork:
+    services:
+      # CIDR block for Kubernetes ClusterIP services.
+      cidrBlocks:
+      - "10.96.0.0/12"    # CHANGE: Replace if your services CIDR is different
+    pods:
+      # CIDR block for pod networking.
+      cidrBlocks:
+      - "192.168.156.0/20"    # CHANGE: Replace if your pods CIDR is different
+    serviceDomain: cluster.local
+  topology:
+    class: builtin-generic-v3.4.0
+    classNamespace: vmware-system-vks-public
+    # CHANGE: Replace with your desired Kubernetes version (kubectl get tkr)
+    version: v1.33.6+vmware.1-fips
+
+    controlPlane:
+      metadata:
+        annotations:
+          # OS image resolution annotation -- tells VKS how to
+          # find the VM template for control plane nodes.
+          #   os-name:         the OS distribution (e.g., photon)
+          #   content-library: vSphere Content Library ID
+          #
+          # How to obtain the Content Library ID:
+          #   Option A -- kubectl CLI:
+          #     kubectl get clustercontentlibraries  (subscribed/OS image libraries)
+          #     kubectl get contentlibraries          (project-scoped libraries)
+          #   Option B -- VCFA Portal UI:
+          #     Build & Deploy → Services → Virtual Machine Image →
+          #     Content Libraries tab → click library → VIEW YAML →
+          #     metadata.name field contains the Content Library ID.
+          # CHANGE: Replace content-library ID and os-name for your environment
+          run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=cl-32ee3681364c701d0"
+      replicas: 1
+    workers:
+      machineDeployments:
+      - class: node-pool
+        # CHANGE: Replace with your worker node pool name.
+        name: node-pool-01
+        metadata:
+          annotations:
+            # CHANGE: Replace content-library ID and os-name for your environment
+            run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=cl-32ee3681364c701d0"
+            # CHANGE: Replace with your desired maximum node count.
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: "10"
+            # CHANGE: Replace with your desired minimum node count.
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: "2"
+    variables:
+    - name: vmClass
+      # CHANGE: Replace with your desired VM class.
+      value: best-effort-large
+    - name: storageClass
+      # CHANGE: Replace with your available storage class.
+      value: nfs
+    - name: volumes
+      value:
+      - name: containerd-data
+        capacity: 100Gi
+        mountPath: /var/lib/containerd
+        # CHANGE: Replace with your available storage class.
+        storageClass: nfs

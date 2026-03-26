@@ -1,6 +1,223 @@
-# VCF 9 IaC Onboarding — Example Scenarios
+# VCF 9 IaC Onboarding — Examples
 
-This folder contains three automation scenarios for deploying workloads on VCF 9 VKS clusters. Each scenario builds on the previous one.
+This folder contains two types of resources:
+
+1. **Sample Manifests** — standalone YAML files for creating individual VCF 9 resources. Start here if you are following the [VCF 9 IaC Onboarding Guide](../vcf9-iac-onboarding-guide.md) step by step.
+2. **Automation Scenarios** — end-to-end shell scripts that orchestrate full deployments. Use these once you are familiar with the individual resources.
+
+---
+
+## Sample Manifests
+
+These files are working YAML manifests populated with real environment values. Each file includes inline comments explaining every field and `# CHANGE:` markers on values you need to update for your own deployment. Apply them in the order shown below — each resource depends on the ones before it.
+
+### Deployment Order
+
+The VPC must exist before creating the Project and Supervisor Namespace, because the namespace manifest references the VPC by name. If your environment already has a VPC you want to use (check with `kubectl get vpcs`), skip steps 1–3 and use that VPC name in the `vpcName` field of `sample-create-project-ns.yaml`.
+
+```
+1. sample-create-vpc.yaml          → NSX VPC                                 (Phase 3)
+2. sample-vpc-connectivity-profile.yaml → VPC Connectivity Profile           (Phase 3, optional)
+3. sample-vpc-attachment.yaml      → Associate VPC with Connectivity Profile  (Phase 3)
+4. sample-create-project-ns.yaml   → Project + RBAC + Supervisor Namespace   (Phase 4)
+5. sample-nat-rules.yaml           → SNAT / DNAT rules                       (Phase 3, optional — advanced)
+6. sample-create-cluster.yaml      → VKS Cluster                             (Phase 6)
+7. sample-vks-functional-test.yaml → Functional validation workload           (Phase 7)
+```
+
+> **Already have a VPC?** If your tenant already has a VPC provisioned (e.g., a default VPC), you can skip steps 1–3 entirely. Just set the `vpcName` field in `sample-create-project-ns.yaml` to your existing VPC name (find it with `kubectl get vpcs`) and start at step 4.
+
+---
+
+### `sample-create-vpc.yaml`
+
+Creates an **NSX VPC** that provides network isolation for your project workloads. Uses the corrected API structure with `spec.privateIPs` and `spec.regionName`.
+
+| | |
+|---|---|
+| Guide reference | Phase 3 — Step 3: Create the VPC |
+| API | `vpc.nsx.vmware.com/v1alpha1` |
+| Kind | `VPC` |
+| Apply command | `kubectl create -f sample-create-vpc.yaml --validate=false` |
+
+> **Already have a VPC?** If your tenant already has a VPC you want to use, skip this file and the next two (connectivity profile + attachment). Use your existing VPC name in the `vpcName` field of `sample-create-project-ns.yaml`. Find it with `kubectl get vpcs`.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `name` | `region-us1-a-sample-vpc` | Your VPC name |
+| `privateIPs[0]` | `10.10.0.0/16` | Your allocated CIDR range (from `kubectl get ipblocks`) |
+| `regionName` | `region-us1-a` | From `kubectl get regions` |
+
+---
+
+### `sample-vpc-connectivity-profile.yaml`
+
+Creates a **VPCConnectivityProfile** that associates a public IP block and a Private-Transit IP block with a Transit Gateway. Use this when you need a custom connectivity profile — if a suitable profile already exists in your environment, skip this step and reference it directly in `sample-vpc-attachment.yaml`.
+
+| | |
+|---|---|
+| Guide reference | Phase 3 — Step 2: Inspect VPC Connectivity Profiles |
+| API | `vpc.nsx.vmware.com/v1alpha1` |
+| Kind | `VPCConnectivityProfile` |
+| Apply command | `kubectl create -f sample-vpc-connectivity-profile.yaml --validate=false` |
+| Optional | Yes — skip if an existing profile meets your needs |
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `name` | `sample-connectivity-profile` | Your profile name |
+| `transitGatewayName` | `default@region-us1-a` | From `kubectl get transitgateways` |
+| `externalIPBlockNames[0]` | `:ips-02-public-8ga3w` | Provider-provisioned public IP block |
+| `privateTGWIPBlockNames[0]` | `region-us1-a-default-tgw-ip-block` | Private-Transit Gateway IP block |
+
+---
+
+### `sample-vpc-attachment.yaml`
+
+Creates a **VPCAttachment** that associates your VPC with a VPC Connectivity Profile, enabling external connectivity and Transit Gateway routing. This replaces the older approach of creating a Transit Gateway directly.
+
+| | |
+|---|---|
+| Guide reference | Phase 3 — Step 4: Associate VPC with a VPC Connectivity Profile |
+| API | `vpc.nsx.vmware.com/v1alpha1` |
+| Kind | `VPCAttachment` |
+| Apply command | `kubectl create -f sample-vpc-attachment.yaml --validate=false` |
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `name` | `region-us1-a-sample-vpc:sample-attachment` | Must follow `<vpcName>:<attachmentName>` pattern |
+| `regionName` | `region-us1-a` | Must match the VPC's region |
+| `vpcConnectivityProfileName` | `default@region-us1-a` | From `kubectl get vpcconnectivityprofiles` |
+| `vpcName` | `region-us1-a-sample-vpc` | The VPC created in the previous step |
+
+---
+
+### `sample-create-project-ns.yaml`
+
+Creates the three foundational VCF 9 resources in a single apply: a **Project** (governance boundary), a **ProjectRoleBinding** (grants a user admin access), and a **SupervisorNamespace** (provisions the Kubernetes namespace with compute, storage, and network resources).
+
+| | |
+|---|---|
+| Guide reference | Phase 4 — Project and Namespace Provisioning |
+| APIs | `project.cci.vmware.com/v1alpha2`, `authorization.cci.vmware.com/v1alpha1`, `infrastructure.cci.vmware.com/v1alpha2` |
+| Kinds | `Project`, `ProjectRoleBinding`, `SupervisorNamespace` |
+| Apply command | `kubectl create -f sample-create-project-ns.yaml --validate=false` |
+
+> **Note:** The `SupervisorNamespace` uses `generateName`, so the actual namespace name is only known after creation. Retrieve it with `kubectl get supervisornamespaces -n <PROJECT_NAME>` — you will need this generated name for the Context Bridge in Phase 5.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| Project `name` | `sample-vcf-project-01` | Your project name |
+| User identity | `rax-user-1` | Your SSO user identity |
+| `generateName` prefix | `sample-vcf-project-01-ns-` | Your namespace prefix |
+| `regionName` | `region-us1-a` | From `kubectl get regions` |
+| `className` | `xxlarge` | From `kubectl get svnscls` |
+| `vpcName` | `region-us1-a-sample-vpc` | Your VPC name — use an existing VPC or the one created in step 1 |
+| Zone `name` | `zone-vmw-lab1-md-cl01` | From `kubectl get zones` |
+
+---
+
+### `sample-nat-rules.yaml`
+
+Contains two **VPCNATRule** examples — one SNAT rule (outbound traffic translation) and one DNAT rule (inbound traffic translation). This file is **optional** for most deployments.
+
+| | |
+|---|---|
+| Guide reference | Phase 3 — Step 5: Configure NAT Rules (Optional — Advanced) |
+| API | `vpc.nsx.vmware.com/v1alpha1` |
+| Kind | `VPCNATRule` (×2) |
+| Apply command | `kubectl create -f sample-nat-rules.yaml --validate=false` |
+| Optional | Yes — a default outbound NAT is auto-created with every VPC |
+
+> **When you need this:** Only create custom NAT rules when your design requires mapping a specific internal subnet to a dedicated external IP (SNAT), or forwarding inbound traffic to a specific internal host (DNAT). Resources deployed with External IP blocks receive public IPs automatically and do not need DNAT rules.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| SNAT `namespace` | `sample-vcf-project-01` | Your project name |
+| SNAT `translatedNetwork` | *(your external IP)* | An IP from your External IP block |
+| SNAT `sourceNetwork` | `10.10.0.0/16` | Internal CIDR to translate |
+| DNAT `namespace` | `sample-vcf-project-01` | Your project name |
+| DNAT `translatedNetwork` | *(your internal IP)* | Internal IP to forward traffic to |
+| DNAT `sourceNetwork` | *(your external CIDR)* | External source CIDR |
+
+---
+
+### `sample-create-cluster.yaml`
+
+Creates a **VKS cluster** via the Cluster API. Defines the cluster network CIDRs, Kubernetes version, control plane replica count, worker node pool with autoscaler bounds, VM class, and storage class.
+
+| | |
+|---|---|
+| Guide reference | Phase 6 — VKS Cluster Deployment |
+| API | `cluster.x-k8s.io/v1beta1` |
+| Kind | `Cluster` |
+| Apply command | `kubectl apply -f sample-create-cluster.yaml --validate=false --insecure-skip-tls-verify` |
+| Prerequisite | Complete Phase 5 (Context Bridge) — `kubectl get clusters` must not return an error |
+
+> **Important:** The `metadata.namespace` must be the **generated namespace name** from Phase 5 (e.g., `sample-vcf-project-01-ns-a1b2c`). Replace `sample-vcf-project-01-ns-xxxxx` with the actual suffix after running `kubectl get supervisornamespaces -n sample-vcf-project-01`.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `name` | `sample-vcf-project-clus-01` | Your cluster name |
+| `namespace` | `sample-vcf-project-01-ns-xxxxx` | Replace `xxxxx` with actual generated suffix |
+| `version` | `v1.33.6+vmware.1-fips` | From `kubectl get tkr` |
+| `content-library` | `cl-32ee3681364c701d0` | From `kubectl get clustercontentlibraries` or VCFA Portal (Build & Deploy → Services → Virtual Machine Image → Content Libraries tab) |
+| `max-size` | `10` | Autoscaler maximum worker nodes |
+| `min-size` | `2` | Autoscaler minimum worker nodes |
+| `vmClass` | `best-effort-large` | Worker node VM size |
+| `storageClass` | `nfs` | From `kubectl get sc` on the VKS cluster |
+
+---
+
+### `sample-vks-functional-test.yaml`
+
+Deploys a lightweight test workload to validate that storage, compute, and networking are all operational on a VKS cluster. Creates a **PersistentVolumeClaim** (validates CSI/storage), a **Deployment** (validates pod scheduling with a hardened security context), and a **LoadBalancer Service** (validates NSX load balancer ingress and external IP assignment).
+
+| | |
+|---|---|
+| Guide reference | Phase 7 — Functional Validation |
+| APIs | `v1`, `apps/v1` |
+| Kinds | `PersistentVolumeClaim`, `Deployment`, `Service` |
+| Apply command | `kubectl apply -f sample-vks-functional-test.yaml` |
+| Prerequisite | VKS cluster provisioned and kubeconfig set (`vcf cluster kubeconfig get <CLUSTER_NAME>`) |
+
+**Verification steps:**
+
+```bash
+kubectl get pvc vks-test-pvc       # STATUS should be Bound
+kubectl get deploy vks-test-app    # READY should be 1/1
+kubectl get svc vks-test-lb        # EXTERNAL-IP should be assigned
+curl http://<EXTERNAL_IP>          # Should return nginx page
+```
+
+**Cleanup:**
+
+```bash
+kubectl delete -f sample-vks-functional-test.yaml
+```
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `storageClassName` | `nfs` | From `kubectl get storageclasses` on the VKS cluster |
+
+---
+
+## Automation Scenarios
+
+These end-to-end scripts orchestrate full deployments across multiple VCF resources. Each scenario builds on the previous one.
 
 ## Dependency Chain
 

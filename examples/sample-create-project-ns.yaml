@@ -1,0 +1,125 @@
+# =============================================================================
+# Sample Project, RBAC, and Supervisor Namespace Manifests — VCF 9 CCI APIs
+# =============================================================================
+#
+# This manifest creates the foundational VCF 9 resources required before
+# deploying a VKS cluster:
+#
+#   1. Project          — the top-level organizational unit in CCI
+#   2. ProjectRoleBinding — grants a user admin access to the project
+#   3. SupervisorNamespace — provisions the Kubernetes namespace (with
+#                            infrastructure resources) inside the project
+#
+# It corresponds to Phase 4 of the VCF 9 IaC Onboarding Guide.
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl create -f sample-create-project-ns.yaml --validate=false
+#      (--validate=false is required for CCI custom resources)
+#
+# NOTE: The SupervisorNamespace uses generateName, which means Kubernetes
+# appends a random 5-character suffix to the prefix you specify. The actual
+# namespace name (e.g., "my-dev-project-01-ns-a1b2c") is only known after
+# creation. Retrieve it with:
+#   kubectl get supervisornamespaces -n <PROJECT_NAME>
+# You will need this generated name in Phase 5 (Context Bridge Execution)
+# when scoping kubectl to the Supervisor Namespace.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Resource 1: Project
+# -----------------------------------------------------------------------------
+# A Project is the top-level CCI organizational unit. It maps to a vSphere
+# namespace group and provides the administrative boundary for all resources
+# (namespaces, role bindings, clusters) within a team or environment.
+# -----------------------------------------------------------------------------
+apiVersion: project.cci.vmware.com/v1alpha2
+kind: Project
+metadata:
+  # CHANGE: Replace with your project name. Convention: <team>-<env>-project-<number>
+  name: sample-vcf-project-01  # CHANGE: Replace with your project name
+spec:
+  # Human-readable description of the project's purpose.
+  description: "Sample VCF 9 Project"
+---
+# -----------------------------------------------------------------------------
+# Resource 2: ProjectRoleBinding
+# -----------------------------------------------------------------------------
+# A ProjectRoleBinding grants a user or group a role within the project.
+# This is the CCI RBAC mechanism — it controls who can create namespaces,
+# deploy clusters, and manage resources inside the project.
+#
+# The metadata.name convention "cci:user:<identity>" is required by CCI
+# to identify the subject type and identity in the binding name.
+# -----------------------------------------------------------------------------
+apiVersion: authorization.cci.vmware.com/v1alpha1
+kind: ProjectRoleBinding
+metadata:
+  # Binding name must follow the pattern "cci:user:<USER_IDENTITY>".
+  name: "cci:user:rax-user-1"  # CHANGE: Replace rax-user-1 with your user identity
+  # Must match the Project name created above.
+  namespace: sample-vcf-project-01  # CHANGE: Replace with your project name
+roleRef:
+  apiGroup: authorization.cci.vmware.com
+  kind: ProjectRole
+  # Role to grant. Common values: "admin", "edit", "view".
+  # "admin" grants full control over the project and its namespaces.
+  name: admin
+subjects:
+- kind: User
+  # The user's identity string — must match the name suffix in metadata.name.
+  name: rax-user-1  # CHANGE: Replace with your user identity
+---
+# -----------------------------------------------------------------------------
+# Resource 3: SupervisorNamespace
+# -----------------------------------------------------------------------------
+# A SupervisorNamespace provisions a Kubernetes namespace backed by
+# infrastructure resources (compute, storage, networking) in a specific
+# region and zone. This is where VKS clusters and workloads are deployed.
+#
+# Key fields:
+#   generateName  — prefix for the dynamic namespace name (random suffix added)
+#   regionName    — the NSX/vSphere region to provision resources in
+#   className     — the resource class defining CPU/memory quotas
+#   vpcName       — the NSX VPC providing network isolation
+#   zones         — per-zone resource limits (CPU, memory)
+# -----------------------------------------------------------------------------
+apiVersion: infrastructure.cci.vmware.com/v1alpha2
+kind: SupervisorNamespace
+metadata:
+  # generateName is a prefix — Kubernetes appends a random 5-character suffix.
+  # The resulting namespace name (e.g., "sample-vcf-project-01-ns-a1b2c") is
+  # used in Phase 5 to scope kubectl to this namespace.
+  # Convention: <project-name>-ns-
+  generateName: sample-vcf-project-01-ns-  # CHANGE: Replace with your project namespace prefix
+  # Must match the Project name created above.
+  namespace: sample-vcf-project-01  # CHANGE: Replace with your project name
+spec:
+  # Human-readable description of the namespace's purpose.
+  description: "Sample VCF 9 Development Namespace"
+  # The NSX/vSphere region where this namespace's infrastructure is provisioned.
+  # Obtain the region name from your Phase 2 topology discovery.
+  regionName: "region-us1-a"  # CHANGE: Replace with your region name
+  # Resource class defining the CPU and memory quota for this namespace.
+  # Available classes are defined by your platform administrator.
+  className: "xxlarge"  # CHANGE: Replace with your desired resource class
+  # The NSX VPC that provides network isolation for this namespace.
+  # Must be an existing VPC in the same region (created in Phase 3).
+  vpcName: "region-us1-a-sample-vpc"  # CHANGE: Replace with your VPC name
+  # Per-zone resource limit overrides. These override the defaults from
+  # the resource class for the specified availability zone.
+  initialClassConfigOverrides:
+    zones:
+    - # The availability zone name within the region.
+      # Obtain zone names from your Phase 2 topology discovery.
+      name: "zone-vmw-lab1-md-cl01"  # CHANGE: Replace with your zone name
+      # Maximum CPU allocation for this namespace in this zone.
+      # Format: millicores (M) — e.g., "100000M" = 100 vCPUs.
+      cpuLimit: "100000M"  # CHANGE: Replace with your desired CPU limit
+      # CPU reservation (guaranteed minimum). "0M" means no reservation.
+      cpuReservation: "0M"  # CHANGE: Replace with your desired CPU reservation
+      # Maximum memory allocation for this namespace in this zone.
+      # Format: mebibytes (Mi) — e.g., "102400Mi" = 100 GiB.
+      memoryLimit: "102400Mi"  # CHANGE: Replace with your desired memory limit
+      # Memory reservation (guaranteed minimum). "0Mi" means no reservation.
+      memoryReservation: "0Mi"  # CHANGE: Replace with your desired memory reservation
