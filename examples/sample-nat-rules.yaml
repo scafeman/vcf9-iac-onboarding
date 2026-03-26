@@ -1,0 +1,89 @@
+# =============================================================================
+# Sample NAT Rules Manifests — NSX VPCNATRule (SNAT & DNAT)
+# =============================================================================
+#
+# *** NAT RULES ARE OPTIONAL — Most deployments do NOT need custom NAT rules. ***
+#
+#   • A default outbound NAT (SNAT) is AUTOMATICALLY created when a VPC is
+#     created, unless explicitly disabled. You do NOT need to create an SNAT
+#     rule for basic outbound internet access.
+#
+#   • Resources deployed with External IP blocks receive public IPs
+#     automatically, so DNAT rules are NOT always needed.
+#
+#   • Only create custom NAT rules when your networking design requires
+#     explicit translation beyond the defaults — for example, mapping a
+#     specific internal subnet to a dedicated external IP (SNAT) or
+#     forwarding inbound traffic to a specific internal host (DNAT).
+#
+# This file contains two manifests separated by "---":
+#   1. An SNAT rule — translates outbound traffic from an internal subnet
+#      to a specific external IP.
+#   2. A DNAT rule — translates inbound traffic from an external source
+#      to a specific internal IP.
+#
+# It corresponds to Phase 3, Step 5 of the VCF 9 IaC Onboarding Guide.
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl create -f sample-nat-rules.yaml --validate=false
+#      (--validate=false is required for NSX custom resources)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SNAT Rule — Source Network Address Translation
+# -----------------------------------------------------------------------------
+# Use an SNAT rule when you need outbound traffic from a specific internal
+# subnet to appear as a particular external IP. This is useful when external
+# services require a known source IP for allow-listing or auditing.
+#
+# NOTE: If the default outbound NAT (auto-created with the VPC) is sufficient
+# for your needs, you do NOT need this rule.
+# -----------------------------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCNATRule
+metadata:
+  # CHANGE: Replace with a descriptive SNAT rule name for your environment.
+  # Convention: <project>-snat-<purpose>  (e.g., "my-project-snat-egress")
+  name: sample-vcf-project-01-snat-egress  # CHANGE: Replace with your SNAT rule name
+  # The project namespace where the VPC resides.
+  namespace: sample-vcf-project-01  # CHANGE: Replace with your project name
+spec:
+  # Action type: SNAT translates the source address of outbound packets.
+  action: SNAT
+  # The external IP that outbound traffic will be translated to.
+  # This must be an IP from your allocated External IP block.
+  # Obtain available external IPs from your administrator or with:
+  #   kubectl get ipblocks
+  translatedNetwork: "<EXTERNAL_IP>"  # CHANGE: Replace with your specific external IP address
+  # The internal CIDR range whose outbound traffic will be translated.
+  # This should match a subnet within your VPC's privateIPs range.
+  sourceNetwork: "10.10.0.0/16"  # CHANGE: Replace with your internal CIDR range
+---
+# -----------------------------------------------------------------------------
+# DNAT Rule — Destination Network Address Translation
+# -----------------------------------------------------------------------------
+# Use a DNAT rule when you need to forward inbound traffic from an external
+# source to a specific internal IP. This is useful for exposing internal
+# services that are not behind a LoadBalancer or Ingress controller.
+#
+# NOTE: If your workloads use LoadBalancer Services or External IP blocks,
+# they already receive public IPs automatically — a DNAT rule is not needed.
+# -----------------------------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCNATRule
+metadata:
+  # CHANGE: Replace with a descriptive DNAT rule name for your environment.
+  # Convention: <project>-dnat-<purpose>  (e.g., "my-project-dnat-web")
+  name: sample-vcf-project-01-dnat-web  # CHANGE: Replace with your DNAT rule name
+  # The project namespace where the VPC resides.
+  namespace: sample-vcf-project-01  # CHANGE: Replace with your project name
+spec:
+  # Action type: DNAT translates the destination address of inbound packets.
+  action: DNAT
+  # The internal IP that inbound traffic will be forwarded to.
+  # This must be an IP within your VPC's privateIPs range.
+  translatedNetwork: "<INTERNAL_IP>"  # CHANGE: Replace with your specific internal IP address
+  # The external CIDR or IP range from which inbound traffic originates.
+  # This is typically a public IP or CIDR that should be forwarded.
+  sourceNetwork: "<EXTERNAL_CIDR>"  # CHANGE: Replace with your specific external CIDR or IP

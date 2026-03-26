@@ -22,11 +22,11 @@ Run the following command to create a named context that maps your CLI session t
 # Create a new VCF CLI context targeting the VCFA endpoint
 # - endpoint: the VCFA hostname or IP (port 443)
 # - type: "cci" for Cloud Consumption Interface operations
-# - tenant: the SSO tenant/organization configured in VCFA
+# - tenant-name: the SSO tenant/organization configured in VCFA
 vcf context create \
   --endpoint <VCFA_ENDPOINT> \
   --type cci \
-  --tenant <TENANT_NAME> \
+  --tenant-name <TENANT_NAME> \
   <CONTEXT_NAME>
 ```
 
@@ -109,7 +109,7 @@ Query the available Region resources to identify valid `regionName` values for S
 kubectl get regions
 ```
 
-Note the `NAME` value from the output — you will use this as the `<REGION_NAME>` placeholder in Phase 3.
+Note the `NAME` value from the output — you will use this as the `<REGION_NAME>` placeholder in Phase 3 and Phase 4.
 
 ### Step 3: Discover Available Zones
 
@@ -136,7 +136,7 @@ Query the available SupervisorNamespaceClass resources to identify valid resourc
 kubectl get svnscls
 ```
 
-Note the `NAME` value from the output — you will use this as the `<RESOURCE_CLASS>` placeholder in Phase 3.
+Note the `NAME` value from the output — you will use this as the `<RESOURCE_CLASS>` placeholder in Phase 4.
 
 ### Step 5: Discover Available VPCs
 
@@ -150,7 +150,7 @@ Query the available NSX VPC resources to identify valid VPC names for network pl
 kubectl get vpcs
 ```
 
-Note the `NAME` value from the output — you will use this as the `<VPC_NAME>` placeholder in Phase 3.
+Note the `NAME` value from the output — you will use this as the `<VPC_NAME>` placeholder in Phase 3 and Phase 4.
 
 ### Discovery Summary
 
@@ -164,15 +164,263 @@ After completing this phase, you should have values for the following placeholde
 | `<VPC_NAME>` | `kubectl get vpcs` | SupervisorNamespace `spec.vpcName` |
 
 These values are environment-specific and will differ across VCFA deployments. Record them before proceeding to Phase 3.
+---
+
+## Phase 3: VPC and Network Provisioning
+
+With topology values in hand from Phase 2, you can now provision the NSX VPC networking layer. This phase establishes network isolation and connectivity policies — the VCF 9 equivalent of configuring an AWS VPC with subnets, route tables, and NAT gateways. The VPC must be created before the Project and Supervisor Namespace in Phase 4, because the namespace manifest references the VPC by name.
+
+> **Prerequisite:** Complete Phase 2 (Topology Discovery) and have valid values for `<REGION_NAME>` and `<VPC_NAME>` before proceeding.
+
+> **Already have a VPC?** If your tenant already has a VPC provisioned (e.g., a default VPC discovered in Phase 2 via `kubectl get vpcs`), you can skip this phase entirely and proceed to Phase 4. Use your existing VPC name in the `vpcName` field of the SupervisorNamespace manifest.
+
+### Understanding the NSX VPC and Supervisor Namespace Relationship
+
+The NSX VPC (`vpc.nsx.vmware.com/v1alpha1`) provides the network isolation boundary for your workloads. When you create the Supervisor Namespace in Phase 4, you will specify a `vpcName` field in the manifest — this is the link between compute (Supervisor Namespace) and networking (NSX VPC).
+
+The `spec.vpcName` field in the SupervisorNamespace resource references an NSX VPC by name. All workloads running in that namespace inherit the VPC's network policies, IP address allocations, and connectivity rules.
+
+### Step 1: Query Available IP Blocks
+
+Before creating a VPC, check the available IP address ranges allocated for VPC networking. IPBlock resources define the CIDR ranges that NSX uses to assign addresses to VPCs and subnets:
+
+```bash
+# List all IP blocks available for VPC networking
+# API: vpc.nsx.vmware.com/v1alpha1, Kind: IPBlock
+# The output shows CIDR ranges and allocation status
+kubectl get ipblocks
+```
+
+Note the available CIDR ranges — you will reference these when configuring `privateIPs` in the VPC manifest.
+
+### Step 2: Inspect VPC Connectivity Profiles
+
+VPCConnectivityProfile resources define the default connectivity policies applied to VPCs, including external connectivity settings and service gateway configurations:
+
+```bash
+# List VPC connectivity profiles to understand default policies
+# API: vpc.nsx.vmware.com/v1alpha1, Kind: VPCConnectivityProfile
+# These profiles control how VPCs connect to external networks
+kubectl get vpcconnectivityprofiles
+```
+
+```bash
+# Inspect a specific profile for detailed connectivity settings
+kubectl get vpcconnectivityprofile <PROFILE_NAME> -o yaml
+```
+
+Review the connectivity profile to understand what external access policies are pre-configured before creating your VPC.
+
+### Step 3: Create the VPC
+
+Save the following YAML manifest to a file (e.g., `vpc.yaml`). This creates an NSX VPC with a private IP range and region assignment:
+
+```yaml
+# -----------------------------------------------------------
+# VPC Resource
+# Creates an NSX Virtual Private Cloud for network isolation.
+# The VPC defines the private address space and the region
+# where the VPC is provisioned.
+# API: vpc.nsx.vmware.com/v1alpha1
+# -----------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPC
+metadata:
+  # Unique VPC name within the project namespace
+  name: <VPC_NAME>
+spec:
+  # Private IP CIDR blocks allocated to this VPC
+  # Must fall within an available IPBlock range (see Step 1)
+  privateIPs:
+  - "<CIDR>"
+  # Region where the VPC is provisioned
+  regionName: <REGION_NAME>
+  # Enable the NSX load balancer endpoint for this VPC.
+  # Required for Supervisor Namespaces that deploy workloads
+  # with LoadBalancer Services.
+  loadBalancerVPCEndpoint:
+    enabled: true
+```
+
+Apply the VPC manifest:
+
+```bash
+# Create the NSX VPC resource
+# --validate=false is required for NSX custom resources
+kubectl create -f vpc.yaml --validate=false
+```
+
+### Step 4: Associate VPC with a VPC Connectivity Profile
+
+A VPCAttachment associates your VPC with a VPC Connectivity Profile, which defines the connectivity policies for external access, IP block assignments, and Transit Gateway routing. This replaces the need to create a Transit Gateway directly — the connectivity profile manages that relationship for you.
+
+Save the following YAML manifest to a file (e.g., `vpc-attachment.yaml`):
+
+```yaml
+# -----------------------------------------------------------
+# VPCAttachment Resource
+# Associates a VPC with a VPC Connectivity Profile that
+# defines external connectivity policies, IP block
+# assignments, and Transit Gateway routing.
+# API: vpc.nsx.vmware.com/v1alpha1
+# -----------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCAttachment
+metadata:
+  # The name MUST follow the pattern <vpcName>:<attachmentName>.
+  # The prefix before the colon must match the VPC name in spec.vpcName.
+  name: <VPC_NAME>:<ATTACHMENT_NAME>
+spec:
+  # Region where the VPC and connectivity profile reside
+  regionName: <REGION_NAME>
+  # Name of the VPC Connectivity Profile to associate with
+  # (see Step 2 for discovering available profiles)
+  vpcConnectivityProfileName: <CONNECTIVITY_PROFILE_NAME>
+  # Name of the VPC to attach (from Step 3)
+  vpcName: <VPC_NAME>
+```
+
+Replace the placeholders with your environment-specific values:
+
+| Placeholder | Description | Example |
+|---|---|---|
+| `<ATTACHMENT_NAME>` | Suffix for this VPC attachment (after the colon) | `my-vpc-attachment` |
+| `<REGION_NAME>` | Region from Phase 2 topology discovery | `us-west-1` |
+| `<CONNECTIVITY_PROFILE_NAME>` | VPC Connectivity Profile name from Step 2 | `default-connectivity-profile` |
+| `<VPC_NAME>` | VPC name from Step 3 | `my-project-vpc` |
+
+Apply the VPCAttachment manifest:
+
+```bash
+# Associate the VPC with a VPC Connectivity Profile
+kubectl create -f vpc-attachment.yaml --validate=false
+```
+
+> **Note:** If you need to associate a provider-provisioned public IP block and a self-created Private-Transit IP block with the Transit Gateway, you can create a new VPC Connectivity Profile rather than using an existing one. See `kubectl get vpcconnectivityprofiles` (Step 2) to inspect available profiles, or create a custom VPCConnectivityProfile resource that references the desired IP blocks and Transit Gateway.
+
+### Step 5: Configure NAT Rules (Optional — Advanced)
+
+> **Note:** A default outbound NAT (SNAT) is automatically created when a VPC is created, unless explicitly disabled during VPC creation. You do not need to create SNAT rules manually unless you require custom outbound translation beyond the default.
+
+> **Note:** Resources deployed with External IP blocks receive public IPs automatically. DNATs are not always needed for those resources — only configure DNAT rules when you need to expose internal workloads that do not already have public IPs.
+
+This step is optional. Most deployments do not require custom NAT rules. Only proceed if your networking design requires explicit SNAT or DNAT configuration beyond the defaults.
+
+VPCNATRule resources define Network Address Translation rules for VPC traffic. Use SNAT for outbound traffic (workloads reaching external networks) and DNAT for inbound traffic (external clients reaching workloads):
+
+**SNAT Rule — Outbound traffic:**
+
+```yaml
+# -----------------------------------------------------------
+# VPCNATRule Resource — SNAT (Source NAT)
+# Translates outbound traffic from internal workloads to an
+# external IP address. Use this when workloads need to reach
+# external services or the internet.
+# API: vpc.nsx.vmware.com/v1alpha1
+# -----------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCNATRule
+metadata:
+  # Descriptive name for the SNAT rule
+  name: <SNAT_RULE_NAME>
+  # Must match the Project name from Phase 4
+  namespace: <PROJECT_NAME>
+spec:
+  # SNAT = Source NAT for outbound traffic translation
+  action: SNAT
+  # External IP address that outbound traffic is translated to
+  translatedNetwork: "<EXTERNAL_IP>"
+  # Internal CIDR range whose traffic will be translated
+  sourceNetwork: "<INTERNAL_CIDR>"
+```
+
+**DNAT Rule — Inbound traffic:**
+
+```yaml
+# -----------------------------------------------------------
+# VPCNATRule Resource — DNAT (Destination NAT)
+# Translates inbound traffic from an external IP to an
+# internal workload address. Use this when external clients
+# need to reach services inside the VPC.
+# API: vpc.nsx.vmware.com/v1alpha1
+# -----------------------------------------------------------
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCNATRule
+metadata:
+  # Descriptive name for the DNAT rule
+  name: <DNAT_RULE_NAME>
+  # Must match the Project name from Phase 4
+  namespace: <PROJECT_NAME>
+spec:
+  # DNAT = Destination NAT for inbound traffic translation
+  action: DNAT
+  # Internal IP address that inbound traffic is forwarded to
+  translatedNetwork: "<INTERNAL_IP>"
+  # External IP/CIDR that triggers the translation
+  sourceNetwork: "<EXTERNAL_CIDR>"
+```
+
+Apply the NAT rules:
+
+```bash
+# Create SNAT rule for outbound connectivity
+kubectl create -f snat-rule.yaml --validate=false
+
+# Create DNAT rule for inbound connectivity
+kubectl create -f dnat-rule.yaml --validate=false
+```
+
+### Verify Network Resources
+
+After creating all network resources, verify their status:
+
+```bash
+# Verify VPC creation
+kubectl get vpcs -n <PROJECT_NAME>
+
+# Verify VPC Attachment
+kubectl get vpcattachments -n <PROJECT_NAME>
+
+# Verify NAT rules
+kubectl get vpcnatrules -n <PROJECT_NAME>
+```
+
+### Troubleshooting: IP Address Exhaustion
+
+If VPC creation fails or subnets cannot be allocated, the IP address pool may be exhausted. NSX tracks IP usage through dedicated status resources.
+
+**Expected symptoms:**
+- VPC creation fails with an IP allocation error
+- New subnets within the VPC cannot be provisioned
+- Workload pods fail to receive IP addresses
+
+**Remediation steps:**
+
+1. Check IP block usage to identify exhausted ranges:
+
+```bash
+# View IP block allocation details (CIDR ranges, sizes, and status)
+kubectl get ipblocks -o wide
+
+# For detailed allocation status of a specific IP block:
+kubectl describe ipblock <IPBLOCK_NAME>
+```
+
+2. If IP blocks are exhausted:
+   - Request additional IPBlock resources from your NSX administrator
+   - Consider reducing `defaultSubnetSize` in the VPC spec to allocate smaller subnets
+   - Review and reclaim unused VPCs or subnets that are no longer needed
+
+3. If the VPC has available capacity but pods still lack IPs, check the subnet allocation within the VPC and verify that the `privateIPs` range is large enough for your workload count
 
 
 ---
 
-## Phase 3: Project and Namespace Provisioning
+## Phase 4: Project and Namespace Provisioning
 
-With topology values in hand from Phase 2, you can now create the foundational VCF 9 resources: a Project for governance and RBAC, a ProjectRoleBinding for user access, and a Supervisor Namespace for compute and network isolation. These three resources form the base layer that all subsequent VKS cluster deployments depend on.
+With the VPC and networking layer established in Phase 3, you can now create the foundational VCF 9 resources: a Project for governance and RBAC, a ProjectRoleBinding for user access, and a Supervisor Namespace for compute and network isolation. The Supervisor Namespace references the VPC by name, which is why VPC provisioning must be completed first.
 
-> **Prerequisite:** Complete Phase 2 (Topology Discovery) and have valid values for `<REGION_NAME>`, `<ZONE_NAME>`, `<RESOURCE_CLASS>`, and `<VPC_NAME>` before proceeding.
+> **Prerequisite:** Complete Phase 2 (Topology Discovery) and Phase 3 (VPC and Network Provisioning). Have valid values for `<REGION_NAME>`, `<ZONE_NAME>`, `<RESOURCE_CLASS>`, and `<VPC_NAME>` before proceeding.
 
 ### Step 1: Create the Project, RBAC Binding, and Supervisor Namespace
 
@@ -240,7 +488,7 @@ spec:
   regionName: "<REGION_NAME>"
   # Supervisor Namespace class from Phase 2 (kubectl get svnscls)
   className: "<RESOURCE_CLASS>"
-  # NSX VPC for network placement from Phase 2 (kubectl get vpcs)
+  # NSX VPC for network placement — use the VPC created in Phase 3 or an existing VPC from Phase 2 (kubectl get vpcs)
   vpcName: "<VPC_NAME>"
   # Zone-specific resource limits and reservations
   initialClassConfigOverrides:
@@ -300,308 +548,58 @@ Error from server (AlreadyExists): projects.project.cci.vmware.com "<PROJECT_NAM
 
 ---
 
-## Phase 4: VPC and Network Provisioning
-
-With your Project and Supervisor Namespace created in Phase 3, you can now provision the NSX VPC networking layer. This phase establishes network isolation, cross-VPC routing via Transit Gateways, and NAT rules for external connectivity — the VCF 9 equivalent of configuring an AWS VPC with subnets, route tables, and NAT gateways.
-
-> **Prerequisite:** Complete Phase 3 (Project and Namespace Provisioning). You need a valid `<PROJECT_NAME>` and the `<VPC_NAME>` from Phase 2 topology discovery.
-
-### Understanding the NSX VPC and Supervisor Namespace Relationship
-
-The NSX VPC (`vpc.nsx.vmware.com/v1alpha1`) provides the network isolation boundary for your workloads. When you created the Supervisor Namespace in Phase 3, you specified a `vpcName` field in the manifest — this is the link between compute (Supervisor Namespace) and networking (NSX VPC).
-
-The `spec.vpcName` field in the SupervisorNamespace resource references an NSX VPC by name. All workloads running in that namespace inherit the VPC's network policies, IP address allocations, and connectivity rules. If you need a dedicated VPC for your project (rather than using a shared default VPC discovered in Phase 2), create one using the manifest below before provisioning namespaces that reference it.
-
-### Step 1: Query Available IP Blocks
-
-Before creating a VPC, check the available IP address ranges allocated for VPC networking. IPBlock resources define the CIDR ranges that NSX uses to assign addresses to VPCs and subnets:
-
-```bash
-# List all IP blocks available for VPC networking
-# API: vpc.nsx.vmware.com/v1alpha1, Kind: IPBlock
-# The output shows CIDR ranges and allocation status
-kubectl get ipblocks
-```
-
-Note the available CIDR ranges — you will reference these when configuring `privateCIDRs` in the VPC manifest.
-
-### Step 2: Inspect VPC Connectivity Profiles
-
-VPCConnectivityProfile resources define the default connectivity policies applied to VPCs, including external connectivity settings and service gateway configurations:
-
-```bash
-# List VPC connectivity profiles to understand default policies
-# API: vpc.nsx.vmware.com/v1alpha1, Kind: VPCConnectivityProfile
-# These profiles control how VPCs connect to external networks
-kubectl get vpcconnectivityprofiles
-```
-
-```bash
-# Inspect a specific profile for detailed connectivity settings
-kubectl get vpcconnectivityprofile <PROFILE_NAME> -o yaml
-```
-
-Review the connectivity profile to understand what external access policies are pre-configured before creating your VPC.
-
-### Step 3: Create the VPC
-
-Save the following YAML manifest to a file (e.g., `vpc.yaml`). This creates an NSX VPC that provides network isolation for your project:
-
-```yaml
-# -----------------------------------------------------------
-# VPC Resource
-# Creates an NSX Virtual Private Cloud for network isolation.
-# The VPC defines the private address space, default subnet
-# sizing, and Tier-0 gateway attachment for external routing.
-# API: vpc.nsx.vmware.com/v1alpha1
-# -----------------------------------------------------------
-apiVersion: vpc.nsx.vmware.com/v1alpha1
-kind: VPC
-metadata:
-  # Unique VPC name within the project namespace
-  name: <VPC_NAME>
-  # Must match the Project name from Phase 3
-  namespace: <PROJECT_NAME>
-spec:
-  # Tier-0 gateway path in NSX — provides external routing
-  # Obtain this from your NSX administrator
-  defaultGatewayPath: "<GATEWAY_PATH>"
-  # Default subnet prefix length (e.g., 16 = /16 subnets)
-  defaultSubnetSize: 16
-  # Short identifier used by NSX for internal references
-  shortID: "<SHORT_ID>"
-  # Private CIDR blocks allocated to this VPC
-  # Must fall within an available IPBlock range (see Step 1)
-  privateCIDRs:
-  - "<PRIVATE_CIDR>"
-```
-
-Apply the VPC manifest:
-
-```bash
-# Create the NSX VPC resource
-# --validate=false is required for NSX custom resources
-kubectl create -f vpc.yaml --validate=false
-```
-
-### Step 4: Create a Transit Gateway
-
-A Transit Gateway enables connectivity between VPCs or between a VPC and external networks — similar to an AWS Transit Gateway. Create one if you need cross-VPC routing or centralized external connectivity:
-
-```yaml
-# -----------------------------------------------------------
-# TransitGateway Resource
-# Enables cross-VPC and external network connectivity.
-# Acts as a central routing hub that VPCs attach to via
-# VPCAttachment resources.
-# API: vpc.nsx.vmware.com/v1alpha1
-# -----------------------------------------------------------
-apiVersion: vpc.nsx.vmware.com/v1alpha1
-kind: TransitGateway
-metadata:
-  # Unique Transit Gateway name within the project namespace
-  name: <TGW_NAME>
-  # Must match the Project name from Phase 3
-  namespace: <PROJECT_NAME>
-spec: {}
-```
-
-Apply the Transit Gateway manifest:
-
-```bash
-# Create the Transit Gateway resource
-kubectl create -f transit-gateway.yaml --validate=false
-```
-
-### Step 5: Attach the VPC to the Transit Gateway
-
-A VPCAttachment connects your VPC to a Transit Gateway, enabling routed connectivity. This is analogous to attaching a VPC to an AWS Transit Gateway:
-
-```yaml
-# -----------------------------------------------------------
-# VPCAttachment Resource
-# Connects a VPC to a Transit Gateway for cross-VPC or
-# external network routing. Both the VPC and Transit Gateway
-# must exist in the same project namespace.
-# API: vpc.nsx.vmware.com/v1alpha1
-# -----------------------------------------------------------
-apiVersion: vpc.nsx.vmware.com/v1alpha1
-kind: VPCAttachment
-metadata:
-  # Unique attachment name within the project namespace
-  name: <ATTACHMENT_NAME>
-  # Must match the Project name from Phase 3
-  namespace: <PROJECT_NAME>
-spec:
-  # Name of the VPC to attach (from Step 3)
-  vpcName: <VPC_NAME>
-  # Name of the Transit Gateway to attach to (from Step 4)
-  transitGatewayName: <TGW_NAME>
-```
-
-Apply the VPCAttachment manifest:
-
-```bash
-# Create the VPC-to-TransitGateway attachment
-kubectl create -f vpc-attachment.yaml --validate=false
-```
-
-### Step 6: Configure NAT Rules
-
-VPCNATRule resources define Network Address Translation rules for VPC traffic. Use SNAT for outbound traffic (workloads reaching external networks) and DNAT for inbound traffic (external clients reaching workloads):
-
-**SNAT Rule — Outbound traffic:**
-
-```yaml
-# -----------------------------------------------------------
-# VPCNATRule Resource — SNAT (Source NAT)
-# Translates outbound traffic from internal workloads to an
-# external IP address. Use this when workloads need to reach
-# external services or the internet.
-# API: vpc.nsx.vmware.com/v1alpha1
-# -----------------------------------------------------------
-apiVersion: vpc.nsx.vmware.com/v1alpha1
-kind: VPCNATRule
-metadata:
-  # Descriptive name for the SNAT rule
-  name: <SNAT_RULE_NAME>
-  # Must match the Project name from Phase 3
-  namespace: <PROJECT_NAME>
-spec:
-  # SNAT = Source NAT for outbound traffic translation
-  action: SNAT
-  # External IP address that outbound traffic is translated to
-  translatedNetwork: "<EXTERNAL_IP>"
-  # Internal CIDR range whose traffic will be translated
-  sourceNetwork: "<INTERNAL_CIDR>"
-```
-
-**DNAT Rule — Inbound traffic:**
-
-```yaml
-# -----------------------------------------------------------
-# VPCNATRule Resource — DNAT (Destination NAT)
-# Translates inbound traffic from an external IP to an
-# internal workload address. Use this when external clients
-# need to reach services inside the VPC.
-# API: vpc.nsx.vmware.com/v1alpha1
-# -----------------------------------------------------------
-apiVersion: vpc.nsx.vmware.com/v1alpha1
-kind: VPCNATRule
-metadata:
-  # Descriptive name for the DNAT rule
-  name: <DNAT_RULE_NAME>
-  # Must match the Project name from Phase 3
-  namespace: <PROJECT_NAME>
-spec:
-  # DNAT = Destination NAT for inbound traffic translation
-  action: DNAT
-  # Internal IP address that inbound traffic is forwarded to
-  translatedNetwork: "<INTERNAL_IP>"
-  # External IP/CIDR that triggers the translation
-  sourceNetwork: "<EXTERNAL_CIDR>"
-```
-
-Apply the NAT rules:
-
-```bash
-# Create SNAT rule for outbound connectivity
-kubectl create -f snat-rule.yaml --validate=false
-
-# Create DNAT rule for inbound connectivity
-kubectl create -f dnat-rule.yaml --validate=false
-```
-
-### Verify Network Resources
-
-After creating all network resources, verify their status:
-
-```bash
-# Verify VPC creation
-kubectl get vpcs -n <PROJECT_NAME>
-
-# Verify Transit Gateway
-kubectl get transitgateways -n <PROJECT_NAME>
-
-# Verify VPC Attachment
-kubectl get vpcattachments -n <PROJECT_NAME>
-
-# Verify NAT rules
-kubectl get vpcnatrules -n <PROJECT_NAME>
-```
-
-### Troubleshooting: IP Address Exhaustion
-
-If VPC creation fails or subnets cannot be allocated, the IP address pool may be exhausted. NSX tracks IP usage through dedicated status resources.
-
-**Expected symptoms:**
-- VPC creation fails with an IP allocation error
-- New subnets within the VPC cannot be provisioned
-- Workload pods fail to receive IP addresses
-
-**Remediation steps:**
-
-1. Check IP block usage to identify exhausted ranges:
-
-```bash
-# View IP block allocation status
-# Shows how much of each IPBlock CIDR is consumed
-kubectl get ipblockusages
-```
-
-2. Check VPC-level IP address consumption:
-
-```bash
-# View IP address usage per VPC
-# Shows allocated vs available addresses within each VPC
-kubectl get vpcipaddressusages
-```
-
-3. If IP blocks are exhausted:
-   - Request additional IPBlock resources from your NSX administrator
-   - Consider reducing `defaultSubnetSize` in the VPC spec to allocate smaller subnets
-   - Review and reclaim unused VPCs or subnets that are no longer needed
-
-4. If the VPC has available capacity but pods still lack IPs, check the subnet allocation within the VPC and verify that the `privateCIDRs` range is large enough for your workload count
-
-
----
-
 ## Phase 5: Context Bridge Execution
 
 The Context Bridge is the critical step that separates VCF 9 from other Kubernetes platforms. After provisioning your Project, Namespace, and VPC resources in the previous phases, you are still operating in a **global (org-level) context**. From this scope, the VCF CLI and `kubectl` can manage CCI resources like Projects, Namespaces, VPCs, and topology — but **Cluster API resources are completely invisible**.
 
-To deploy VKS clusters, you must switch to a **namespace-scoped context** that targets the specific Supervisor Namespace you created in Phase 3. This context switch — the Context Bridge — makes the `cluster.x-k8s.io` API group visible and allows you to create and manage VKS cluster resources.
+To deploy VKS clusters, you must switch to a **namespace-scoped context** that targets the specific Supervisor Namespace you created in Phase 4. This context switch — the Context Bridge — makes the `cluster.x-k8s.io` API group visible and allows you to create and manage VKS cluster resources.
 
 > **This phase is mandatory.** You cannot skip the Context Bridge and proceed directly to VKS cluster deployment. Without it, `kubectl` cannot see or interact with Cluster API resources.
 
-> **Prerequisite:** Complete Phase 3 (Project and Namespace Provisioning) and Phase 4 (VPC and Network Provisioning). You need your `<CONTEXT_NAME>`, `<PROJECT_NAME>`, and the Dynamic Namespace Name generated in Phase 3.
+> **Prerequisite:** Complete Phase 3 (VPC and Network Provisioning) and Phase 4 (Project and Namespace Provisioning). You need your `<CONTEXT_NAME>`, `<PROJECT_NAME>`, and the Dynamic Namespace Name generated in Phase 4.
 
-### Step 1: Refresh the CLI Context Cache
+### Step 1: Identify the Dynamic Namespace Name
 
-After creating infrastructure resources in Phases 3 and 4, the VCF CLI's local cache may not reflect the newly provisioned namespaces. Run a context refresh to update the cache:
-
-```bash
-# Refresh the VCF CLI context cache to pick up newly created
-# resources including the dynamically named Supervisor Namespace
-vcf context refresh
-```
-
-This ensures the CLI is aware of all namespaces and projects that were created since the context was first initialized.
-
-### Step 2: Identify the Dynamic Namespace Name
-
-The Supervisor Namespace you created in Phase 3 used `generateName`, which means VCF appended a random 5-character suffix to your prefix. You need the exact generated name to complete the Context Bridge. List all available contexts to find it:
+The Supervisor Namespace you created in Phase 4 used `generateName`, which means VCF appended a random 5-character suffix to your prefix. You need the exact generated name to complete the Context Bridge. Retrieve it directly with `kubectl`:
 
 ```bash
-# List all available contexts and their associated namespaces
-# Look for the entry matching your project and namespace prefix
-# The Dynamic_Namespace_Name will appear with the 5-char suffix
-# (e.g., "myproject-ns-frywy")
-vcf context list
+# List Supervisor Namespaces in the project to find the generated name
+# The NAME column shows the full Dynamic Namespace Name including the suffix
+kubectl get supervisornamespaces -n <PROJECT_NAME>
 ```
 
-In the output, locate the entry that matches your `<NAMESPACE_PREFIX>` from Phase 3. The full name including the random suffix is your `<GENERATED_NS_NAME>` — record this value for the next step.
+Example output:
+
+```
+NAME                             STATUS    REGION         CLASS    VPC                        AGE
+sample-vcf-project-01-ns-z8d9t   Created   region-us1-a   medium   region-us1-a-default-vpc   91s
+```
+
+The `NAME` value (e.g., `sample-vcf-project-01-ns-z8d9t`) is your `<GENERATED_NS_NAME>` — record this for the next step.
+
+### Step 2: Re-register the CLI Context to Discover the New Namespace
+
+After creating a new Supervisor Namespace, the VCF CLI's local context cache does not automatically discover it. The `vcf context refresh` command will NOT work for this — it only checks token validity and skips namespace re-enumeration when the token is still active.
+
+The reliable method is to **delete and recreate the context**, which forces a full login and namespace enumeration:
+
+```bash
+# Delete the existing context (this removes all cached namespace contexts)
+vcf context delete <CONTEXT_NAME> --yes
+
+# Recreate the context — this performs a full login and discovers all namespaces
+# including the newly created Supervisor Namespace
+vcf context create <CONTEXT_NAME> \
+  --endpoint https://<VCFA_ENDPOINT> \
+  --type cci \
+  --tenant-name <TENANT_NAME> \
+  --api-token <API_TOKEN> \
+  --set-current
+```
+
+In the output, verify that the three-part context name for your new namespace appears in the list (e.g., `vcf-samples-test:sample-vcf-project-01-ns-z8d9t:sample-vcf-project-01`).
+
+> **Why not `vcf context refresh`?** When the API token is still valid, `vcf context refresh` reports "Token is still active. Skipped the token refresh" and does not re-enumerate namespaces. Attempting `vcf context use` with a three-part name that hasn't been discovered will fail with "context not found". The delete + recreate approach is the only reliable method to pick up newly created namespaces.
 
 ### Step 3: Switch to Namespace-Scoped Context
 
@@ -609,9 +607,9 @@ Use the `vcf context use` command with the three-part format to switch from glob
 
 ```bash
 # Switch to namespace-scoped context using the three-part format:
-#   <CONTEXT_NAME>  — the CLI context created in Phase 1
-#   <GENERATED_NS_NAME> — the dynamic namespace name from Step 2
-#   <PROJECT_NAME>  — the project name from Phase 3
+#   <CONTEXT_NAME>      — the CLI context created above
+#   <GENERATED_NS_NAME> — the dynamic namespace name from Step 1
+#   <PROJECT_NAME>      — the project name from Phase 4
 # This makes Cluster API resources (cluster.x-k8s.io) visible
 vcf context use <CONTEXT_NAME>:<GENERATED_NS_NAME>:<PROJECT_NAME>
 ```
@@ -652,8 +650,8 @@ When running `kubectl get clusters` or `kubectl apply -f cluster.yaml`, the glob
 **Remediation steps:**
 
 1. Verify your current context scope — if you see CCI resources (Projects, Namespaces) but not Cluster resources, you are still in global scope
-2. Run `vcf context refresh` to ensure the CLI cache is up to date
-3. Run `vcf context list` to find the correct Dynamic Namespace Name
+2. Run `kubectl get supervisornamespaces -n <PROJECT_NAME>` to get the exact generated namespace name
+3. Delete and recreate the context to force namespace re-enumeration: `vcf context delete <CONTEXT_NAME> --yes` then `vcf context create <CONTEXT_NAME> --endpoint ... --type cci --tenant-name ... --api-token ... --set-current`
 4. Run `vcf context use <CONTEXT_NAME>:<GENERATED_NS_NAME>:<PROJECT_NAME>` to switch to namespace scope
 5. Retry the cluster operation — `kubectl get clusters` should now return a valid response
 
@@ -804,6 +802,48 @@ Replace the placeholders with your environment-specific values:
 | `<VM_CLASS>` | VM class for worker nodes | `best-effort-large` |
 | `<STORAGE_CLASS>` | Storage class for persistent volumes | `nfs` |
 
+#### How to Obtain the Content Library ID
+
+The `<CONTENT_LIBRARY_ID>` is a vSphere-level resource identifier that points to the content library containing Tanzu Kubernetes node OS images. The ID is typically a UUID-like string (e.g., `cl-32ee3681364c701d0`). You can find it using either of the following methods:
+
+**Method 1: kubectl CLI**
+
+There are two types of content libraries. Project-scoped content libraries are visible with `kubectl get contentlibraries`, and cluster-scoped content libraries (typically the Kubernetes Service Content Library containing OS images) are visible with `kubectl get clustercontentlibraries`. Check both:
+
+```bash
+# List project-scoped content libraries (Local libraries)
+kubectl get contentlibraries
+
+# List cluster-scoped content libraries (Subscribed libraries with OS images)
+# The Kubernetes Service Content Library typically appears here
+kubectl get clustercontentlibraries
+```
+
+Example output:
+
+```
+# kubectl get contentlibraries
+NAME                   VSPHERENAME            TYPE    WRITABLE   ALLOWIMPORT   STORAGETYPE   AGE
+cl-97acf13b5e2909643   local-content-lib-01   Local   false      false         Datastore     35m
+
+# kubectl get clustercontentlibraries
+NAME                   VSPHERENAME                          TYPE         STORAGETYPE   AGE
+cl-32ee3681364c701d0   Kubernetes Service Content Library   Subscribed   Datastore     13d
+```
+
+The `NAME` column contains the Content Library ID. For VKS cluster creation, use the ID from the library that contains the Tanzu Kubernetes node OS images — this is typically the **Subscribed** library listed by `kubectl get clustercontentlibraries` (e.g., `cl-32ee3681364c701d0`).
+
+**Method 2: VCFA Portal (UI)**
+
+1. Log in to the VCFA portal at `https://<VCFA_ENDPOINT>`
+2. Navigate to **Build & Deploy** → **Services** → **Virtual Machine Image**
+3. Click the **Content Libraries** tab (next to "Virtual Machine Images")
+4. The table shows both Local and Subscribed libraries — click the library that contains the Tanzu Kubernetes node OS images (e.g., "Kubernetes Service Content Library", Type: Subscribed)
+5. Click the **VIEW YAML** link next to the library name
+6. In the YAML view, find the `metadata.name` field (line 13) — this is the Content Library ID (e.g., `cl-32ee3681364c701d0`)
+
+> **Note:** The Content Library ID is not visible in the browser URL. You must use the VIEW YAML link to find it.
+
 ### Step 2: Apply the VKS Cluster Manifest
 
 Use `kubectl apply` with both `--validate=false` and `--insecure-skip-tls-verify` flags. The Cluster API custom resource schemas are not available for local validation, and the Supervisor API server may use a certificate that is not in your local trust store:
@@ -826,7 +866,7 @@ VKS cluster provisioning takes several minutes as VCF creates the control plane 
 # List all clusters in the current namespace
 # STATUS column shows provisioning progress
 # PHASE column transitions: Provisioning → Provisioned
-kubectl get clusters
+kubectl get clusters -w
 ```
 
 **Watch VM provisioning in real time:**
@@ -852,9 +892,38 @@ With the VKS cluster provisioned in Phase 6, you need to validate that storage p
 
 ### Step 1: Obtain the VKS Cluster Kubeconfig
 
-Before deploying workloads to the VKS cluster, you need a kubeconfig that targets the guest cluster's API server. There are two methods to obtain it.
+Before deploying workloads to the VKS cluster, you need a kubeconfig that targets the guest cluster's API server. There are three methods to obtain it, listed from simplest to most advanced.
 
-**Option A: Download from the VCFA Portal (UI)**
+**Option A: VCF CLI (Simplest)**
+
+The fastest way to retrieve a VKS cluster kubeconfig is with the VCF CLI. This downloads the kubeconfig directly to stdout, which you can redirect to a file.
+
+```bash
+# Download the kubeconfig for a VKS cluster using the VCF CLI
+# Replace <CLUSTER_NAME> with the name of your VKS cluster
+# The --admin flag is optional and provides admin-level credentials
+vcf cluster kubeconfig get <CLUSTER_NAME> [--admin]
+```
+
+To save the kubeconfig to a file and set it as the active context:
+
+```bash
+# Save the kubeconfig to a file
+vcf cluster kubeconfig get <CLUSTER_NAME> > ~/kubeconfigs/<CLUSTER_NAME>.yaml
+
+# Set the KUBECONFIG environment variable to target the VKS guest cluster
+export KUBECONFIG=~/kubeconfigs/<CLUSTER_NAME>.yaml
+```
+
+Verify connectivity to the VKS guest cluster:
+
+```bash
+# Confirm kubectl is targeting the VKS guest cluster
+# You should see the guest cluster's system namespaces (kube-system, etc.)
+kubectl get namespaces
+```
+
+**Option B: Download from the VCFA Portal (UI)**
 
 1. Log in to the VCFA portal at `https://<VCFA_ENDPOINT>`
 2. Navigate to your Project and locate the VKS cluster under the Kubernetes Clusters section
@@ -878,7 +947,7 @@ Verify connectivity to the VKS guest cluster:
 kubectl get namespaces
 ```
 
-**Option B: Programmatic Kubeconfig via VksCredentialRequest**
+**Option C: Programmatic Kubeconfig via VksCredentialRequest**
 
 As an alternative to the portal UI, you can programmatically retrieve the kubeconfig by creating a VksCredentialRequest resource. This is useful for CI/CD pipelines and automation workflows where portal access is not practical.
 
@@ -1132,30 +1201,85 @@ vks-test-lb   LoadBalancer   10.96.45.123   <pending>     80:31234/TCP   10m
 
 **Remediation steps:**
 
-1. Check NSX load balancer resources from the Supervisor context (switch back to the Supervisor context from Phase 5 if needed):
+1. **Primary check — verify the Service directly from the VKS guest cluster context:**
 
 ```bash
-# List NSX LoadBalancer resources across all namespaces
-# This shows whether NSX has provisioned a load balancer for the service
+# List Services and check the EXTERNAL-IP column
+# This is the most reliable way to confirm LoadBalancer functionality
+# The EXTERNAL-IP column should show an IP address (not <pending>)
+kubectl get svc
+```
+
+This is the primary verification method. If the `EXTERNAL-IP` column shows an assigned IP address, the LoadBalancer is working correctly regardless of what other commands report.
+
+2. **(Advanced) Check NSX native LoadBalancer resources from the Supervisor context:**
+
+> **Note:** The command `kubectl get loadbalancers -A` queries NSX native LoadBalancer resources (`vpc.nsx.vmware.com/v1alpha1`) at the Supervisor level. This command is only available from the Supervisor context (not the VKS guest cluster context) and **may return empty results** in a test cluster — this does not necessarily indicate a problem. NSX provisions load balancers transparently when a `Service` of type `LoadBalancer` is created, and the native resources may not be visible from the guest cluster. Use `kubectl get svc` (step 1 above) as the authoritative check.
+
+```bash
+# (Supervisor context only) List NSX native LoadBalancer resources
+# Switch to the Supervisor context from Phase 5 if needed
+# Empty results are normal in many VKS guest cluster environments
 kubectl get loadbalancers -A
 ```
 
-2. Verify the NSX Edge cluster has available capacity for new load balancers — contact your NSX administrator if the Edge cluster is at capacity
+3. Verify the NSX Edge cluster has available capacity for new load balancers — contact your NSX administrator if the Edge cluster is at capacity
 
-3. Check that the VPC NAT rules and connectivity profiles allow external traffic — review the VPCNATRule and VPCConnectivityProfile resources from Phase 4
+4. Check that the VPC NAT rules and connectivity profiles allow external traffic — review the VPCNATRule and VPCConnectivityProfile resources from Phase 3
 
-4. Describe the Service to see events and error messages:
+5. Describe the Service to see events and error messages:
 
 ```bash
 # View detailed Service status and events
 kubectl describe svc vks-test-lb
 ```
 
-5. Common causes:
+6. Common causes:
    - NSX Edge cluster has no available capacity for new load balancers — request capacity expansion from the NSX administrator
    - VPC connectivity profile does not allow external IP allocation — verify the VPCConnectivityProfile permits LoadBalancer services
    - Firewall rules block traffic to the allocated external IP — check NSX distributed firewall rules and any upstream firewalls
 
+
+---
+
+## Phase 8: Cluster Scaling
+
+As workload demands change, you can scale your VKS cluster up or down using the VCF CLI. Scaling adjusts the number of control plane and/or worker nodes without redeploying the cluster.
+
+### When to Scale
+
+- **Scale up** when you observe increased workload demand, resource pressure (CPU/memory), or need additional fault tolerance for the control plane.
+- **Scale down** when workloads have been reduced and you want to reclaim infrastructure resources. Ensure remaining nodes have sufficient capacity before scaling down.
+
+### Scale the Cluster
+
+Use the `vcf cluster scale` command to adjust node counts:
+
+```bash
+vcf cluster scale <CLUSTER_NAME> -c <CONTROL_PLANE_COUNT> -w <WORKER_COUNT>
+```
+
+| Parameter | Description |
+|---|---|
+| `<CLUSTER_NAME>` | Name of the VKS cluster to scale |
+| `-c <CONTROL_PLANE_COUNT>` | New total number of control plane nodes (e.g., `3`) |
+| `-w <WORKER_COUNT>` | New total number of worker nodes (e.g., `5`) |
+
+> **Note:** Control plane nodes should use odd numbers (1, 3, 5) to maintain etcd quorum. Scaling the control plane is less common than scaling workers.
+
+### Verify the Scaling Operation
+
+After issuing the scale command, monitor the cluster until the new nodes are ready:
+
+```bash
+# Check overall cluster status — PHASE should return to "Provisioned"
+kubectl get clusters
+
+# Verify the expected number of VMs are running
+kubectl get virtualmachines
+```
+
+The scaling operation is complete when the cluster phase returns to `Provisioned` and the virtual machine count matches your requested node totals.
 
 ---
 
@@ -1256,13 +1380,13 @@ Key differences:
 
 | Aspect | AWS VPC | NSX VPC |
 |---|---|---|
-| Network isolation | VPC with CIDR block | NSX VPC with `privateCIDRs` and Tier-0 gateway |
+| Network isolation | VPC with CIDR block | NSX VPC with `privateIPs` and Tier-0 gateway |
 | Subnet model | Explicit subnets in Availability Zones | Implicit — Zones are used for compute placement, not subnet definition |
 | Routing | Route Tables per subnet | TransitGateway + VPCAttachment for cross-VPC; Tier-0 gateway for external |
 | Internet access | Internet Gateway (public) + NAT Gateway (private) | VPCNATRule with SNAT action for outbound; DNAT for inbound |
 | Cross-VPC connectivity | Transit Gateway + TGW Attachments | TransitGateway + VPCAttachment resources |
 | Firewall rules | Security Groups (per ENI, stateful) | VPCConnectivityProfile (per VPC, policy-based) + NSX Distributed Firewall |
-| IP management | VPC CIDR + subnet allocation | IPBlock resources define available ranges; VPC references them via `privateCIDRs` |
+| IP management | VPC CIDR + subnet allocation | IPBlock resources define available ranges; VPC references them via `privateIPs` |
 | Load balancing | ALB / NLB (managed services) | NSX LoadBalancer (auto-provisioned for `Service` type `LoadBalancer`) |
 | Provisioning method | AWS CLI / CloudFormation / Terraform | `kubectl create` with NSX VPC YAML manifests |
 
@@ -1278,13 +1402,13 @@ This table documents all 22 `<PLACEHOLDER>` variables used throughout the guide.
 | `<CONTEXT_NAME>` | VCF CLI context name — a local identifier for your CLI session targeting a specific VCFA endpoint and tenant | `my-project-dev` | Phase 1, Phase 5 |
 | `<VCFA_ENDPOINT>` | VCFA hostname or IP address — the VCF Automation endpoint your CLI connects to on port 443 | `vcfa01.example.com` | Phase 1 |
 | `<TENANT_NAME>` | SSO tenant/organization name — the identity tenant configured in VCFA for your organization | `org-mycompany-01` | Phase 1 |
-| `<PROJECT_NAME>` | CCI Project name — unique identifier for the governance boundary that owns namespaces and RBAC bindings | `myproject-dev-01` | Phase 3, Phase 4, Phase 5 |
-| `<USER_IDENTITY>` | SSO user identity — the username to grant access to the project via ProjectRoleBinding | `devops-user-1` | Phase 3 |
-| `<REGION_NAME>` | Region name from topology discovery — identifies the geographic or logical deployment region in VCFA | `region-us1-a` | Phase 2, Phase 3 |
-| `<ZONE_NAME>` | Zone name from topology discovery — identifies the availability zone (vSphere cluster or fault domain) within a region | `zone-dc1-cl01` | Phase 2, Phase 3 |
+| `<PROJECT_NAME>` | CCI Project name — unique identifier for the governance boundary that owns namespaces and RBAC bindings | `myproject-dev-01` | Phase 4, Phase 5 |
+| `<USER_IDENTITY>` | SSO user identity — the username to grant access to the project via ProjectRoleBinding | `devops-user-1` | Phase 4 |
+| `<REGION_NAME>` | Region name from topology discovery — identifies the geographic or logical deployment region in VCFA | `region-us1-a` | Phase 2, Phase 3, Phase 4 |
+| `<ZONE_NAME>` | Zone name from topology discovery — identifies the availability zone (vSphere cluster or fault domain) within a region | `zone-dc1-cl01` | Phase 2, Phase 4 |
 | `<VPC_NAME>` | NSX VPC name — identifies the Virtual Private Cloud for network isolation and IP management | `region-us1-a-default-vpc` | Phase 2, Phase 3, Phase 4 |
-| `<RESOURCE_CLASS>` | Supervisor Namespace class — determines CPU and memory resource tier for the namespace (from `kubectl get svnscls`) | `xxlarge` | Phase 2, Phase 3 |
-| `<NAMESPACE_PREFIX>` | Prefix for `generateName` — VCF appends a random 5-character suffix to produce the Dynamic Namespace Name | `myproject-ns-` | Phase 3 |
+| `<RESOURCE_CLASS>` | Supervisor Namespace class — determines CPU and memory resource tier for the namespace (from `kubectl get svnscls`) | `xxlarge` | Phase 2, Phase 4 |
+| `<NAMESPACE_PREFIX>` | Prefix for `generateName` — VCF appends a random 5-character suffix to produce the Dynamic Namespace Name | `myproject-ns-` | Phase 4 |
 | `<GENERATED_NS_NAME>` | Dynamic Namespace Name — the VCF-generated namespace identifier including the random 5-character suffix | `myproject-ns-a1b2c` | Phase 5, Phase 6, Phase 7 |
 | `<CLUSTER_NAME>` | VKS cluster name — unique identifier for the managed Kubernetes cluster within the Supervisor Namespace | `myproject-clus-01` | Phase 6, Phase 7 |
 | `<K8S_VERSION>` | Kubernetes version — the target Tanzu Kubernetes Release version for the VKS cluster | `v1.33.6+vmware.1-fips` | Phase 6 |
@@ -1295,7 +1419,7 @@ This table documents all 22 `<PLACEHOLDER>` variables used throughout the guide.
 | `<STORAGE_CLASS>` | Storage class name — the Kubernetes storage class used for persistent volume provisioning on the VKS cluster | `nfs` | Phase 6, Phase 7 |
 | `<MIN_NODES>` | Autoscaler minimum node count — lower bound for the cluster autoscaler on the worker node pool | `3` | Phase 6 |
 | `<MAX_NODES>` | Autoscaler maximum node count — upper bound for the cluster autoscaler on the worker node pool | `10` | Phase 6 |
-| `<IP_BLOCK_CIDR>` | IP block CIDR for VPC networking — defines the address range available for VPC subnet allocation from NSX IPBlock resources | `10.0.0.0/16` | Phase 4 |
+| `<IP_BLOCK_CIDR>` | IP block CIDR for VPC networking — defines the address range available for VPC subnet allocation from NSX IPBlock resources | `10.0.0.0/16` | Phase 3 |
 | `<KUBECONFIG_PATH>` | Path to downloaded VKS kubeconfig file — local filesystem path where the guest cluster kubeconfig is saved | `~/kubeconfigs/myproject-clus-01.yaml` | Phase 7 |
 
 
@@ -1307,9 +1431,9 @@ This section documents all CCI, Cluster API, NSX VPC, and Topology API groups us
 
 | API Group | Version | Resource Kind(s) | Description | Used In Phase(s) |
 |---|---|---|---|---|
-| `project.cci.vmware.com` | `v1alpha2` | Project | Governance boundary for resource ownership and RBAC scoping within VCFA | Phase 3 |
-| `authorization.cci.vmware.com` | `v1alpha1` | ProjectRoleBinding, ProjectRole | RBAC bindings that grant SSO users access to a Project with a predefined role (admin, edit, view) | Phase 3 |
-| `infrastructure.cci.vmware.com` | `v1alpha2` | SupervisorNamespace, SupervisorNamespaceClass, SupervisorNamespaceClassConfig | Supervisor Namespace lifecycle management, resource class definitions, and class configuration overrides | Phase 2, Phase 3 |
+| `project.cci.vmware.com` | `v1alpha2` | Project | Governance boundary for resource ownership and RBAC scoping within VCFA | Phase 4 |
+| `authorization.cci.vmware.com` | `v1alpha1` | ProjectRoleBinding, ProjectRole | RBAC bindings that grant SSO users access to a Project with a predefined role (admin, edit, view) | Phase 4 |
+| `infrastructure.cci.vmware.com` | `v1alpha2` | SupervisorNamespace, SupervisorNamespaceClass, SupervisorNamespaceClassConfig | Supervisor Namespace lifecycle management, resource class definitions, and class configuration overrides | Phase 2, Phase 4 |
 | `infrastructure.cci.vmware.com` | `v1alpha1` | VksCredentialRequest, ResourceMetricsRequest, BootstrapConfiguration | Programmatic kubeconfig retrieval for VKS clusters, resource metrics queries, and bootstrap configuration | Phase 7 |
 | `topology.cci.vmware.com` | `v1alpha2` | Region | Geographic or logical deployment regions within the VCFA topology | Phase 2 |
 | `topology.cci.vmware.com` | `v1alpha1` | Zone | Availability zones (vSphere clusters or fault domains) within a Region | Phase 2 |
@@ -1328,17 +1452,17 @@ This section consolidates all error scenarios documented throughout the guide in
 | 1 — Environment Initialization | Invalid tenant name | Context creates successfully but `kubectl` commands return 401/403 Unauthorized | Confirm the tenant name matches the SSO organization configured in VCFA |
 | 1 — Environment Initialization | Missing API token | First `kubectl` command fails with authentication error | Generate an API token from the VCFA portal before using the VCF CLI |
 | 1 — Environment Initialization | Missing fleet certificate | TLS verification fails on CLI or `kubectl` commands | Download the fleet certificate (`restbaseuri.1`) from the provider interface and configure it locally |
-| 3 — Project & Namespace Provisioning | Project naming conflict | `kubectl create` returns `AlreadyExists` error | List existing projects with `kubectl get projects` and choose a unique name |
-| 3 — Project & Namespace Provisioning | Invalid region, zone, or class | SupervisorNamespace creation fails with a validation error | Re-run Phase 2 topology discovery commands to verify valid values for `regionName`, `className`, and zone `name` |
-| 3 — Project & Namespace Provisioning | Missing `--validate=false` flag | `kubectl` rejects CCI custom resource fields with schema validation errors | Add `--validate=false` to the `kubectl create` command to bypass local schema validation |
-| 4 — VPC & Network Provisioning | IP address exhaustion | VPC creation fails or subnets/pods cannot receive IP addresses | Check `kubectl get ipblockusages` and `kubectl get vpcipaddressusages` to identify exhausted IP blocks; request additional IPBlock resources from your NSX administrator |
-| 4 — VPC & Network Provisioning | Transit Gateway connectivity failure | VPCAttachment remains in a pending state | Verify the Tier-0 gateway path is correct and check NSX Edge cluster health |
-| 5 — Context Bridge | Stale CLI cache | `vcf context list` does not show the newly created namespace | Run `vcf context refresh` to update the CLI cache with recently provisioned resources |
+| 3 — VPC & Network Provisioning | IP address exhaustion | VPC creation fails or subnets/pods cannot receive IP addresses | Check `kubectl get ipblocks -o wide` to identify exhausted IP blocks; request additional IPBlock resources from your NSX administrator |
+| 3 — VPC & Network Provisioning | Transit Gateway connectivity failure | VPCAttachment remains in a pending state | Verify the Tier-0 gateway path is correct and check NSX Edge cluster health |
+| 4 — Project & Namespace Provisioning | Project naming conflict | `kubectl create` returns `AlreadyExists` error | List existing projects with `kubectl get projects` and choose a unique name |
+| 4 — Project & Namespace Provisioning | Invalid region, zone, or class | SupervisorNamespace creation fails with a validation error | Re-run Phase 2 topology discovery commands to verify valid values for `regionName`, `className`, and zone `name` |
+| 4 — Project & Namespace Provisioning | Missing `--validate=false` flag | `kubectl` rejects CCI custom resource fields with schema validation errors | Add `--validate=false` to the `kubectl create` command to bypass local schema validation |
+| 5 — Context Bridge | Stale CLI cache | `vcf context list` does not show the newly created namespace | `vcf context refresh` does not re-enumerate namespaces when the token is still valid. Delete and recreate the context: `vcf context delete <CONTEXT> --yes` then `vcf context create <CONTEXT> --endpoint ... --type cci --tenant-name ... --api-token ... --set-current` |
 | 5 — Context Bridge | Incorrect context format | `vcf context use` fails to switch scope | Use the exact three-part format: `<CONTEXT_NAME>:<GENERATED_NS_NAME>:<PROJECT_NAME>` |
 | 5 — Context Bridge | Cluster API not visible | `kubectl get clusters` returns "server doesn't have a resource type" or "No resources found" | Confirm the Context Bridge is complete; re-run `vcf context use` with the namespace-scoped three-part format |
 | 6 — VKS Cluster Deployment | Wrong namespace in manifest | Cluster created in wrong scope or rejected by the API server | Update `metadata.namespace` in the Cluster manifest to match the exact `<GENERATED_NS_NAME>` from Phase 5 |
 | 6 — VKS Cluster Deployment | Invalid Kubernetes version | Cluster provisioning fails with a version error | Check available Tanzu Kubernetes Releases with `kubectl get tkr` and update `spec.topology.version` |
 | 6 — VKS Cluster Deployment | VM provisioning stalls | VirtualMachines stuck in `Creating` state indefinitely | Check vSphere resource availability, content library sync status, and storage capacity on the target cluster |
 | 7 — Functional Validation | PVC stuck in Pending | PersistentVolumeClaim does not bind to a volume | Verify the storage class exists with `kubectl get sc` and check CSI driver pods in the `vmware-system-csi` namespace |
-| 7 — Functional Validation | LoadBalancer no external IP | Service stays in `<pending>` state for the external IP | Check NSX load balancer provisioning and Edge cluster capacity; inspect `kubectl get loadbalancers -A` from the supervisor context |
+| 7 — Functional Validation | LoadBalancer no external IP | Service stays in `<pending>` state for the external IP | Verify with `kubectl get svc` (primary method) to check the EXTERNAL-IP column; if still pending, check NSX Edge cluster capacity. The command `kubectl get loadbalancers -A` queries NSX native resources at the Supervisor level and may return empty results in a VKS guest cluster context — this is normal |
 | 7 — Functional Validation | HTTP connectivity failure | `curl` to the LoadBalancer external IP times out | Verify the pod is running, NSX VPC NAT rules are configured correctly, and no firewall rules block ingress traffic |

@@ -1,0 +1,54 @@
+# =============================================================================
+# Sample VPCConnectivityProfile Manifest — NSX VPC Connectivity Profile
+# =============================================================================
+#
+# This manifest creates a VPC Connectivity Profile that associates IP blocks
+# with a Transit Gateway. The connectivity profile defines external access
+# policies and IP block assignments for VPCs that reference it via a
+# VPCAttachment resource.
+#
+# Use this manifest when you need a custom connectivity profile — for example,
+# to associate a provider-provisioned public IP block and a tenant-created
+# Private-Transit IP block with a specific Transit Gateway. If a suitable
+# profile already exists, you can reference it directly in your VPCAttachment
+# instead of creating a new one.
+#
+# To discover existing profiles, run:
+#   kubectl get vpcconnectivityprofiles
+# See Phase 3, Step 2 of the VCF 9 IaC Onboarding Guide for details.
+#
+# Usage:
+#   1. Copy this file and change values marked with "# CHANGE:" comments.
+#   2. Apply with:  kubectl create -f sample-vpc-connectivity-profile.yaml --validate=false
+#      (--validate=false is required for NSX custom resources)
+# =============================================================================
+
+apiVersion: vpc.nsx.vmware.com/v1alpha1
+kind: VPCConnectivityProfile
+metadata:
+  # CHANGE: Replace with your profile name. Convention: <project>-connectivity-profile
+  name: sample-connectivity-profile  # CHANGE: Replace with your connectivity profile name
+spec:
+  # The region where this connectivity profile applies.
+  # Must match the region used for your VPC and VPCAttachment.
+  # Obtain the region name from your Phase 2 topology discovery.
+  regionName: region-us1-a  # CHANGE: Replace with your region name
+  # Name of the Transit Gateway this profile routes through.
+  # Discover available Transit Gateways with:
+  #   kubectl get transitgateways
+  transitGatewayName: default@region-us1-a  # CHANGE: Replace with your Transit Gateway name
+  # Public IP block(s) provisioned by the Provider / platform administrator.
+  # These blocks provide external (public) IP addresses for resources in
+  # VPCs that use this connectivity profile (e.g., for LoadBalancer services
+  # or DNAT rules). Obtain the block name from your administrator or with:
+  #   kubectl get ipblocks
+  externalIPBlockNames:
+  - ":ips-02-public-8ga3w"  # CHANGE: Replace with your external IP block name
+  # Private-Transit Gateway IP block(s) used for routing between the VPC
+  # and the Transit Gateway. Unlike public IP blocks, these can be created
+  # by the tenant as needed. They provide the private address space for
+  # transit connectivity between your VPC and external networks.
+  # Discover available IP blocks with:
+  #   kubectl get ipblocks
+  privateTGWIPBlockNames:
+  - "region-us1-a-default-tgw-ip-block"  # CHANGE: Replace with your private transit IP block name

@@ -1,11 +1,18 @@
 """Shared fixtures for VCF 9 IaC Onboarding Guide tests."""
 
+import glob
 import os
 import re
 import pytest
 import yaml
 
 GUIDE_PATH = os.path.join(os.path.dirname(__file__), "..", "vcf9-iac-onboarding-guide.md")
+
+# Root of the project (one level up from tests/)
+PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+# Directory containing sample manifests
+EXAMPLES_DIR = os.path.join(PROJECT_ROOT, "examples")
 
 # Pattern matches fenced YAML code blocks: ```yaml ... ```
 _YAML_BLOCK_RE = re.compile(r"```yaml\s*\n(.*?)```", re.DOTALL)
@@ -27,6 +34,35 @@ def guide_text() -> str:
 def yaml_blocks(guide_text: str) -> list[str]:
     """Return a list of raw YAML strings extracted from the guide."""
     return _extract_yaml_blocks(guide_text)
+
+
+# ---------------------------------------------------------------------------
+# Sample Manifest Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def sample_manifest_paths() -> list[str]:
+    """Return a sorted list of all sample-*.yaml file paths from examples/."""
+    pattern = os.path.join(EXAMPLES_DIR, "sample-*.yaml")
+    return sorted(glob.glob(pattern))
+
+
+@pytest.fixture(scope="session")
+def sample_manifest_filenames(sample_manifest_paths: list[str]) -> list[str]:
+    """Return a sorted list of sample manifest filenames for parameterized tests."""
+    return [os.path.basename(p) for p in sample_manifest_paths]
+
+
+@pytest.fixture(scope="session")
+def sample_manifest_content() -> dict[str, str]:
+    """Return a dict mapping sample manifest filename to its raw content."""
+    pattern = os.path.join(EXAMPLES_DIR, "sample-*.yaml")
+    contents: dict[str, str] = {}
+    for path in sorted(glob.glob(pattern)):
+        filename = os.path.basename(path)
+        with open(path, encoding="utf-8") as f:
+            contents[filename] = f.read()
+    return contents
 
 
 # ---------------------------------------------------------------------------

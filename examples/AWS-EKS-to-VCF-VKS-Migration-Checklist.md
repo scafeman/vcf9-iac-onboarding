@@ -103,7 +103,7 @@ This is the most significant architectural difference from EKS. In AWS, once you
 
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
-| 3.1 | Context refreshed | `vcf context refresh <CONTEXT_NAME>` | Command completes without errors |
+| 3.1 | Context re-registered | `vcf context delete <CONTEXT_NAME> --yes` then `vcf context create <CONTEXT_NAME> --endpoint ... --type cci --tenant-name ... --api-token ... --set-current` | Context recreated and new namespace appears in context list |
 | 3.2 | Namespace context available | `vcf context list` | Namespace-scoped context appears (format: `<CONTEXT>:<NAMESPACE>:<PROJECT>`) |
 | 3.3 | Switched to namespace context | `vcf context use <CONTEXT_NAME>:<NAMESPACE>:<PROJECT_NAME>` | Command succeeds |
 | 3.4 | Cluster API visible | `kubectl get clusters` | Command returns successfully (even if no clusters exist yet) — no "resource not found" error |
@@ -133,7 +133,7 @@ In AWS, you create a VPC with subnets, route tables, internet/NAT gateways, and 
 
 | AWS Construct | VCF Equivalent | Notes |
 |---|---|---|
-| VPC + CIDR | NSX VPC with `privateCIDRs` | NSX VPC is scoped to a Project, not a Region |
+| VPC + CIDR | NSX VPC with `privateIPs` | NSX VPC is scoped to a Project, not a Region |
 | Subnets in AZs | Zones (`topology.cci.vmware.com`) | Zones map to vSphere clusters, not network segments |
 | NAT Gateway | VPCNATRule (SNAT/DNAT) | Explicit rules instead of a managed gateway |
 | Security Groups | VPCConnectivityProfile + NSX DFW | Policy-based at VPC level, not per-ENI |
