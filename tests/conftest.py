@@ -334,3 +334,58 @@ def argocd_values_text() -> str:
 def argocd_values_parsed(argocd_values_text: str):
     """Return the parsed YAML object from the ArgoCD values file."""
     return yaml.safe_load(argocd_values_text)
+
+
+# ---------------------------------------------------------------------------
+# GitHub Actions VKS Deploy Workflow Fixtures
+# ---------------------------------------------------------------------------
+
+WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-vks.yml"
+)
+
+TRIGGER_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy.sh"
+)
+
+WORKFLOW_README_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "README.md"
+)
+
+DOCKER_COMPOSE_PATH = os.path.join(
+    PROJECT_ROOT, "docker-compose.yml"
+)
+
+
+@pytest.fixture(scope="session")
+def workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-vks.yml."""
+    with open(WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def workflow_yaml(workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the workflow file."""
+    return yaml.safe_load(workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def trigger_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy.sh."""
+    with open(TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def workflow_readme_text() -> str:
+    """Return the raw text of .github/workflows/README.md."""
+    with open(WORKFLOW_README_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def docker_compose_yaml() -> dict:
+    """Return the parsed YAML dict of docker-compose.yml."""
+    with open(DOCKER_COMPOSE_PATH, encoding="utf-8") as f:
+        return yaml.safe_load(f.read())

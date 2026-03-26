@@ -1,0 +1,533 @@
+# =============================================================================
+# Deploy VKS Cluster — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow deploys VCF 9 VKS infrastructure end-to-end using native
+# GitHub Actions steps. Each provisioning phase (context creation, project
+# and namespace provisioning, context bridge, cluster deployment, kubeconfig
+# retrieval, and functional validation) is implemented as individual named
+# workflow steps with inline VCF CLI and kubectl commands.
+#
+# Prerequisites:
+#   - A self-hosted GitHub Actions runner with network access to the VCFA
+#     endpoint on port 443. The runner must be labeled [self-hosted, vcf].
+#   - Docker must be installed on the runner host so that the job-level
+#     container directive can launch the VCF tooling image.
+#   - The workflow uses the repository Dockerfile image (vcf9-dev:latest)
+#     for VCF CLI + kubectl tooling. All run: steps execute inside this
+#     container.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-vks"
+#
+# =============================================================================
+
+name: Deploy VKS Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: "VCF Project name (e.g., my-dev-project-01)"
+        required: true
+        type: string
+      cluster_name:
+        description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      namespace_prefix:
+        description: "Supervisor Namespace prefix (e.g., my-dev-project-01-ns-)"
+        required: true
+        type: string
+      environment:
+        description: "Environment label for the deployment"
+        required: false
+        type: string
+        default: "demo"
+
+  repository_dispatch:
+    types: [deploy-vks]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, vcf]
+    container:
+      image: vcf9-dev:latest
+
+    env:
+      # --- Unified Parameter Resolution (workflow_dispatch || repository_dispatch) ---
+      PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name }}
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      NAMESPACE_PREFIX: ${{ github.event.inputs.namespace_prefix || github.event.client_payload.namespace_prefix }}
+      ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
+
+      # --- Secrets (sensitive values from GitHub Actions encrypted secrets) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ secrets.TENANT_NAME }}
+      USER_IDENTITY: ${{ secrets.USER_IDENTITY }}
+      CONTENT_LIBRARY_ID: ${{ secrets.CONTENT_LIBRARY_ID }}
+      ZONE_NAME: ${{ secrets.ZONE_NAME }}
+
+      # --- Static Configuration ---
+      CONTEXT_NAME: gh-actions-deploy
+
+      # --- Configurable Defaults (override via secrets if needed) ---
+      REGION_NAME: ${{ secrets.REGION_NAME || 'region-us1-a' }}
+      VPC_NAME: ${{ secrets.VPC_NAME || 'region-us1-a-default-vpc' }}
+      RESOURCE_CLASS: ${{ secrets.RESOURCE_CLASS || 'xxlarge' }}
+      K8S_VERSION: ${{ secrets.K8S_VERSION || 'v1.33.6+vmware.1-fips' }}
+      VM_CLASS: ${{ secrets.VM_CLASS || 'best-effort-large' }}
+      STORAGE_CLASS: ${{ secrets.STORAGE_CLASS || 'nfs' }}
+      MIN_NODES: ${{ secrets.MIN_NODES || '2' }}
+      MAX_NODES: ${{ secrets.MAX_NODES || '10' }}
+
+    steps:
+      # Phase 1: Validate Inputs
+      - name: Validate Inputs
+        run: |
+          set -euo pipefail
+          MISSING=""
+          for var in PROJECT_NAME CLUSTER_NAME NAMESPACE_PREFIX VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME USER_IDENTITY CONTENT_LIBRARY_ID ZONE_NAME; do
+            if [ -z "${!var:-}" ]; then
+              MISSING="${MISSING}  - ${var}\n"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required variables:"
+            echo -e "$MISSING"
+            exit 1
+          fi
+          echo "All required inputs validated successfully"
+
+      # Phase 2: Create VCF CLI Context
+      - name: Create VCF CLI Context
+        run: |
+          set -euo pipefail
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            exit 1
+          fi
+          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
+
+      # Phase 3: Create Project and Namespace
+      - name: Create Project and Namespace
+        run: |
+          set -euo pipefail
+          if kubectl get project "$PROJECT_NAME" 2>/dev/null; then
+            echo "Project '$PROJECT_NAME' already exists, skipping creation"
+          else
+            cat <<EOF | kubectl create -f - --validate=false
+          apiVersion: project.cci.vmware.com/v1alpha2
+          kind: Project
+          metadata:
+            name: $PROJECT_NAME
+          spec:
+            description: "VCF 9 Project $PROJECT_NAME"
+          ---
+          apiVersion: authorization.cci.vmware.com/v1alpha1
+          kind: ProjectRoleBinding
+          metadata:
+            name: "cci:user:$USER_IDENTITY"
+            namespace: $PROJECT_NAME
+          roleRef:
+            apiGroup: authorization.cci.vmware.com
+            kind: ProjectRole
+            name: admin
+          subjects:
+          - kind: User
+            name: $USER_IDENTITY
+          ---
+          apiVersion: infrastructure.cci.vmware.com/v1alpha2
+          kind: SupervisorNamespace
+          metadata:
+            generateName: $NAMESPACE_PREFIX
+            namespace: $PROJECT_NAME
+          spec:
+            description: "Supervisor Namespace for $PROJECT_NAME"
+            regionName: "$REGION_NAME"
+            className: "$RESOURCE_CLASS"
+            vpcName: "$VPC_NAME"
+            initialClassConfigOverrides:
+              zones:
+              - name: "$ZONE_NAME"
+                cpuLimit: "100000M"
+                cpuReservation: "0M"
+                memoryLimit: "102400Mi"
+                memoryReservation: "0Mi"
+          EOF
+          fi
+
+      # Phase 3b: Get Dynamic Namespace Name
+      - name: Get Dynamic Namespace Name
+        id: get-ns
+        run: |
+          set -euo pipefail
+          NS_NAME=$(kubectl get supervisornamespaces -n "$PROJECT_NAME" -o jsonpath='{.items[0].metadata.name}')
+          if [ -z "$NS_NAME" ]; then
+            echo "::error::Failed to retrieve dynamic namespace name from project '$PROJECT_NAME'"
+            exit 1
+          fi
+          echo "dynamic_ns_name=$NS_NAME" >> "$GITHUB_OUTPUT"
+          echo "DYNAMIC_NS_NAME=$NS_NAME" >> "$GITHUB_ENV"
+          echo "Dynamic namespace name: $NS_NAME"
+
+      # Phase 4: Execute Context Bridge
+      - name: Execute Context Bridge
+        run: |
+          set -euo pipefail
+          TIMEOUT=120
+          INTERVAL=10
+          ELAPSED=0
+          BRIDGE_OK=false
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+
+            vcf context create "$CONTEXT_NAME" \
+              --endpoint "https://$VCFA_ENDPOINT" \
+              --type cci \
+              --tenant-name "$TENANT_NAME" \
+              --api-token "$VCF_API_TOKEN" \
+              --set-current >/dev/null 2>&1 || true
+
+            if vcf context use "$CONTEXT_NAME:$DYNAMIC_NS_NAME:$PROJECT_NAME" 2>/dev/null; then
+              sleep 5
+              if kubectl get clusters 2>/dev/null; then
+                BRIDGE_OK=true
+                break
+              fi
+            fi
+
+            echo "Namespace context not yet available, retrying... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$BRIDGE_OK" != "true" ]; then
+            echo "::error::Context bridge did not succeed within ${TIMEOUT}s for context '$CONTEXT_NAME:$DYNAMIC_NS_NAME:$PROJECT_NAME'"
+            exit 1
+          fi
+          echo "Context bridge complete — targeting namespace '$DYNAMIC_NS_NAME' in project '$PROJECT_NAME'"
+
+      # Phase 5: Deploy VKS Cluster
+      - name: Deploy VKS Cluster
+        run: |
+          set -euo pipefail
+          if kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
+            echo "Cluster '$CLUSTER_NAME' already exists, skipping creation"
+          else
+            cat <<EOF | kubectl apply -f - --validate=false --insecure-skip-tls-verify
+          apiVersion: cluster.x-k8s.io/v1beta1
+          kind: Cluster
+          metadata:
+            name: $CLUSTER_NAME
+            namespace: $DYNAMIC_NS_NAME
+          spec:
+            clusterNetwork:
+              services:
+                cidrBlocks:
+                - "10.96.0.0/12"
+              pods:
+                cidrBlocks:
+                - "192.168.156.0/20"
+              serviceDomain: cluster.local
+            topology:
+              class: builtin-generic-v3.4.0
+              classNamespace: vmware-system-vks-public
+              version: $K8S_VERSION
+              controlPlane:
+                metadata:
+                  annotations:
+                    run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=$CONTENT_LIBRARY_ID"
+                replicas: 1
+              workers:
+                machineDeployments:
+                - class: node-pool
+                  name: node-pool-01
+                  metadata:
+                    annotations:
+                      run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=$CONTENT_LIBRARY_ID"
+                      cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: "$MAX_NODES"
+                      cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: "$MIN_NODES"
+              variables:
+              - name: vmClass
+                value: $VM_CLASS
+              - name: storageClass
+                value: $STORAGE_CLASS
+              - name: volumes
+                value:
+                - name: containerd-data
+                  capacity: 100Gi
+                  mountPath: /var/lib/containerd
+                  storageClass: $STORAGE_CLASS
+          EOF
+            echo "Cluster '$CLUSTER_NAME' manifest applied"
+          fi
+
+      # Phase 5b: Wait for Cluster Provisioning
+      - name: Wait for Cluster Provisioning
+        run: |
+          set -euo pipefail
+          TIMEOUT=1800
+          INTERVAL=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            PHASE=$(kubectl get cluster "$CLUSTER_NAME" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            if [ "$PHASE" = "Provisioned" ]; then
+              echo "Cluster '$CLUSTER_NAME' reached Provisioned state"
+              exit 0
+            fi
+            echo "Cluster phase: $PHASE — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          CURRENT_STATUS=$(kubectl get cluster "$CLUSTER_NAME" -o yaml 2>/dev/null || echo "Unable to retrieve cluster status")
+          echo "::error::Cluster '$CLUSTER_NAME' did not reach Provisioned state within ${TIMEOUT}s"
+          echo "Current cluster status:"
+          echo "$CURRENT_STATUS"
+          exit 1
+
+      # Phase 6: Retrieve Kubeconfig
+      - name: Retrieve Kubeconfig
+        run: |
+          set -euo pipefail
+          vcf context use "$CONTEXT_NAME:$DYNAMIC_NS_NAME:$PROJECT_NAME"
+          vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "/workspace/kubeconfig-${CLUSTER_NAME}.yaml"
+          echo "KUBECONFIG=/workspace/kubeconfig-${CLUSTER_NAME}.yaml" >> "$GITHUB_ENV"
+          echo "Kubeconfig retrieved and exported to /workspace/kubeconfig-${CLUSTER_NAME}.yaml"
+
+      # Phase 6b: Wait for Guest Cluster API
+      - name: Wait for Guest Cluster API
+        run: |
+          set -euo pipefail
+          TIMEOUT=300
+          INTERVAL=10
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get namespaces 2>/dev/null; then
+              echo "Guest cluster API is reachable"
+              exit 0
+            fi
+            echo "Guest cluster API not yet reachable — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::Guest cluster API did not become reachable within ${TIMEOUT}s"
+          exit 1
+
+      # Phase 6c: Wait for Worker Nodes Ready
+      - name: Wait for Worker Nodes Ready
+        run: |
+          set -euo pipefail
+          TIMEOUT=600
+          INTERVAL=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            READY_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | grep -c ' Ready' || echo "0")
+            if [ "$READY_COUNT" -ge "$MIN_NODES" ]; then
+              echo "$READY_COUNT worker nodes are Ready (minimum: $MIN_NODES)"
+              exit 0
+            fi
+            echo "Ready nodes: $READY_COUNT / $MIN_NODES — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::Only $READY_COUNT of $MIN_NODES worker nodes reached Ready within ${TIMEOUT}s"
+          kubectl get nodes 2>/dev/null || true
+          exit 1
+
+      # Phase 7: Deploy Functional Test Workload
+      - name: Deploy Functional Test Workload
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -f -
+          ---
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: vks-test-pvc
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+            storageClassName: $STORAGE_CLASS
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vks-test-app
+            labels:
+              app: vks-test-app
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: vks-test-app
+            template:
+              metadata:
+                labels:
+                  app: vks-test-app
+              spec:
+                securityContext:
+                  seccompProfile:
+                    type: RuntimeDefault
+                  runAsNonRoot: true
+                  runAsUser: 101
+                  fsGroup: 101
+                initContainers:
+                  - name: init-html
+                    image: busybox:latest
+                    command: ['sh', '-c', 'echo "Hello from VKS On-Premises Cluster! The Persistent Volume is working successfully." > /usr/share/nginx/html/index.html']
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                    volumeMounts:
+                      - name: html-volume
+                        mountPath: /usr/share/nginx/html
+                containers:
+                  - name: nginx
+                    image: nginxinc/nginx-unprivileged:latest
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                    ports:
+                      - containerPort: 8080
+                    volumeMounts:
+                      - name: html-volume
+                        mountPath: /usr/share/nginx/html
+                volumes:
+                  - name: html-volume
+                    persistentVolumeClaim:
+                      claimName: vks-test-pvc
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vks-test-lb
+          spec:
+            type: LoadBalancer
+            ports:
+              - port: 80
+                targetPort: 8080
+            selector:
+              app: vks-test-app
+          EOF
+          echo "Functional test workload deployed"
+
+      # Phase 7b: Wait for PVC Bound
+      - name: Wait for PVC Bound
+        run: |
+          set -euo pipefail
+          TIMEOUT=300
+          INTERVAL=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            PVC_PHASE=$(kubectl get pvc vks-test-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+            if [ "$PVC_PHASE" = "Bound" ]; then
+              echo "PVC vks-test-pvc is Bound"
+              exit 0
+            fi
+            echo "PVC phase: $PVC_PHASE — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::PVC vks-test-pvc did not reach Bound state within ${TIMEOUT}s"
+          kubectl describe pvc vks-test-pvc 2>/dev/null || true
+          exit 1
+
+      # Phase 7c: Wait for LoadBalancer IP
+      - name: Wait for LoadBalancer IP
+        id: get-lb-ip
+        run: |
+          set -euo pipefail
+          TIMEOUT=300
+          INTERVAL=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            EXTERNAL_IP=$(kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "LoadBalancer IP assigned: $EXTERNAL_IP"
+              echo "external_ip=$EXTERNAL_IP" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "LoadBalancer IP not yet assigned — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::LoadBalancer IP was not assigned within ${TIMEOUT}s"
+          kubectl get svc vks-test-lb -o yaml 2>/dev/null || true
+          exit 1
+
+      # Phase 7d: HTTP Connectivity Test
+      - name: HTTP Connectivity Test
+        run: |
+          set -euo pipefail
+          EXTERNAL_IP="${{ steps.get-lb-ip.outputs.external_ip }}"
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${EXTERNAL_IP}")
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "HTTP connectivity test passed — received HTTP 200 from http://${EXTERNAL_IP}"
+          else
+            echo "::error::HTTP connectivity test failed — expected 200, got $HTTP_STATUS from http://${EXTERNAL_IP}"
+            exit 1
+          fi
+
+      # Upload Kubeconfig Artifact
+      - name: Upload Kubeconfig Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeconfig-${{ env.CLUSTER_NAME }}
+          path: /workspace/kubeconfig-${{ env.CLUSTER_NAME }}.yaml
+          retention-days: 90
+
+      # Write Job Summary
+      - name: Write Job Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ VKS Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${{ env.CLUSTER_NAME }} |
+          | Namespace | ${{ env.DYNAMIC_NS_NAME }} |
+          | Kubeconfig | Uploaded as artifact \`kubeconfig-${{ env.CLUSTER_NAME }}\` |
+          | External IP | ${{ steps.get-lb-ip.outputs.external_ip }} |
+          | Environment | ${{ env.ENVIRONMENT }} |
+          EOF
+
+      # Write Failure Summary (if: failure())
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ VKS Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${{ env.CLUSTER_NAME }} |
+          | Namespace | ${{ env.DYNAMIC_NS_NAME }} |
+          | Environment | ${{ env.ENVIRONMENT }} |
+          | Error | Check the failed step above for details |
+          EOF

@@ -18,3 +18,17 @@ services:
       - .env
     environment:
       - TERM=xterm-256color
+
+  gh-actions-runner:
+    image: myoung34/github-runner:latest
+    container_name: gh-actions-runner
+    environment:
+      - REPO_URL=${REPO_URL}
+      - RUNNER_TOKEN=${RUNNER_TOKEN}
+      - RUNNER_NAME=vcf-local-runner
+      - RUNNER_WORKDIR=/workspace
+      - LABELS=self-hosted,vcf
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/workspace
+    restart: unless-stopped
