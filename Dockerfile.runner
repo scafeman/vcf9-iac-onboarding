@@ -1,0 +1,40 @@
+# =============================================================================
+# GitHub Actions Self-Hosted Runner with VCF Tooling
+# =============================================================================
+# This image extends the VCF 9 dev tooling (VCF CLI, kubectl, Helm) with the
+# GitHub Actions self-hosted runner agent. It runs as a single container that
+# has everything needed to execute the deploy-vks workflow directly — no
+# container: directive or Docker-in-Docker required.
+#
+# Build:  docker build -f Dockerfile.runner -t vcf9-runner:latest .
+# Run:    See docker-compose.yml gh-actions-runner service
+# =============================================================================
+
+FROM myoung34/github-runner:latest
+
+ARG VCF_CLI_VERSION=v9.0.2
+ARG KUBECTL_VERSION=v1.33.0
+
+# Install VCF CLI and kubectl on top of the runner image
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install kubectl
+RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    -o /usr/local/bin/kubectl \
+    && chmod +x /usr/local/bin/kubectl
+
+# Install Helm v3
+RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Install VCF CLI
+RUN curl -fsSL "https://packages.broadcom.com/artifactory/vcf-distro/vcf-cli/linux/amd64/${VCF_CLI_VERSION}/vcf-cli.tar.gz" \
+    -o /tmp/vcf-cli.tar.gz \
+    && mkdir -p /tmp/vcf-cli-extract \
+    && tar -xzf /tmp/vcf-cli.tar.gz -C /tmp/vcf-cli-extract \
+    && VCF_BIN=$(find /tmp/vcf-cli-extract -type f -name 'vcf*' | head -1) \
+    && if [ -z "$VCF_BIN" ]; then VCF_BIN=$(find /tmp/vcf-cli-extract -type f | head -1); fi \
+    && cp "$VCF_BIN" /usr/local/bin/vcf \
+    && chmod +x /usr/local/bin/vcf \
+    && rm -rf /tmp/vcf-cli.tar.gz /tmp/vcf-cli-extract

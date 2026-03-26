@@ -20,7 +20,12 @@ services:
       - TERM=xterm-256color
 
   gh-actions-runner:
-    image: myoung34/github-runner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+      args:
+        VCF_CLI_VERSION: v9.0.2
+        KUBECTL_VERSION: v1.33.0
     container_name: gh-actions-runner
     environment:
       - REPO_URL=${REPO_URL}
