@@ -90,7 +90,7 @@ jobs:
     steps:
       # Checkout repo so www/ directory is available for web app image build
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Phase 1: Validate Inputs
       - name: Validate Inputs
