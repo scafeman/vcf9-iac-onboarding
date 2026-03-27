@@ -1,0 +1,11 @@
+# =============================================================================
+# VKS Test Web App — Custom nginx image with static HTML content
+# =============================================================================
+# Build:  docker build -f www/Dockerfile.web -t scafeman/vks-test-app:latest www/
+# Push:   docker push scafeman/vks-test-app:latest
+# =============================================================================
+
+FROM nginxinc/nginx-unprivileged:latest
+
+# Copy all HTML content into the nginx default serve directory
+COPY html/ /usr/share/nginx/html/
