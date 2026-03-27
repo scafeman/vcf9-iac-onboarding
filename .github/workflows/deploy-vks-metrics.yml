@@ -98,12 +98,17 @@ jobs:
               --api-token "$VCF_API_TOKEN" \
               --set-current
 
-            # Find the namespace context for this cluster
-            CLUSTER_CONTEXT=$(vcf context list 2>/dev/null | grep "$CLUSTER_NAME" | head -1 | awk '{print $1}')
-            if [ -n "$CLUSTER_CONTEXT" ]; then
-              vcf context use "$CLUSTER_CONTEXT"
+            # Find and switch to the namespace context that contains this cluster
+            # The context format is: <context>:<namespace>:<project>
+            NAMESPACE_CONTEXT=$(vcf context list 2>/dev/null | grep "${CLUSTER_NAME}" | awk '{print $1}' | head -1)
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}'. Ensure Scenario 1 has completed."
+              exit 1
             fi
+            echo "Found namespace context: $NAMESPACE_CONTEXT"
+            vcf context use "$NAMESPACE_CONTEXT"
 
+            # Retrieve the admin kubeconfig
             vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
             echo "Kubeconfig retrieved via VCF CLI"
           fi
