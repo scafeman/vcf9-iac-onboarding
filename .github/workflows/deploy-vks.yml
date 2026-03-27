@@ -196,13 +196,6 @@ jobs:
             regionName: "$REGION_NAME"
             className: "$RESOURCE_CLASS"
             vpcName: "$VPC_NAME"
-            initialClassConfigOverrides:
-              zones:
-              - name: "$ZONE_NAME"
-                cpuLimit: "100000M"
-                cpuReservation: "0M"
-                memoryLimit: "102400Mi"
-                memoryReservation: "0Mi"
           EOF
           fi
 
