@@ -281,3 +281,409 @@ Download the artifact from the workflow run page in the GitHub Actions UI.
 - **PVC not binding:** Verify the storage class (`STORAGE_CLASS`) exists in the guest cluster and the CSI driver is operational
 - **No LoadBalancer IP:** Check NSX load balancer capacity and VPC connectivity; the NSX-T load balancer pool may be exhausted
 - **HTTP test returns non-200:** The nginx pod may not be ready yet; check pod status with `kubectl get pods` using the downloaded kubeconfig
+
+
+---
+
+# Deploy VKS Metrics Stack — GitHub Actions Workflow (Scenario 2)
+
+## Overview
+
+The `deploy-vks-metrics.yml` workflow deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster provisioned by Scenario 1. Each provisioning phase — kubeconfig setup, node sizing advisory, package installation, certificate generation, CoreDNS configuration, and Grafana deployment — runs as an individual named step directly on the self-hosted runner.
+
+This workflow requires a running VKS cluster from Scenario 1 with a valid admin kubeconfig file. The runner is built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner itself.
+
+---
+
+## Secrets and Parameters
+
+All parameters follow the same unified resolution order as Scenario 1:
+
+> **workflow_dispatch input → client_payload → GitHub secret → built-in default**
+
+### Secret-Only (truly sensitive)
+
+| Secret | Description |
+|---|---|
+| `VCF_API_TOKEN` | API token from the VCFA portal for CCI authentication |
+
+### Overridable via `client_payload` (fall back to secrets)
+
+| Parameter | `client_payload` key | Description |
+|---|---|---|
+| `VCFA_ENDPOINT` | `vcfa_endpoint` | VCFA hostname (without `https://` prefix) |
+| `TENANT_NAME` | `tenant_name` | SSO tenant/organization name |
+
+### Overridable via `client_payload` (fall back to secrets, then defaults)
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `TELEGRAF_VERSION` | `telegraf_version` | (required) | Telegraf package version to install |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
+| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
+| `TELEGRAF_VALUES_FILE` | `telegraf_values_file` | `examples/scenario2/telegraf-values.yaml` | Telegraf Helm values file path |
+| `PROMETHEUS_VALUES_FILE` | `prometheus_values_file` | `examples/scenario2/prometheus-values.yaml` | Prometheus Helm values file path |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs |
+| `GRAFANA_ADMIN_PASSWORD` | `grafana_admin_password` | (auto-generated) | Grafana admin password |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Package reconciliation timeout in seconds |
+| `NODE_CPU_THRESHOLD` | `node_cpu_threshold` | `4000` | Minimum allocatable CPU (millicores) for node sizing advisory |
+
+---
+
+## Triggering the Workflow
+
+### Method 1: GitHub UI (workflow_dispatch)
+
+1. Go to the **Actions** tab in your GitHub repository
+2. Select **"Deploy VKS Metrics Stack"** from the workflow list on the left
+3. Click **"Run workflow"**
+4. Fill in the required inputs:
+   - **cluster_name** — VKS cluster name (e.g., `my-dev-project-01-clus-01`)
+   - **telegraf_version** — Telegraf package version to install (e.g., `1.4.3`)
+   - **environment** — Environment label (optional, defaults to `demo`)
+5. Click **"Run workflow"** to start the deployment
+
+> **Note:** `workflow_dispatch` does not support the optional infrastructure overrides. Use the trigger script or curl for per-deployment parameter overrides.
+
+### Method 2: Trigger Script (repository_dispatch)
+
+Use the companion trigger script (`scripts/trigger-deploy-metrics.sh`) to dispatch the workflow from the command line or external automation.
+
+**Required arguments:**
+
+```
+--repo              GitHub repository (OWNER/REPO)
+--token             GitHub PAT with repo scope
+--cluster-name      VKS cluster name
+--telegraf-version  Telegraf package version
+```
+
+**Optional arguments (override workflow defaults):**
+
+```
+--environment             Environment label (default: demo)
+--domain                  Domain suffix (default: lab.local)
+--kubeconfig-path         Path to kubeconfig file
+--package-namespace       Package namespace (default: tkg-packages)
+--package-repo-url        VKS standard packages OCI repository URL
+--telegraf-values-file    Telegraf Helm values file path
+--prometheus-values-file  Prometheus Helm values file path
+--storage-class           Storage class for PVCs
+--grafana-admin-password  Grafana admin password
+--package-timeout         Package reconciliation timeout in seconds
+```
+
+**Example:**
+
+```bash
+./scripts/trigger-deploy-metrics.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01 \
+  --telegraf-version 1.4.3 \
+  --environment demo \
+  --domain lab.local
+```
+
+The script sends a `repository_dispatch` event with event type `deploy-vks-metrics`, prints the parameters sent as JSON, and provides a link to the Actions tab on success.
+
+### Method 3: Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-vks-metrics",
+    "client_payload": {
+      "cluster_name": "my-dev-project-01-clus-01",
+      "telegraf_version": "1.4.3",
+      "environment": "demo",
+      "domain": "lab.local"
+    }
+  }'
+```
+
+A successful dispatch returns HTTP 204 with no response body. Only include the optional keys you want to override — omitted keys fall back to secrets or defaults.
+
+---
+
+## Workflow Steps
+
+The workflow executes the following phases in order. Each phase is a separate named step visible in the GitHub Actions UI.
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v4` |
+| 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path (default `./kubeconfig-<CLUSTER_NAME>.yaml`); fails if file not found |
+| 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
+| 4 | **Node Sizing Advisory** | Queries total allocatable CPU across worker nodes; prints `::warning::` if below threshold but does not fail |
+| 5 | **Create Package Namespace** | Creates the package namespace (default `tkg-packages`) with privileged PodSecurity label; skips if exists |
+| 6 | **Register Package Repository** | Registers the VKS standard packages OCI repository; polls until reconciled; skips if already registered |
+| 7 | **Install Telegraf** | Installs the Telegraf VKS package with specified version and values file; polls until reconciled |
+| 8 | **Install cert-manager** | Installs the cert-manager VKS package; polls until reconciled; skips if already installed |
+| 9 | **Install Contour** | Installs the Contour VKS package; polls until reconciled; skips if already installed |
+| 10 | **Create Envoy LoadBalancer** | Creates `envoy-lb` LoadBalancer service in `tanzu-system-ingress`; waits for external IP; stores IP in `CONTOUR_LB_IP` |
+| 11 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR, signed wildcard cert, and fullchain cert; skips if certs already exist |
+| 12 | **Configure CoreDNS** | Patches CoreDNS ConfigMap with `grafana.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server |
+| 13 | **Install Prometheus** | Installs the Prometheus VKS package with specified values file; polls until reconciled |
+| 14 | **Install Grafana Operator** | Creates Grafana namespace with baseline PodSecurity; installs Grafana Operator via Helm; waits for pod Running |
+| 15 | **Configure Grafana Instance** | Creates TLS secret, applies Grafana instance/datasource/dashboard manifests, creates Contour Ingress; waits for pod Running |
+| 16 | **Verify Installation** | Lists installed packages; checks Telegraf, Prometheus, Grafana pods; prints warnings for non-Running pods |
+| 17 | **Write Job Summary** | Writes Markdown summary with cluster details, Grafana URL, credentials, and DNS instructions |
+| 18 | **Write Failure Summary** | On failure (`if: failure()`), writes failure summary with cluster name, environment, and error context |
+
+---
+
+# Deploy ArgoCD Stack — GitHub Actions Workflow (Scenario 3)
+
+## Overview
+
+The `deploy-argocd.yml` workflow deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Scenario 1. Each provisioning phase — certificate generation, package prerequisites, Harbor, CoreDNS, ArgoCD, GitLab, runner setup, cluster registration, and application bootstrap — runs as an individual named step directly on the self-hosted runner.
+
+This workflow requires a running VKS cluster from Scenario 1 with a valid admin kubeconfig file. The runner is built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner itself.
+
+---
+
+## Secrets and Parameters
+
+All parameters follow the same unified resolution order as Scenario 1:
+
+> **workflow_dispatch input → client_payload → GitHub secret → built-in default**
+
+### Secret-Only (truly sensitive)
+
+| Secret | Description |
+|---|---|
+| `VCF_API_TOKEN` | API token from the VCFA portal for CCI authentication |
+
+### Overridable via `client_payload` (fall back to secrets)
+
+| Parameter | `client_payload` key | Description |
+|---|---|---|
+| `VCFA_ENDPOINT` | `vcfa_endpoint` | VCFA hostname (without `https://` prefix) |
+| `TENANT_NAME` | `tenant_name` | SSO tenant/organization name |
+
+### Overridable via `client_payload` (fall back to secrets, then defaults)
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
+| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `HARBOR_VERSION` | `harbor_version` | `1.16.2` | Harbor Helm chart version |
+| `ARGOCD_VERSION` | `argocd_version` | `7.8.13` | ArgoCD Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.0` | GitLab Operator Helm chart version |
+| `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.75.0` | GitLab Runner Helm chart version |
+| `HARBOR_ADMIN_PASSWORD` | `harbor_admin_password` | (auto-generated) | Harbor admin password |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `900` | Package reconciliation timeout in seconds |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
+
+---
+
+## Triggering the Workflow
+
+### Method 1: GitHub UI (workflow_dispatch)
+
+1. Go to the **Actions** tab in your GitHub repository
+2. Select **"Deploy ArgoCD Stack"** from the workflow list on the left
+3. Click **"Run workflow"**
+4. Fill in the required inputs:
+   - **cluster_name** — VKS cluster name (e.g., `my-dev-project-01-clus-01`)
+   - **environment** — Environment label (optional, defaults to `demo`)
+5. Click **"Run workflow"** to start the deployment
+
+> **Note:** `workflow_dispatch` does not support the optional infrastructure overrides. Use the trigger script or curl for per-deployment parameter overrides.
+
+### Method 2: Trigger Script (repository_dispatch)
+
+Use the companion trigger script (`scripts/trigger-deploy-argocd.sh`) to dispatch the workflow from the command line or external automation.
+
+**Required arguments:**
+
+```
+--repo              GitHub repository (OWNER/REPO)
+--token             GitHub PAT with repo scope
+--cluster-name      VKS cluster name
+```
+
+**Optional arguments (override workflow defaults):**
+
+```
+--environment                Environment label (default: demo)
+--domain                     Domain suffix (default: lab.local)
+--kubeconfig-path            Path to kubeconfig file
+--harbor-version             Harbor Helm chart version
+--argocd-version             ArgoCD Helm chart version
+--gitlab-operator-version    GitLab Operator Helm chart version
+--gitlab-runner-version      GitLab Runner Helm chart version
+--harbor-admin-password      Harbor admin password
+--package-timeout            Package reconciliation timeout in seconds
+```
+
+**Example:**
+
+```bash
+./scripts/trigger-deploy-argocd.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01 \
+  --environment demo \
+  --domain lab.local
+```
+
+The script sends a `repository_dispatch` event with event type `deploy-argocd`, prints the parameters sent as JSON, and provides a link to the Actions tab on success.
+
+### Method 3: Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-argocd",
+    "client_payload": {
+      "cluster_name": "my-dev-project-01-clus-01",
+      "environment": "demo",
+      "domain": "lab.local"
+    }
+  }'
+```
+
+A successful dispatch returns HTTP 204 with no response body. Only include the optional keys you want to override — omitted keys fall back to secrets or defaults.
+
+---
+
+## Workflow Steps
+
+The workflow executes the following phases in order. Each phase is a separate named step visible in the GitHub Actions UI.
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v4` |
+| 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path (default `./kubeconfig-<CLUSTER_NAME>.yaml`); fails if file not found |
+| 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
+| 4 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR (using `examples/scenario3/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist |
+| 5 | **Create Package Namespace** | Creates the package namespace (default `tkg-packages`) with privileged PodSecurity label; skips if exists |
+| 6 | **Register Package Repository** | Registers the VKS standard packages OCI repository; polls until reconciled; skips if already registered |
+| 7 | **Install cert-manager** | Installs the cert-manager VKS package; polls until reconciled; skips if already installed |
+| 8 | **Install Contour** | Installs the Contour VKS package; polls until reconciled; skips if already installed |
+| 9 | **Create Envoy LoadBalancer** | Creates `envoy-lb` LoadBalancer service in `tanzu-system-ingress`; waits for external IP; stores IP in `CONTOUR_LB_IP` |
+| 10 | **Install Harbor** | Creates Harbor namespace, TLS/CA secrets, installs Harbor via Helm; skips if release exists; waits for pods Running |
+| 11 | **Configure CoreDNS** | Patches CoreDNS ConfigMap with `harbor/gitlab/argocd.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server |
+| 12 | **Install ArgoCD** | Installs ArgoCD via Helm with hostname substitution; retrieves admin password from `argocd-initial-admin-secret`; waits for pods Running |
+| 13 | **Install ArgoCD CLI** | Downloads ArgoCD CLI from GitHub releases if not in PATH; adds to `$GITHUB_PATH` |
+| 14 | **Distribute Certificates** | Creates TLS secrets in ArgoCD, GitLab, and Runner namespaces using `--dry-run=client -o yaml \| kubectl apply -f -` |
+| 15 | **Install GitLab** | Installs GitLab via Helm with hostname substitution; waits for webservice pod Running |
+| 16 | **Verify Harbor Proxy Configuration** | Checks GitLab values file for Harbor proxy cache config; prints `::warning::` if not found |
+| 17 | **Install GitLab Runner** | Retrieves runner registration token; installs GitLab Runner via Helm; waits for pod Running |
+| 18 | **Disable GitLab Public Sign-Up** | Calls GitLab API to disable public sign-up; prints `::warning::` on failure (non-fatal) |
+| 19 | **Register Cluster with ArgoCD** | Authenticates to ArgoCD via `kubectl exec`; copies kubeconfig; registers cluster with `argocd cluster add` |
+| 20 | **Bootstrap ArgoCD Application** | Applies ArgoCD Application manifest for Microservices Demo; waits for Synced and Healthy state |
+| 21 | **Verify Microservices Demo** | Checks all 11 microservice pods are Running; waits for `frontend-external` LoadBalancer IP |
+| 22 | **Write Job Summary** | Writes Markdown summary with all service URLs, credentials, versions, and DNS instructions |
+| 23 | **Write Failure Summary** | On failure (`if: failure()`), writes failure summary with cluster name, environment, and error context |
+
+---
+
+# Workflow Dependencies
+
+## Scenario Execution Order
+
+Both Scenario 2 and Scenario 3 depend on Scenario 1 having completed successfully. A running VKS cluster with a valid admin kubeconfig file is required before either workflow can run.
+
+```
+Scenario 1 (deploy-vks.yml)
+    ├── Scenario 2 (deploy-vks-metrics.yml)
+    └── Scenario 3 (deploy-argocd.yml)
+```
+
+- **Scenario 1** provisions the VKS cluster and produces the kubeconfig file
+- **Scenario 2** deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on the cluster
+- **Scenario 3** deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, Microservices Demo) on the cluster
+
+## Running Order Between Scenarios 2 and 3
+
+Scenarios 2 and 3 can run in **any order** after Scenario 1. They share common infrastructure components (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that are handled **idempotently**:
+
+| Shared Component | Idempotency Check | Behavior |
+|---|---|---|
+| Package namespace (`tkg-packages`) | `kubectl get ns` | Skips creation if namespace exists |
+| Package repository (`tkg-packages`) | `vcf package repository list` | Skips registration if repository found |
+| cert-manager | `vcf package installed list` | Skips installation if package found |
+| Contour | `vcf package installed list` | Skips installation if package found |
+| Envoy LoadBalancer (`envoy-lb`) | `kubectl get svc envoy-lb` | Skips creation if service exists; retrieves existing IP |
+| Self-signed certificates (`certs/`) | File existence check (`ca.crt`) | Skips generation if certificates exist |
+| CoreDNS host entries | `grep` on Corefile content | Skips patch if hostname already present |
+
+This means you can safely run:
+- Scenario 2 first, then Scenario 3
+- Scenario 3 first, then Scenario 2
+- Both concurrently (though sequential execution is recommended to avoid race conditions)
+
+---
+
+# Troubleshooting (Scenarios 2 & 3)
+
+### Kubeconfig not found
+
+- The workflow expects the kubeconfig file at the path specified by `KUBECONFIG_PATH` (default: `./kubeconfig-<CLUSTER_NAME>.yaml`)
+- Verify that Scenario 1 has completed successfully and the kubeconfig file exists on the runner
+- If the kubeconfig is stored at a non-default path, pass `--kubeconfig-path` via the trigger script or set the `KUBECONFIG_PATH` secret
+- Check that the file was not cleaned up by a previous workflow run or runner restart
+
+### Cluster unreachable
+
+- The "Verify Cluster Connectivity" step runs `kubectl get namespaces` to confirm the cluster API server is reachable
+- Verify the VKS cluster from Scenario 1 is still running — clusters may be scaled down or deleted
+- Check network connectivity from the runner host to the cluster API endpoint
+- If the kubeconfig contains an expired token, re-run Scenario 1 to regenerate it
+- Confirm the runner has DNS resolution to the cluster API hostname
+
+### Package reconciliation timeout
+
+- VKS packages (Telegraf, cert-manager, Contour, Prometheus) are installed via `vcf package install` and polled until reconciled
+- The default timeout is `600s` for Scenario 2 and `900s` for Scenario 3 — increase via `PACKAGE_TIMEOUT` if packages take longer
+- Check the package repository is registered and reconciled: `vcf package repository list -n tkg-packages`
+- Verify the package namespace has the `privileged` PodSecurity label: `kubectl get ns tkg-packages --show-labels`
+- Inspect package status: `vcf package installed list -n tkg-packages`
+- If a package is stuck, delete it and re-run the workflow — the idempotency checks will re-install it
+
+### Helm install failures
+
+- Harbor, ArgoCD, GitLab, GitLab Runner, and Grafana Operator are installed via `helm upgrade --install`
+- If a Helm install fails, check the Helm release status: `helm status <release> -n <namespace>`
+- Common causes: insufficient cluster resources (CPU/memory), PVC binding failures, image pull errors
+- For Harbor: verify the TLS and CA secrets exist in the `harbor` namespace
+- For ArgoCD: verify the values file hostname substitution produced valid YAML
+- For GitLab: the install can take 10+ minutes — increase the Helm `--timeout` if needed
+- To retry: the workflow uses `helm upgrade --install`, which is idempotent — re-running the workflow will attempt the install again
+- To clean up a failed release: `helm uninstall <release> -n <namespace>` and re-run
+
+### CoreDNS restart issues
+
+- The "Configure CoreDNS" step patches the CoreDNS ConfigMap and restarts the CoreDNS deployment
+- After the restart, the workflow waits for CoreDNS pods to reach Running state and for the API server to become reachable
+- If CoreDNS pods fail to restart, check the patched Corefile for syntax errors: `kubectl get configmap coredns -n kube-system -o yaml`
+- If the API server becomes unreachable after the restart, wait 30–60 seconds and re-run — this is a transient condition caused by DNS resolution delays
+- To manually fix a broken Corefile: `kubectl edit configmap coredns -n kube-system` and remove any malformed hosts blocks
+
+### GitLab pod startup delays
+
+- GitLab is a large application with multiple components (webservice, sidekiq, gitaly, redis, postgresql, etc.)
+- The webservice pod can take 5–10 minutes to reach Running state after the Helm install completes
+- If the workflow times out waiting for the webservice pod, increase `PACKAGE_TIMEOUT` (default `900s` for Scenario 3)
+- Check pod status: `kubectl get pods -n gitlab-system`
+- Check pod events for scheduling or resource issues: `kubectl describe pod <pod-name> -n gitlab-system`
+- Common causes: insufficient memory (GitLab requires ~8 GB RAM), PVC binding delays, image pull throttling
+- If using Harbor as a proxy cache, verify Harbor is running and the proxy configuration is correct

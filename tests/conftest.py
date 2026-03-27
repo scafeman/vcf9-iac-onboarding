@@ -389,3 +389,64 @@ def docker_compose_yaml() -> dict:
     """Return the parsed YAML dict of docker-compose.yml."""
     with open(DOCKER_COMPOSE_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f.read())
+
+
+# ---------------------------------------------------------------------------
+# GitHub Actions Scenarios 2 & 3 Workflow Fixtures
+# ---------------------------------------------------------------------------
+
+METRICS_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-vks-metrics.yml"
+)
+
+ARGOCD_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-argocd.yml"
+)
+
+TRIGGER_METRICS_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy-metrics.sh"
+)
+
+TRIGGER_ARGOCD_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy-argocd.sh"
+)
+
+
+@pytest.fixture(scope="session")
+def metrics_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-vks-metrics.yml."""
+    with open(METRICS_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def metrics_workflow_yaml(metrics_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of deploy-vks-metrics.yml."""
+    return yaml.safe_load(metrics_workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def argocd_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-argocd.yml."""
+    with open(ARGOCD_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def argocd_workflow_yaml(argocd_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of deploy-argocd.yml."""
+    return yaml.safe_load(argocd_workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def trigger_metrics_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy-metrics.sh."""
+    with open(TRIGGER_METRICS_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def trigger_argocd_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy-argocd.sh."""
+    with open(TRIGGER_ARGOCD_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()
