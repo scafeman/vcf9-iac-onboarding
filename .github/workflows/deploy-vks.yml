@@ -558,13 +558,23 @@ jobs:
         run: |
           set -euo pipefail
           EXTERNAL_IP="${{ steps.get-lb-ip.outputs.external_ip }}"
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${EXTERNAL_IP}")
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "HTTP connectivity test passed — received HTTP 200 from http://${EXTERNAL_IP}"
-          else
-            echo "::error::HTTP connectivity test failed — expected 200, got $HTTP_STATUS from http://${EXTERNAL_IP}"
-            exit 1
-          fi
+          TIMEOUT=60
+          INTERVAL=5
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://${EXTERNAL_IP}" 2>/dev/null || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "HTTP connectivity test passed — received HTTP 200 from http://${EXTERNAL_IP}"
+              exit 0
+            fi
+            echo "HTTP status: $HTTP_STATUS — waiting for nginx... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::HTTP connectivity test failed — last status $HTTP_STATUS from http://${EXTERNAL_IP}"
+          exit 1
 
       # Upload Kubeconfig Artifact
       - name: Upload Kubeconfig Artifact
