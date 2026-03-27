@@ -1047,7 +1047,7 @@ jobs:
           ### Credential Retrieval
           | Service | Username | Retrieval Command |
           |---|---|---|
-          | Harbor | admin | Password set during Helm install. Check Helm values or configured secret source. |
+          | Harbor | admin | \`kubectl get secret harbor-core -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' \| base64 -d\` |
           | ArgoCD | admin | \`kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d\` |
           | GitLab | root | \`kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d\` |
 

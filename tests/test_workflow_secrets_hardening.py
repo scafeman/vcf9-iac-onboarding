@@ -63,12 +63,14 @@ class TestScenario3Hardening:
     """Tests for Scenario 3 (deploy-argocd.yml) hardening changes."""
 
     def test_scenario3_summary_no_harbor_password(self, argocd_workflow_yaml: dict):
-        """Write Job Summary step should not contain HARBOR_ADMIN_PASSWORD."""
+        """Write Job Summary step should not contain HARBOR_ADMIN_PASSWORD as a variable reference."""
         for step in argocd_workflow_yaml["jobs"]["deploy"]["steps"]:
             if step.get("name", "").lower() == "write job summary":
                 run_block = step.get("run", "")
-                assert "HARBOR_ADMIN_PASSWORD" not in run_block, (
-                    "ArgoCD Write Job Summary step still contains HARBOR_ADMIN_PASSWORD"
+                # The string may appear inside a jsonpath retrieval command — that's fine.
+                # What we're checking is that ${HARBOR_ADMIN_PASSWORD} is not printed as a value.
+                assert "${HARBOR_ADMIN_PASSWORD}" not in run_block, (
+                    "ArgoCD Write Job Summary step still prints ${HARBOR_ADMIN_PASSWORD} as a value"
                 )
                 return
         pytest.fail("'Write Job Summary' step not found in argocd workflow")

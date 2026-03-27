@@ -64,8 +64,8 @@ After a successful deployment, credentials are not printed in the job summary. U
 | Kubeconfig | `vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml` |
 | ArgoCD Admin Password | `kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d` |
 | GitLab Root Password | `kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d` |
-| Grafana Admin Password | Refer to the Grafana instance manifest or configured password source |
-| Harbor Admin Password | Refer to the Helm install configuration or configured secret source |
+| Grafana Admin Password | `kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'` |
+| Harbor Admin Password | `kubectl get secret harbor-core -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' \| base64 -d` |
 
 ## Self-Hosted Runner Setup
 

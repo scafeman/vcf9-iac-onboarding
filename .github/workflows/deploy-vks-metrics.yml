@@ -670,7 +670,7 @@ jobs:
           | Contour LB IP | ${CONTOUR_LB_IP} |
           | Grafana URL | https://${GRAFANA_HOSTNAME} |
           | Grafana Admin User | admin |
-          | Grafana Admin Password | Retrieve via Grafana instance manifest or configured source |
+          | Grafana Admin Password | \`kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'\` |
           | Environment | ${ENVIRONMENT} |
 
           ### Installed Package Versions
