@@ -2,41 +2,67 @@
 
 ## Overview
 
-The `deploy-vks.yml` workflow provisions VCF 9 VKS infrastructure end-to-end using native GitHub Actions steps. Each provisioning phase — context creation, project and namespace provisioning, context bridge, cluster deployment, kubeconfig retrieval, and functional validation — runs as an individual named step inside a job-level container built from the repository Dockerfile (`vcf9-dev:latest`).
+The `deploy-vks.yml` workflow provisions VCF 9 VKS infrastructure end-to-end using native GitHub Actions steps. Each provisioning phase — context creation, project and namespace provisioning, context bridge, cluster deployment, kubeconfig retrieval, and functional validation — runs as an individual named step directly on the self-hosted runner.
+
+The runner is built from `Dockerfile.runner`, which extends `myoung34/github-runner` with VCF CLI v9.0.2, kubectl v1.33.0, and Helm v3 baked in. There is no `container:` directive — all `run:` steps execute directly on the runner itself.
 
 The workflow runs on a **self-hosted GitHub Actions runner** with network access to the VCFA endpoint on a private network. It supports manual trigger (`workflow_dispatch`), API trigger (`repository_dispatch`), and a companion trigger script for external automation.
 
 ---
 
-## Required GitHub Actions Secrets
+## Secrets and Parameters
 
-Configure these secrets in your repository under **Settings → Secrets and variables → Actions → New repository secret**.
+All parameters follow a unified resolution order:
 
-### Required Secrets
+> **workflow_dispatch input → client_payload → GitHub secret → built-in default**
+
+This means most infrastructure parameters can be overridden per-deployment via `client_payload` in the trigger script, without touching repository secrets.
+
+### Secret-Only (truly sensitive)
 
 | Secret | Description |
 |---|---|
 | `VCF_API_TOKEN` | API token from the VCFA portal for CCI authentication |
-| `VCFA_ENDPOINT` | VCFA hostname (without `https://` prefix), e.g. `vcfa.example.com` |
-| `TENANT_NAME` | SSO tenant/organization name |
-| `USER_IDENTITY` | SSO user identity for RBAC (ProjectRoleBinding subject) |
-| `CONTENT_LIBRARY_ID` | vSphere content library ID used for OS image resolution |
-| `ZONE_NAME` | Availability zone name for Supervisor Namespace placement |
 
-### Optional Secrets (with defaults)
+### Overridable via `client_payload` (fall back to secrets)
 
-These can be set as secrets to override the built-in defaults:
+These must be configured as secrets for the default case, but can be overridden per-run via `client_payload`:
 
-| Secret | Default | Description |
+| Parameter | `client_payload` key | Description |
 |---|---|---|
-| `REGION_NAME` | `region-us1-a` | Region for Supervisor Namespace |
-| `VPC_NAME` | `region-us1-a-default-vpc` | VPC for Supervisor Namespace |
-| `RESOURCE_CLASS` | `xxlarge` | Resource class for Supervisor Namespace |
-| `K8S_VERSION` | `v1.33.6+vmware.1-fips` | Kubernetes version for the VKS cluster |
-| `VM_CLASS` | `best-effort-large` | VM class for cluster worker nodes |
-| `STORAGE_CLASS` | `nfs` | Storage class for PVCs and containerd volumes |
-| `MIN_NODES` | `2` | Minimum worker nodes (autoscaler min) |
-| `MAX_NODES` | `10` | Maximum worker nodes (autoscaler max) |
+| `VCFA_ENDPOINT` | `vcfa_endpoint` | VCFA hostname (without `https://` prefix), e.g. `vcfa.example.com` |
+| `TENANT_NAME` | `tenant_name` | SSO tenant/organization name |
+| `USER_IDENTITY` | `user_identity` | SSO user identity for RBAC (ProjectRoleBinding subject) |
+| `CONTENT_LIBRARY_ID` | `content_library_id` | vSphere content library ID used for OS image resolution |
+| `ZONE_NAME` | `zone_name` | Availability zone name for Supervisor Namespace placement |
+
+### Overridable via `client_payload` (fall back to secrets, then defaults)
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `REGION_NAME` | `region_name` | `region-us1-a` | Region for Supervisor Namespace |
+| `VPC_NAME` | `vpc_name` | `region-us1-a-default-vpc` | VPC for Supervisor Namespace |
+| `RESOURCE_CLASS` | `resource_class` | `xxlarge` | Resource class for Supervisor Namespace |
+| `K8S_VERSION` | `k8s_version` | `v1.33.6+vmware.1-fips` | Kubernetes version for the VKS cluster |
+| `VM_CLASS` | `vm_class` | `best-effort-large` | VM class for cluster worker nodes |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs and containerd volumes |
+| `MIN_NODES` | `min_nodes` | `2` | Minimum worker nodes (autoscaler min) |
+| `MAX_NODES` | `max_nodes` | `10` | Maximum worker nodes (autoscaler max) |
+
+Configure secrets in your repository under **Settings → Secrets and variables → Actions → New repository secret**.
+
+---
+
+## Environment Protection
+
+The deploy job uses `environment: vcf-production`. To enable approval gates:
+
+1. Go to **Settings → Environments** in your GitHub repository
+2. Click **New environment** and name it `vcf-production`
+3. Enable **Required reviewers** and add one or more approvers
+4. Optionally configure a **Wait timer** or restrict to specific branches
+
+When a workflow run reaches the `deploy` job, it will pause and wait for an approved reviewer to approve before proceeding.
 
 ---
 
@@ -48,7 +74,17 @@ The VCFA endpoint resides on a private network, so the workflow requires a self-
 
 - **Network access** to the VCFA endpoint on **port 443** from the machine running Docker
 - **Docker** must be installed (Docker Desktop on Windows/macOS, or Docker Engine on Linux)
-- The runner container mounts the Docker socket so it can launch the job-level container (`vcf9-dev:latest`) for workflow steps
+
+### Runner Architecture
+
+The runner image is built from `Dockerfile.runner`, which extends `myoung34/github-runner:latest` and installs all required tooling directly into the image:
+
+- **VCF CLI** v9.0.2 — for context management, project/namespace provisioning, and kubeconfig retrieval
+- **kubectl** v1.33.0 — for Kubernetes resource management
+- **Helm** v3 — for chart-based deployments
+- **jq** — for JSON processing
+
+Because the tooling is baked into the runner image, there is no `container:` directive in the workflow and no Docker-in-Docker. All `run:` steps execute directly on the runner.
 
 ### Setup Steps
 
@@ -73,10 +109,6 @@ The VCFA endpoint resides on a private network, so the workflow requires a self-
    - The runner should appear as `vcf-local-runner` with labels `self-hosted` and `vcf`
    - Status should show as **Idle** (ready to accept jobs)
 
-### Runner Architecture
-
-The runner container (`myoung34/github-runner`) is intentionally lightweight — it contains only the GitHub Actions runner agent. It does NOT contain VCF CLI, kubectl, or Helm. When a workflow job is dispatched, the runner launches the VCF tooling container (`vcf9-dev:latest`) via the Docker socket, and all workflow steps execute inside that container.
-
 ---
 
 ## Triggering the Workflow
@@ -93,20 +125,55 @@ The runner container (`myoung34/github-runner`) is intentionally lightweight —
    - **environment** — Environment label (optional, defaults to `demo`)
 5. Click **"Run workflow"** to start the deployment
 
+> **Note:** `workflow_dispatch` does not support the optional infrastructure overrides. Use the trigger script or curl for per-deployment parameter overrides.
+
 ### Method 2: Trigger Script (repository_dispatch)
 
-Use the companion trigger script to dispatch the workflow from the command line or external automation:
+Use the companion trigger script (`scripts/trigger-deploy.sh`) to dispatch the workflow from the command line or external automation. The script accepts 14 optional parameters and uses `jq` to build the `client_payload` JSON, including only the parameters you provide.
+
+**Required arguments:**
+
+```
+--repo              GitHub repository (OWNER/REPO)
+--token             GitHub PAT with repo scope
+--project-name      VCF Project name
+--cluster-name      VKS cluster name
+--namespace-prefix  Supervisor Namespace prefix
+```
+
+**Optional arguments (override workflow defaults):**
+
+```
+--vpc-name          NSX VPC name
+--region-name       Region name
+--zone-name         Availability zone
+--resource-class    Namespace resource class
+--user-identity     SSO user identity for RBAC
+--content-library-id  vSphere Content Library ID
+--k8s-version       Kubernetes version
+--vm-class          VM class for worker nodes
+--storage-class     Storage class for PVCs
+--min-nodes         Autoscaler minimum worker nodes
+--max-nodes         Autoscaler maximum worker nodes
+--vcfa-endpoint     VCFA hostname (no https://)
+--tenant-name       SSO tenant/organization
+--environment       Environment label (default: demo)
+```
+
+**Example with optional overrides:**
 
 ```bash
 ./scripts/trigger-deploy.sh \
-  --repo OWNER/REPO \
-  --token GITHUB_TOKEN \
-  --project-name my-dev-project-01 \
-  --cluster-name my-dev-project-01-clus-01 \
-  --namespace-prefix my-dev-project-01-ns-
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --project-name my-project-01 \
+  --cluster-name my-project-01-clus-01 \
+  --namespace-prefix my-project-01-ns- \
+  --vpc-name region-us1-a-sample-vpc \
+  --region-name region-us1-a
 ```
 
-The script sends a `repository_dispatch` event with event type `deploy-vks` and prints a link to the Actions tab on success.
+The script sends a `repository_dispatch` event with event type `deploy-vks`, prints the parameters sent as JSON, and provides a link to the Actions tab on success.
 
 ### Method 3: Direct API Call (curl)
 
@@ -122,12 +189,14 @@ curl -X POST \
       "project_name": "my-dev-project-01",
       "cluster_name": "my-dev-project-01-clus-01",
       "namespace_prefix": "my-dev-project-01-ns-",
-      "environment": "demo"
+      "environment": "demo",
+      "vpc_name": "region-us1-a-sample-vpc",
+      "region_name": "region-us1-a"
     }
   }'
 ```
 
-A successful dispatch returns HTTP 204 with no response body.
+A successful dispatch returns HTTP 204 with no response body. Only include the optional keys you want to override — omitted keys fall back to secrets or defaults.
 
 ---
 
@@ -178,6 +247,12 @@ Download the artifact from the workflow run page in the GitHub Actions UI.
 - Check that `RUNNER_TOKEN` in `.env` is a valid, non-expired registration token
 - Restart the runner: `docker compose restart gh-actions-runner`
 - If the token expired, generate a new one from **Settings → Actions → Runners** and update `.env`
+
+### Environment approval pending
+
+- If the workflow is stuck at "Waiting for review", a required reviewer must approve the deployment
+- Go to the workflow run page and click **Review deployments** to approve or reject
+- Check **Settings → Environments → vcf-production** to see who is configured as a reviewer
 
 ### Context creation fails
 
