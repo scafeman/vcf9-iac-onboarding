@@ -56,7 +56,7 @@ jobs:
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       HARBOR_VERSION: ${{ github.event.client_payload.harbor_version || secrets.HARBOR_VERSION || '1.16.2' }}
-      ARGOCD_VERSION: ${{ github.event.client_payload.argocd_version || secrets.ARGOCD_VERSION || '7.8.13' }}
+      ARGOCD_VERSION: ${{ github.event.client_payload.argocd_version || secrets.ARGOCD_VERSION || '9.4.17' }}
       GITLAB_OPERATOR_VERSION: ${{ github.event.client_payload.gitlab_operator_version || secrets.GITLAB_OPERATOR_VERSION || '9.10.0' }}
       GITLAB_RUNNER_VERSION: ${{ github.event.client_payload.gitlab_runner_version || secrets.GITLAB_RUNNER_VERSION || '0.75.0' }}
       HARBOR_ADMIN_PASSWORD: ${{ github.event.client_payload.harbor_admin_password || secrets.HARBOR_ADMIN_PASSWORD }}
