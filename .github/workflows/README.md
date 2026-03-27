@@ -68,6 +68,7 @@ Download the kubeconfig to a standalone file, then set the `KUBECONFIG` environm
 ```bash
 vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml
 export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml
+kubectl config use-context <CLUSTER_NAME>-admin@<CLUSTER_NAME>
 kubectl get namespaces   # verify connectivity
 ```
 
@@ -76,10 +77,11 @@ kubectl get namespaces   # verify connectivity
 ```powershell
 vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml
 $env:KUBECONFIG = ".\kubeconfig-<CLUSTER_NAME>.yaml"
+kubectl config use-context <CLUSTER_NAME>-admin@<CLUSTER_NAME>
 kubectl get namespaces   # verify connectivity
 ```
 
-> **Note:** The `--export-file` flag saves the kubeconfig as a standalone file — it does not merge into your default `~/.kube/config`. You must set `KUBECONFIG` to point to the file before running kubectl commands.
+> **Note:** The `--export-file` flag saves the kubeconfig as a standalone file — it does not merge into your default `~/.kube/config`. The file may contain multiple contexts (including CCI contexts). You must switch to the admin context using `kubectl config use-context` before running kubectl commands against the guest cluster.
 
 ### Service Credentials
 
