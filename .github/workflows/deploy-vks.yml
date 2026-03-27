@@ -410,7 +410,63 @@ jobs:
                 initContainers:
                   - name: init-html
                     image: busybox:latest
-                    command: ['sh', '-c', 'echo "Hello from VKS On-Premises Cluster! The Persistent Volume is working successfully." > /usr/share/nginx/html/index.html']
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
+                        <!DOCTYPE html>
+                        <html lang="en">
+                        <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>VKS Cluster — Deployment Validated</title>
+                        <style>
+                        *{margin:0;padding:0;box-sizing:border-box}
+                        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0d1117;color:#c9d1d9;min-height:100vh;display:flex;align-items:center;justify-content:center}
+                        .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:48px;max-width:720px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+                        .badge{display:inline-block;background:#238636;color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:16px}
+                        h1{font-size:28px;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,#58a6ff,#3fb950);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+                        .subtitle{color:#8b949e;font-size:14px;margin-bottom:32px}
+                        .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
+                        .metric{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px}
+                        .metric-label{font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+                        .metric-value{font-size:18px;font-weight:600;color:#58a6ff}
+                        .metric-value.green{color:#3fb950}
+                        .checks{list-style:none;margin-bottom:24px}
+                        .checks li{padding:8px 0;border-bottom:1px solid #21262d;font-size:14px;display:flex;align-items:center;gap:8px}
+                        .checks li:last-child{border-bottom:none}
+                        .check{color:#3fb950;font-weight:bold}
+                        .footer{text-align:center;color:#484f58;font-size:12px;margin-top:16px}
+                        .footer a{color:#58a6ff;text-decoration:none}
+                        </style>
+                        </head>
+                        <body>
+                        <div class="card">
+                        <span class="badge">DEPLOYMENT VALIDATED</span>
+                        <h1>VMware Cloud Foundation 9 — VKS Cluster</h1>
+                        <p class="subtitle">Infrastructure-as-Code deployment via GitHub Actions</p>
+                        <div class="grid">
+                        <div class="metric"><div class="metric-label">Platform</div><div class="metric-value">VCF 9 + VKS</div></div>
+                        <div class="metric"><div class="metric-label">Orchestration</div><div class="metric-value">Cluster API</div></div>
+                        <div class="metric"><div class="metric-label">Networking</div><div class="metric-value">NSX VPC</div></div>
+                        <div class="metric"><div class="metric-label">Storage</div><div class="metric-value green">PVC Bound</div></div>
+                        </div>
+                        <ul class="checks">
+                        <li><span class="check">&#10003;</span> VCF CLI context created and authenticated to VCFA</li>
+                        <li><span class="check">&#10003;</span> Project, RBAC, and Supervisor Namespace provisioned</li>
+                        <li><span class="check">&#10003;</span> Context Bridge completed — Cluster API visible</li>
+                        <li><span class="check">&#10003;</span> VKS cluster deployed via Cluster API topology</li>
+                        <li><span class="check">&#10003;</span> Worker nodes scaled and Ready</li>
+                        <li><span class="check">&#10003;</span> Persistent Volume dynamically provisioned and bound</li>
+                        <li><span class="check">&#10003;</span> NSX LoadBalancer assigned external IP</li>
+                        <li><span class="check">&#10003;</span> HTTP connectivity validated end-to-end</li>
+                        </ul>
+                        <div class="footer">Powered by <a href="https://github.com/scafeman/vcf9-iac-onboarding">vcf9-iac-onboarding</a> &middot; VCF 9 IaC Toolkit</div>
+                        </div>
+                        </body>
+                        </html>
+                        HTMLEOF
                     securityContext:
                       allowPrivilegeEscalation: false
                       capabilities:
