@@ -1,0 +1,703 @@
+# =============================================================================
+# Deploy VKS Metrics Stack — GitHub Actions Workflow (Scenario 2)
+# =============================================================================
+#
+# This workflow deploys the VKS Metrics Observability stack (Telegraf,
+# Prometheus, Grafana) on an existing VKS cluster provisioned by Scenario 1.
+# Each provisioning phase is implemented as individual named workflow steps
+# with inline bash commands.
+#
+# Prerequisites:
+#   - Scenario 1 must have completed successfully — a running VKS cluster
+#     with a valid admin kubeconfig file is required.
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the VKS cluster API. All required tools (VCF CLI,
+#     kubectl, Helm, jq, openssl) are baked into the runner via
+#     Dockerfile.runner — no container: directive is used.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-vks-metrics"
+#
+# =============================================================================
+
+name: Deploy VKS Metrics Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      telegraf_version:
+        description: "Telegraf package version to install"
+        required: true
+        type: string
+      environment:
+        description: "Environment label for the deployment"
+        required: false
+        type: string
+        default: "demo"
+
+  repository_dispatch:
+    types: [deploy-vks-metrics]
+
+jobs:
+  deploy:
+    name: Deploy VKS Metrics Stack
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      TELEGRAF_VERSION: ${{ github.event.inputs.telegraf_version || github.event.client_payload.telegraf_version }}
+      ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
+      DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
+      KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
+      PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
+      PACKAGE_REPO_URL: ${{ github.event.client_payload.package_repo_url || secrets.PACKAGE_REPO_URL || 'projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211' }}
+      TELEGRAF_VALUES_FILE: ${{ github.event.client_payload.telegraf_values_file || secrets.TELEGRAF_VALUES_FILE || 'examples/scenario2/telegraf-values.yaml' }}
+      PROMETHEUS_VALUES_FILE: ${{ github.event.client_payload.prometheus_values_file || secrets.PROMETHEUS_VALUES_FILE || 'examples/scenario2/prometheus-values.yaml' }}
+      STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
+      GRAFANA_ADMIN_PASSWORD: ${{ github.event.client_payload.grafana_admin_password || secrets.GRAFANA_ADMIN_PASSWORD }}
+      PACKAGE_TIMEOUT: ${{ github.event.client_payload.package_timeout || secrets.PACKAGE_TIMEOUT || '600' }}
+      NODE_CPU_THRESHOLD: ${{ github.event.client_payload.node_cpu_threshold || secrets.NODE_CPU_THRESHOLD || '4000' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Phase 1: Setup Kubeconfig
+      - name: Setup Kubeconfig
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBECONFIG_PATH" ]; then
+            KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
+          fi
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+            exit 1
+          fi
+          echo "Kubeconfig set to '$KUBECONFIG_PATH'"
+
+      # Phase 2: Verify Cluster Connectivity
+      - name: Verify Cluster Connectivity
+        run: |
+          set -euo pipefail
+          if ! kubectl get namespaces; then
+            echo "::error::Unable to reach cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG}'. Verify the cluster is running and the kubeconfig is valid."
+            exit 1
+          fi
+          echo "Cluster '${CLUSTER_NAME}' is reachable"
+
+      # Phase 3: Node Sizing Advisory
+      - name: Node Sizing Advisory
+        run: |
+          set -euo pipefail
+          TOTAL_CPU=$(kubectl get nodes -o jsonpath='{.items[*].status.allocatable.cpu}' 2>/dev/null | tr ' ' '\n' | awk '{
+            val = $1
+            if (val ~ /m$/) {
+              gsub(/m$/, "", val)
+              sum += val
+            } else {
+              sum += val * 1000
+            }
+          } END { print int(sum) }')
+          echo "Total allocatable CPU: ${TOTAL_CPU:-unknown}m"
+          if [ -n "$TOTAL_CPU" ] && [ "$TOTAL_CPU" -lt "$NODE_CPU_THRESHOLD" ]; then
+            echo "::warning::Total allocatable CPU (${TOTAL_CPU}m) is below the recommended threshold (${NODE_CPU_THRESHOLD}m). Consider scaling worker nodes to avoid pod scheduling failures."
+          fi
+          echo "Node sizing advisory complete"
+
+      # Phase 4: Create Package Namespace
+      - name: Create Package Namespace
+        run: |
+          set -euo pipefail
+          if kubectl get ns "$PACKAGE_NAMESPACE" >/dev/null 2>&1; then
+            echo "Namespace '$PACKAGE_NAMESPACE' already exists, skipping creation"
+          else
+            kubectl create ns "$PACKAGE_NAMESPACE"
+            echo "Namespace '$PACKAGE_NAMESPACE' created"
+          fi
+          kubectl label ns "$PACKAGE_NAMESPACE" \
+            pod-security.kubernetes.io/enforce=privileged \
+            --overwrite
+          echo "Namespace '$PACKAGE_NAMESPACE' labelled with privileged PodSecurity standard"
+
+      # Phase 5: Register Package Repository
+      - name: Register Package Repository
+        run: |
+          set -euo pipefail
+          PACKAGE_REPO_NAME="tkg-packages"
+          if vcf package repository list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "$PACKAGE_REPO_NAME"; then
+            echo "Package repository '$PACKAGE_REPO_NAME' already registered, skipping"
+          else
+            vcf package repository add "$PACKAGE_REPO_NAME" \
+              --url "$PACKAGE_REPO_URL" \
+              --namespace "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package repository list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "$PACKAGE_REPO_NAME" | grep -qi "reconcile"; then
+                echo "Package repository '$PACKAGE_REPO_NAME' reconciled"
+                break
+              fi
+              echo "Waiting for package repository to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::Package repository '$PACKAGE_REPO_NAME' did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "Package repository setup complete"
+
+      # Phase 6: Install Telegraf
+      - name: Install Telegraf
+        run: |
+          set -euo pipefail
+          vcf package install telegraf \
+            -p telegraf.kubernetes.vmware.com \
+            -v "$TELEGRAF_VERSION" \
+            --values-file "$TELEGRAF_VALUES_FILE" \
+            -n "$PACKAGE_NAMESPACE"
+
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "telegraf" | grep -qi "reconcile"; then
+              echo "Telegraf package reconciled"
+              break
+            fi
+            echo "Waiting for Telegraf package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Telegraf package did not reconcile within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "Telegraf installed and reconciled"
+
+      # Phase 7: Install cert-manager
+      - name: Install cert-manager
+        run: |
+          set -euo pipefail
+          if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "cert-manager"; then
+            echo "cert-manager already installed, skipping"
+          else
+            vcf package install cert-manager \
+              -p cert-manager.kubernetes.vmware.com \
+              -n "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cert-manager" | grep -qi "reconcile"; then
+                echo "cert-manager package reconciled"
+                break
+              fi
+              echo "Waiting for cert-manager package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::cert-manager package did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "cert-manager setup complete"
+
+      # Phase 8: Install Contour
+      - name: Install Contour
+        run: |
+          set -euo pipefail
+          if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "contour"; then
+            echo "Contour already installed, skipping"
+          else
+            vcf package install contour \
+              -p contour.kubernetes.vmware.com \
+              -n "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "contour" | grep -qi "reconcile"; then
+                echo "Contour package reconciled"
+                break
+              fi
+              echo "Waiting for Contour package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::Contour package did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "Contour setup complete"
+
+      # Phase 8b: Create Envoy LoadBalancer
+      - name: Create Envoy LoadBalancer
+        run: |
+          set -euo pipefail
+          CONTOUR_INGRESS_NAMESPACE="tanzu-system-ingress"
+
+          if kubectl get svc envoy-lb -n "$CONTOUR_INGRESS_NAMESPACE" >/dev/null 2>&1; then
+            echo "Envoy LoadBalancer service 'envoy-lb' already exists, skipping creation"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: envoy-lb
+            namespace: ${CONTOUR_INGRESS_NAMESPACE}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: envoy
+            ports:
+              - name: http
+                port: 80
+                targetPort: 8080
+                protocol: TCP
+              - name: https
+                port: 443
+                targetPort: 8443
+                protocol: TCP
+          EOF
+            echo "Envoy LoadBalancer service 'envoy-lb' created"
+          fi
+
+          # Wait for external IP
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            CONTOUR_LB_IP=$(kubectl get svc -n "$CONTOUR_INGRESS_NAMESPACE" envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$CONTOUR_LB_IP" ]; then
+              echo "Envoy LoadBalancer IP: $CONTOUR_LB_IP"
+              echo "CONTOUR_LB_IP=$CONTOUR_LB_IP" >> "$GITHUB_ENV"
+              break
+            fi
+            echo "Waiting for Envoy LoadBalancer to get external IP... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Envoy LoadBalancer did not receive an external IP within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "Envoy LoadBalancer setup complete"
+
+      # Phase 9: Generate Self-Signed Certificates
+      - name: Generate Self-Signed Certificates
+        run: |
+          set -euo pipefail
+          CERT_DIR="./certs"
+
+          if [ -f "${CERT_DIR}/ca.crt" ]; then
+            echo "CA certificate already exists at '${CERT_DIR}/ca.crt', skipping certificate generation"
+          else
+            mkdir -p "${CERT_DIR}"
+
+            # Generate self-signed CA certificate and key
+            if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
+              -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+              -days 3650 -subj "/CN=Self-Signed CA"; then
+              echo "::error::Failed to generate self-signed CA certificate"
+              exit 1
+            fi
+            echo "Self-signed CA certificate generated"
+
+            # Generate wildcard certificate CSR with SAN using inline CNF
+            cat > /tmp/wildcard-s2.cnf <<CNFEOF
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          distinguished_name = dn
+          req_extensions     = v3_req
+
+          [dn]
+          CN = *.${DOMAIN}
+
+          [v3_req]
+          subjectAltName = DNS:*.${DOMAIN},DNS:${DOMAIN}
+          CNFEOF
+
+            if ! openssl req -new -nodes -newkey rsa:2048 \
+              -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+              -config /tmp/wildcard-s2.cnf; then
+              echo "::error::Failed to generate wildcard certificate CSR"
+              exit 1
+            fi
+            echo "Wildcard certificate CSR generated"
+
+            # Sign the wildcard certificate with the CA
+            if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+              -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+              -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+              -days 3650 -extensions v3_req -extfile /tmp/wildcard-s2.cnf; then
+              echo "::error::Failed to sign wildcard certificate"
+              exit 1
+            fi
+            echo "Wildcard certificate signed by CA"
+
+            # Create fullchain certificate (wildcard + CA)
+            cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+            echo "Fullchain certificate created"
+          fi
+          echo "Certificates ready in '${CERT_DIR}'"
+
+      # Phase 10: Configure CoreDNS
+      - name: Configure CoreDNS
+        run: |
+          set -euo pipefail
+          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+
+          # Check if CoreDNS already contains the Grafana hostname entry
+          CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+
+          if echo "${CURRENT_COREFILE}" | grep -q "${GRAFANA_HOSTNAME}"; then
+            echo "CoreDNS already contains entry for '${GRAFANA_HOSTNAME}', skipping patch"
+          else
+            # Remove stale empty hosts blocks from previous teardowns
+            CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
+          import re, sys
+          corefile = sys.stdin.read()
+          cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+          cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+          print(cleaned, end="")
+          ')
+
+            HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}\n            fallthrough\n        }"
+
+            # Inject the hosts block before the first "ready" directive
+            PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
+
+            kubectl patch configmap coredns -n kube-system --type merge -p "{
+              \"data\": {
+                \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+              }
+            }" || {
+              echo "::error::Failed to patch CoreDNS ConfigMap"
+              exit 1
+            }
+
+            # Restart CoreDNS pods to pick up the new configuration
+            kubectl rollout restart deployment/coredns -n kube-system
+
+            # Wait for CoreDNS pods to reach Running state
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              NOT_RUNNING=$(kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers 2>/dev/null | grep -cv "Running" || true)
+              if [ "$NOT_RUNNING" = "0" ]; then
+                echo "CoreDNS pods are running"
+                break
+              fi
+              echo "Waiting for CoreDNS pods to be running... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::CoreDNS pods did not reach Running state within ${TIMEOUT}s"
+              exit 1
+            fi
+
+            echo "CoreDNS patched with static entry for '${GRAFANA_HOSTNAME}' → ${CONTOUR_LB_IP}"
+          fi
+
+          # Wait for API server reachability after CoreDNS restart
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get ns >/dev/null 2>&1; then
+              echo "API server is reachable"
+              break
+            fi
+            echo "Waiting for API server to be reachable... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::API server did not become reachable within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "CoreDNS configuration complete"
+
+      # Phase 11: Install Prometheus
+      - name: Install Prometheus
+        run: |
+          set -euo pipefail
+          vcf package install prometheus \
+            -p prometheus.kubernetes.vmware.com \
+            --values-file "$PROMETHEUS_VALUES_FILE" \
+            -n "$PACKAGE_NAMESPACE"
+
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "prometheus" | grep -qi "reconcile"; then
+              echo "Prometheus package reconciled"
+              break
+            fi
+            echo "Waiting for Prometheus package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Prometheus package did not reconcile within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "Prometheus installed and reconciled"
+
+      # Phase 12: Install Grafana Operator
+      - name: Install Grafana Operator
+        run: |
+          set -euo pipefail
+          GRAFANA_NAMESPACE="grafana"
+
+          # Create the Grafana namespace if it does not exist
+          if kubectl get ns "$GRAFANA_NAMESPACE" >/dev/null 2>&1; then
+            echo "Namespace '$GRAFANA_NAMESPACE' already exists, skipping creation"
+          else
+            kubectl create ns "$GRAFANA_NAMESPACE"
+            echo "Namespace '$GRAFANA_NAMESPACE' created"
+          fi
+
+          # Label with baseline PodSecurity standard
+          kubectl label ns "$GRAFANA_NAMESPACE" \
+            pod-security.kubernetes.io/enforce=baseline \
+            --overwrite
+
+          # Add Grafana Operator Helm repo and install
+          helm repo add grafana-operator https://grafana.github.io/helm-charts 2>/dev/null || true
+          helm repo update 2>/dev/null || true
+
+          helm upgrade --install grafana-operator grafana-operator/grafana-operator \
+            --namespace "$GRAFANA_NAMESPACE" --create-namespace
+
+          # Wait for Grafana Operator pod to reach Running state
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "$GRAFANA_NAMESPACE" -l app.kubernetes.io/name=grafana-operator --no-headers 2>/dev/null | grep -q "Running"; then
+              echo "Grafana Operator pod is running"
+              break
+            fi
+            echo "Waiting for Grafana Operator pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Grafana Operator pod did not reach Running state within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "Grafana Operator installed and running"
+
+      # Phase 13: Configure Grafana Instance
+      - name: Configure Grafana Instance
+        run: |
+          set -euo pipefail
+          GRAFANA_NAMESPACE="grafana"
+          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          CERT_DIR="./certs"
+
+          # Generate a random Grafana admin password if not provided
+          if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+            GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18)
+            echo "GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD" >> "$GITHUB_ENV"
+          fi
+
+          # Create TLS secret from wildcard certificate (idempotent)
+          kubectl create secret tls grafana-tls \
+            --cert="${CERT_DIR}/fullchain.crt" \
+            --key="${CERT_DIR}/wildcard.key" \
+            --namespace "$GRAFANA_NAMESPACE" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "Grafana TLS secret created"
+
+          # Apply Grafana instance manifest with runtime variable substitution
+          sed -e "s|GRAFANA_HOSTNAME|${GRAFANA_HOSTNAME}|g" \
+              -e "s|GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD}|g" \
+              examples/scenario2/grafana-instance.yaml | kubectl apply -f -
+          echo "Grafana instance manifest applied"
+
+          # Apply Prometheus datasource manifest
+          kubectl apply -f examples/scenario2/grafana-datasource-prometheus.yaml
+          echo "Grafana Prometheus datasource applied"
+
+          # Apply Kubernetes dashboards manifest
+          kubectl apply -f examples/scenario2/grafana-dashboards-k8s.yaml
+          echo "Grafana Kubernetes dashboards applied"
+
+          # Create Contour Ingress for HTTPS access
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: grafana-ingress
+            namespace: ${GRAFANA_NAMESPACE}
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${GRAFANA_HOSTNAME}
+                secretName: grafana-tls
+            rules:
+              - host: ${GRAFANA_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: grafana-service
+                          port:
+                            number: 80
+          EOF
+          echo "Grafana Ingress created for https://${GRAFANA_HOSTNAME}"
+
+          # Wait for Grafana pod to reach Running state
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "$GRAFANA_NAMESPACE" -l app=grafana --no-headers 2>/dev/null | grep -q "Running"; then
+              echo "Grafana pod is running"
+              break
+            fi
+            echo "Waiting for Grafana pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Grafana pod did not reach Running state within ${TIMEOUT}s"
+            exit 1
+          fi
+          echo "Grafana instance configured and running"
+
+      # Phase 13b: Verify Installation
+      - name: Verify Installation
+        run: |
+          set -euo pipefail
+          GRAFANA_NAMESPACE="grafana"
+
+          echo ""
+          echo "--- Installed VKS Packages ---"
+          vcf package installed list -n "$PACKAGE_NAMESPACE" || true
+          echo ""
+
+          # Check Telegraf pods
+          echo "--- Telegraf Pods ---"
+          kubectl get pods -n "$PACKAGE_NAMESPACE" -l app=telegraf 2>/dev/null || true
+          TELEGRAF_NOT_RUNNING=$(kubectl get pods -n "$PACKAGE_NAMESPACE" -l app=telegraf --no-headers 2>/dev/null | grep -v "Running" || true)
+          if [ -n "$TELEGRAF_NOT_RUNNING" ]; then
+            echo "::warning::Some Telegraf pods are not in Running state"
+          fi
+
+          # Check Prometheus pods
+          echo ""
+          echo "--- Prometheus Pods ---"
+          kubectl get pods -n "$PACKAGE_NAMESPACE" -l app=prometheus 2>/dev/null || true
+          PROMETHEUS_NOT_RUNNING=$(kubectl get pods -n "$PACKAGE_NAMESPACE" -l app=prometheus --no-headers 2>/dev/null | grep -v "Running" || true)
+          if [ -n "$PROMETHEUS_NOT_RUNNING" ]; then
+            echo "::warning::Some Prometheus pods are not in Running state"
+          fi
+
+          # Check Grafana pods
+          echo ""
+          echo "--- Grafana Pods ---"
+          kubectl get pods -n "$GRAFANA_NAMESPACE" 2>/dev/null || true
+          GRAFANA_NOT_RUNNING=$(kubectl get pods -n "$GRAFANA_NAMESPACE" --no-headers 2>/dev/null | grep -v "Running" || true)
+          if [ -n "$GRAFANA_NOT_RUNNING" ]; then
+            echo "::warning::Some Grafana pods are not in Running state"
+          fi
+
+          echo "Verification complete"
+
+      # Write Job Summary
+      - name: Write Job Summary
+        run: |
+          set -euo pipefail
+          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+
+          # Collect installed package versions
+          PACKAGE_VERSIONS=$(vcf package installed list -n "$PACKAGE_NAMESPACE" 2>/dev/null || echo "Unable to retrieve package list")
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ VKS Metrics Stack Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${CLUSTER_NAME} |
+          | Domain | ${DOMAIN} |
+          | Contour LB IP | ${CONTOUR_LB_IP} |
+          | Grafana URL | https://${GRAFANA_HOSTNAME} |
+          | Grafana Admin User | admin |
+          | Grafana Admin Password | ${GRAFANA_ADMIN_PASSWORD} |
+          | Environment | ${ENVIRONMENT} |
+
+          ### Installed Package Versions
+
+          \`\`\`
+          ${PACKAGE_VERSIONS}
+          \`\`\`
+
+          ### DNS / Hosts File Instructions
+
+          Add the following entry to your local \`/etc/hosts\` file or DNS server:
+
+          \`\`\`
+          ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}
+          \`\`\`
+          EOF
+
+      # Write Failure Summary (if: failure())
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          set -euo pipefail
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ VKS Metrics Stack Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${CLUSTER_NAME} |
+          | Environment | ${ENVIRONMENT} |
+          | Error | Check the failed step above for details |
+          EOF
