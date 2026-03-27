@@ -541,6 +541,7 @@ jobs:
             GRAFANA_ADMIN_PASSWORD=$(openssl rand -base64 18)
             echo "GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD" >> "$GITHUB_ENV"
           fi
+          echo "::add-mask::${GRAFANA_ADMIN_PASSWORD}"
 
           # Create TLS secret from wildcard certificate (idempotent)
           kubectl create secret tls grafana-tls \
@@ -669,7 +670,7 @@ jobs:
           | Contour LB IP | ${CONTOUR_LB_IP} |
           | Grafana URL | https://${GRAFANA_HOSTNAME} |
           | Grafana Admin User | admin |
-          | Grafana Admin Password | ${GRAFANA_ADMIN_PASSWORD} |
+          | Grafana Admin Password | Retrieve via Grafana instance manifest or configured source |
           | Environment | ${ENVIRONMENT} |
 
           ### Installed Package Versions

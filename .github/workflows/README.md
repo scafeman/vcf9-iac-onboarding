@@ -55,6 +55,18 @@ All three workflows use `environment: vcf-production`. To enable approval gates:
 3. Enable **Required reviewers** and add one or more approvers
 4. Optionally configure a **Wait timer** or restrict to specific branches
 
+## Credential Retrieval
+
+After a successful deployment, credentials are not printed in the job summary. Use the following commands to retrieve them from the cluster:
+
+| Credential | Retrieval Command |
+|---|---|
+| Kubeconfig | `vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml` |
+| ArgoCD Admin Password | `kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d` |
+| GitLab Root Password | `kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d` |
+| Grafana Admin Password | Refer to the Grafana instance manifest or configured password source |
+| Harbor Admin Password | Refer to the Helm install configuration or configured secret source |
+
 ## Self-Hosted Runner Setup
 
 The VCFA endpoint resides on a private network, so all workflows require a self-hosted runner. The runner is provided as a container service in `docker-compose.yml` (`gh-actions-runner` service).
@@ -181,17 +193,8 @@ curl -X POST \
 | 7b | **Wait for PVC Bound** | Waits for the PersistentVolumeClaim to bind (300s timeout) |
 | 7c | **Wait for LoadBalancer IP** | Waits for the Service to receive an external IP (300s timeout) |
 | 7d | **HTTP Connectivity Test** | Curls the LoadBalancer IP and verifies HTTP 200 |
-| — | **Upload Kubeconfig Artifact** | Uploads the kubeconfig file as a downloadable artifact (runs even on failure) |
 | — | **Write Job Summary** | Writes a Markdown summary with cluster details to the GitHub Actions job summary |
 | — | **Write Failure Summary** | On failure, writes a failure summary with error context |
-
-## Artifacts
-
-On completion (success or failure), the workflow uploads the kubeconfig file as a GitHub Actions artifact:
-
-- **Artifact name:** `kubeconfig-<CLUSTER_NAME>`
-- **File:** `kubeconfig-<CLUSTER_NAME>.yaml`
-- **Retention:** 90 days
 
 ## Troubleshooting
 

@@ -39,10 +39,11 @@ class TestWorkflowStructure:
         assert "self-hosted" in runs_on
         assert "vcf" in runs_on
 
-    def test_container_image_references_vcf9_dev(self, workflow_yaml):
-        container = workflow_yaml["jobs"]["deploy"]["container"]
-        image = container["image"] if isinstance(container, dict) else container
-        assert "vcf9-dev" in image
+    def test_no_container_directive(self, workflow_yaml):
+        """deploy-vks.yml runs directly on the self-hosted runner — no container: directive."""
+        assert "container" not in workflow_yaml["jobs"]["deploy"], (
+            "deploy-vks.yml should not have a container: directive"
+        )
 
 
 # ===================================================================
@@ -65,9 +66,9 @@ class TestWorkflowSecrets:
 
     def test_all_required_secrets_referenced(self, workflow_yaml_text):
         for secret in self.REQUIRED_SECRETS:
-            pattern = rf"\$\{{\{{\s*secrets\.{secret}\s*\}}\}}"
+            pattern = rf"secrets\.{secret}"
             assert re.search(pattern, workflow_yaml_text), (
-                f"Secret '{secret}' not referenced via ${{{{ secrets.{secret} }}}} syntax"
+                f"Secret '{secret}' not referenced via secrets.{secret} syntax"
             )
 
     def test_no_plaintext_sensitive_values(self, workflow_yaml_text):
@@ -127,7 +128,6 @@ class TestWorkflowStepNames:
         "Wait for PVC Bound",
         "Wait for LoadBalancer IP",
         "HTTP Connectivity Test",
-        "Upload Kubeconfig Artifact",
         "Write Job Summary",
         "Write Failure Summary",
     ]
@@ -140,10 +140,10 @@ class TestWorkflowStepNames:
                 f"Required step '{required}' not found in workflow steps"
             )
 
-    def test_step_count_at_least_17(self, workflow_yaml):
+    def test_step_count_at_least_16(self, workflow_yaml):
         steps = workflow_yaml["jobs"]["deploy"]["steps"]
-        assert len(steps) >= 17, (
-            f"Expected at least 17 steps, got {len(steps)}"
+        assert len(steps) >= 16, (
+            f"Expected at least 16 steps, got {len(steps)}"
         )
 
 

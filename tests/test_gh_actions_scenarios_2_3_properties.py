@@ -323,7 +323,7 @@ class TestProperty7Scenario2JobSummaryFields:
         "DOMAIN",
         "CONTOUR_LB_IP",
         "grafana",
-        "GRAFANA_ADMIN_PASSWORD",
+        "configured source",
     ]
 
     @given(field=st.sampled_from(REQUIRED_FIELDS))
@@ -366,8 +366,8 @@ class TestProperty8Scenario3JobSummaryFields:
         "argocd",
         "gitlab",
         "FRONTEND_IP",
-        "HARBOR_ADMIN_PASSWORD",
-        "ARGOCD_PASSWORD",
+        "argocd-initial-admin-secret",
+        "gitlab-gitlab-initial-root-password",
     ]
 
     @given(field=st.sampled_from(REQUIRED_FIELDS))

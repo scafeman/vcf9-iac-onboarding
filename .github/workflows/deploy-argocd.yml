@@ -343,6 +343,7 @@ jobs:
               echo "HARBOR_ADMIN_PASSWORD=$HARBOR_ADMIN_PASSWORD" >> "$GITHUB_ENV"
               echo "Generated Harbor admin password"
             fi
+            echo "::add-mask::${HARBOR_ADMIN_PASSWORD}"
 
             # Prepare Harbor values file with runtime variable substitution
             HARBOR_HOSTNAME="harbor.${DOMAIN}"
@@ -532,6 +533,7 @@ jobs:
 
           # Retrieve ArgoCD initial admin password
           ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n "$ARGOCD_NAMESPACE" -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${ARGOCD_PASSWORD}"
           echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> "$GITHUB_ENV"
           echo "ArgoCD setup complete"
 
@@ -822,6 +824,7 @@ jobs:
           # Retrieve root password from gitlab-gitlab-initial-root-password secret
           GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "$GITLAB_NAMESPACE" \
             -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+          echo "::add-mask::${GITLAB_ROOT_PASSWORD}"
 
           if [ -z "$GITLAB_ROOT_PASSWORD" ]; then
             echo "::warning::GitLab root password not found. Disable sign-up manually in Admin > Settings > General > Sign-up restrictions."
@@ -1022,10 +1025,6 @@ jobs:
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
           HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
 
-          # Retrieve GitLab root password for the summary
-          GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system \
-            -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "(from secret)")
-
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ ArgoCD Stack Deployment Complete
 
@@ -1045,12 +1044,12 @@ jobs:
           | GitLab | https://${GITLAB_HOSTNAME} |
           | Online Boutique | http://${FRONTEND_IP:-N/A} |
 
-          ### Login Credentials
-          | Service | Username | Password |
+          ### Credential Retrieval
+          | Service | Username | Retrieval Command |
           |---|---|---|
-          | Harbor | admin | \`${HARBOR_ADMIN_PASSWORD}\` |
-          | ArgoCD | admin | \`${ARGOCD_PASSWORD}\` |
-          | GitLab | root | \`${GITLAB_ROOT_PASSWORD}\` |
+          | Harbor | admin | Password set during Helm install. Check Helm values or configured secret source. |
+          | ArgoCD | admin | \`kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d\` |
+          | GitLab | root | \`kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d\` |
 
           ### Installed Versions
           | Component | Version |
