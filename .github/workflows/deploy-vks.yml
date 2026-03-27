@@ -196,6 +196,9 @@ jobs:
             regionName: "$REGION_NAME"
             className: "$RESOURCE_CLASS"
             vpcName: "$VPC_NAME"
+            initialClassConfigOverrides:
+              zones:
+              - name: "$ZONE_NAME"
           EOF
           fi
 
