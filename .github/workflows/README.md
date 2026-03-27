@@ -87,12 +87,37 @@ kubectl get namespaces   # verify connectivity
 
 Once connected to the cluster via the kubeconfig above, retrieve service passwords with:
 
-| Credential | Retrieval Command |
-|---|---|
-| ArgoCD Admin Password | `kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d` |
-| GitLab Root Password | `kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d` |
-| Grafana Admin Password | `kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'` |
-| Harbor Admin Password | `kubectl get secret harbor-core -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' \| base64 -d` |
+**Linux / macOS (Bash):**
+
+```bash
+# ArgoCD admin password
+kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' | base64 -d
+
+# GitLab root password
+kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' | base64 -d
+
+# Grafana admin password
+kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'
+
+# Harbor admin password
+kubectl get secret harbor-core -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' | base64 -d
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# ArgoCD admin password
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}')))
+
+# GitLab root password
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}')))
+
+# Grafana admin password (not base64 encoded)
+kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'
+
+# Harbor admin password
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret harbor-core -n harbor -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}')))
+```
 
 ## Self-Hosted Runner Setup
 
