@@ -20,9 +20,9 @@ Required:
   --repo                    GitHub repository (OWNER/REPO)
   --token                   GitHub PAT with repo scope
   --cluster-name            VKS cluster name
-  --telegraf-version        Telegraf package version
 
 Optional (override workflow defaults):
+  --telegraf-version        Telegraf package version (default: 1.37.1+vmware.1-vks.1)
   --environment             Environment label (default: demo)
   --domain                  Domain suffix (default: lab.local)
   --kubeconfig-path         Path to kubeconfig file
@@ -91,7 +91,6 @@ MISSING=()
 [[ -z "$REPO" ]]             && MISSING+=("--repo")
 [[ -z "$TOKEN" ]]            && MISSING+=("--token")
 [[ -z "$CLUSTER_NAME" ]]     && MISSING+=("--cluster-name")
-[[ -z "$TELEGRAF_VERSION" ]] && MISSING+=("--telegraf-version")
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
   echo "Error: Missing required arguments: ${MISSING[*]}" >&2
@@ -103,8 +102,7 @@ fi
 # Start with required fields, then add optional fields only if provided
 PAYLOAD=$(cat <<EOF
 {
-  "cluster_name": "${CLUSTER_NAME}",
-  "telegraf_version": "${TELEGRAF_VERSION}"
+  "cluster_name": "${CLUSTER_NAME}"
 }
 EOF
 )
@@ -117,6 +115,7 @@ add_field() {
   fi
 }
 
+add_field "telegraf_version"        "$TELEGRAF_VERSION"
 add_field "environment"            "$ENVIRONMENT"
 add_field "domain"                 "$DOMAIN"
 add_field "kubeconfig_path"        "$KUBECONFIG_PATH"

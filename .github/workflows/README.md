@@ -299,7 +299,7 @@ Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on a
 | Parameter | `client_payload` key | Default | Description |
 |---|---|---|---|
 | `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
-| `TELEGRAF_VERSION` | `telegraf_version` | (required) | Telegraf package version to install |
+| `TELEGRAF_VERSION` | `telegraf_version` | `1.37.1+vmware.1-vks.1` | Telegraf package version to install |
 | `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
 | `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
 | `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
@@ -317,7 +317,7 @@ Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on a
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy VKS Metrics Stack"** → **"Run workflow"**
-2. Fill in: **cluster_name** (required), **telegraf_version** (required), **environment** (optional, defaults to `demo`)
+2. Fill in: **cluster_name** (required), **telegraf_version** (optional, defaults to `1.37.1+vmware.1-vks.1`), **environment** (optional, defaults to `demo`)
 
 ### Trigger Script (repository_dispatch)
 
@@ -331,9 +331,9 @@ Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on a
   --domain lab.local
 ```
 
-**Required:** `--repo`, `--token`, `--cluster-name`, `--telegraf-version`
+**Required:** `--repo`, `--token`, `--cluster-name`
 
-**Optional:** `--environment`, `--domain`, `--kubeconfig-path`, `--package-namespace`, `--package-repo-url`, `--telegraf-values-file`, `--prometheus-values-file`, `--storage-class`, `--grafana-admin-password`, `--package-timeout`
+**Optional:** `--telegraf-version`, `--environment`, `--domain`, `--kubeconfig-path`, `--package-namespace`, `--package-repo-url`, `--telegraf-values-file`, `--prometheus-values-file`, `--storage-class`, `--grafana-admin-password`, `--package-timeout`
 
 ### Direct API Call (curl)
 

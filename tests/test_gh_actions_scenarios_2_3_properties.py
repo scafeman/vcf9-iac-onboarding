@@ -461,7 +461,6 @@ class TestProperty10TriggerScriptRequiredArguments:
         "--repo",
         "--token",
         "--cluster-name",
-        "--telegraf-version",
     ]
 
     ARGOCD_REQUIRED_ARGS = [
@@ -671,7 +670,7 @@ class TestProperty15WorkflowDispatchInputsCompleteness:
     **Validates: Requirements 1.1, 2.1**
     """
 
-    METRICS_REQUIRED_INPUTS = ["cluster_name", "telegraf_version"]
+    METRICS_REQUIRED_INPUTS = ["cluster_name"]
     ARGOCD_REQUIRED_INPUTS = ["cluster_name"]
 
     @given(input_name=st.sampled_from(METRICS_REQUIRED_INPUTS))
