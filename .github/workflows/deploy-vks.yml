@@ -165,6 +165,22 @@ jobs:
           if kubectl get project "$PROJECT_NAME" 2>/dev/null; then
             echo "Project '$PROJECT_NAME' already exists, skipping creation"
           else
+            # Look up the namespace class default limits to use in the zone override
+            CLASS_INFO=$(kubectl get supervisornamespaceclassconfigs "$RESOURCE_CLASS" -o json 2>/dev/null || true)
+            if [ -n "$CLASS_INFO" ]; then
+              NS_CPU_LIMIT=$(echo "$CLASS_INFO" | jq -r '.spec.defaultLimits.cpuLimit // "100000M"')
+              NS_CPU_RESERVATION=$(echo "$CLASS_INFO" | jq -r '.spec.defaultLimits.cpuReservation // "0M"')
+              NS_MEMORY_LIMIT=$(echo "$CLASS_INFO" | jq -r '.spec.defaultLimits.memoryLimit // "102400Mi"')
+              NS_MEMORY_RESERVATION=$(echo "$CLASS_INFO" | jq -r '.spec.defaultLimits.memoryReservation // "0Mi"')
+              echo "Namespace class '$RESOURCE_CLASS' limits: CPU=${NS_CPU_LIMIT}, Memory=${NS_MEMORY_LIMIT}"
+            else
+              echo "::warning::Could not query namespace class '$RESOURCE_CLASS', using xxlarge defaults"
+              NS_CPU_LIMIT="100000M"
+              NS_CPU_RESERVATION="0M"
+              NS_MEMORY_LIMIT="102400Mi"
+              NS_MEMORY_RESERVATION="0Mi"
+            fi
+
             cat <<EOF | kubectl create -f - --validate=false
           apiVersion: project.cci.vmware.com/v1alpha2
           kind: Project
@@ -199,6 +215,10 @@ jobs:
             initialClassConfigOverrides:
               zones:
               - name: "$ZONE_NAME"
+                cpuLimit: "${NS_CPU_LIMIT}"
+                cpuReservation: "${NS_CPU_RESERVATION}"
+                memoryLimit: "${NS_MEMORY_LIMIT}"
+                memoryReservation: "${NS_MEMORY_RESERVATION}"
           EOF
           fi
 
