@@ -57,11 +57,36 @@ All three workflows use `environment: vcf-production`. To enable approval gates:
 
 ## Credential Retrieval
 
-After a successful deployment, credentials are not printed in the job summary. Use the following commands to retrieve them from the cluster:
+After a successful deployment, credentials are not printed in the job summary. Use the following commands to retrieve them from the cluster.
+
+### Kubeconfig
+
+Download the kubeconfig to a standalone file, then set the `KUBECONFIG` environment variable to use it:
+
+**Linux / macOS (Bash):**
+
+```bash
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml
+export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml
+kubectl get namespaces   # verify connectivity
+```
+
+**Windows (PowerShell):**
+
+```powershell
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml
+$env:KUBECONFIG = ".\kubeconfig-<CLUSTER_NAME>.yaml"
+kubectl get namespaces   # verify connectivity
+```
+
+> **Note:** The `--export-file` flag saves the kubeconfig as a standalone file — it does not merge into your default `~/.kube/config`. You must set `KUBECONFIG` to point to the file before running kubectl commands.
+
+### Service Credentials
+
+Once connected to the cluster via the kubeconfig above, retrieve service passwords with:
 
 | Credential | Retrieval Command |
 |---|---|
-| Kubeconfig | `vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file kubeconfig-<CLUSTER_NAME>.yaml` |
 | ArgoCD Admin Password | `kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath='{.data.password}' \| base64 -d` |
 | GitLab Root Password | `kubectl get secret gitlab-gitlab-initial-root-password -n gitlab-system -o jsonpath='{.data.password}' \| base64 -d` |
 | Grafana Admin Password | `kubectl get grafana grafana -n grafana -o jsonpath='{.spec.config.security.admin_password}'` |
