@@ -504,7 +504,7 @@ fi
 if ! vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
   # Create values file with required cluster config and autoscaler tuning
   AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scaleDownUnneededTime: %s\n  scaleDownDelayAfterAdd: %s\n  scaleDownUtilizationThreshold: %s\n' \
+  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scale-down-unneeded-time: %s\n  scale-down-delay-after-add: %s\n  scale-down-utilization-threshold: %s\n' \
     "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" \
     "${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}" \
     "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}" \
