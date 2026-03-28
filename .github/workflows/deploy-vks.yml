@@ -89,6 +89,11 @@ on:
         required: false
         type: string
         default: "node-pool-01"
+      vpc_name:
+        description: "NSX VPC name (default: region-us1-a-default-vpc)"
+        required: false
+        type: string
+        default: "region-us1-a-default-vpc"
 
   repository_dispatch:
     types: [deploy-vks]
@@ -120,7 +125,7 @@ jobs:
       CONTENT_LIBRARY_ID: ${{ github.event.client_payload.content_library_id || secrets.CONTENT_LIBRARY_ID }}
       ZONE_NAME: ${{ github.event.client_payload.zone_name || secrets.ZONE_NAME }}
       REGION_NAME: ${{ github.event.client_payload.region_name || secrets.REGION_NAME || 'region-us1-a' }}
-      VPC_NAME: ${{ github.event.client_payload.vpc_name || secrets.VPC_NAME || 'region-us1-a-default-vpc' }}
+      VPC_NAME: ${{ github.event.inputs.vpc_name || github.event.client_payload.vpc_name || secrets.VPC_NAME || 'region-us1-a-default-vpc' }}
       RESOURCE_CLASS: ${{ github.event.inputs.resource_class || github.event.client_payload.resource_class || secrets.RESOURCE_CLASS || 'xxlarge' }}
       K8S_VERSION: ${{ github.event.client_payload.k8s_version || secrets.K8S_VERSION || 'v1.33.6+vmware.1-fips' }}
       VM_CLASS: ${{ github.event.inputs.vm_class || github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-large' }}

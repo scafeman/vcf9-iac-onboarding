@@ -221,7 +221,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy VKS Cluster"** → **"Run workflow"**
-2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**, **node_pool_name**
+2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**, **node_pool_name**, **vpc_name**
 
 ### Trigger Script (repository_dispatch)
 
