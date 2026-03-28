@@ -71,6 +71,7 @@ PACKAGE_REPO_URL=projects.packages.broadcom.com/vsphere/supervisor/vks-standard-
 # --- GitHub Actions Runner ---
 RUNNER_TOKEN=<your-runner-registration-token>
 REPO_URL=https://github.com/<OWNER>/<REPO>
+GITHUB_PAT=<your-github-personal-access-token>
 ```
 
 Replace all `<placeholder>` values with your environment-specific settings. See the [deploy script README](examples/scenario1/README-deploy.md) for the full variable reference including optional variables with defaults.
