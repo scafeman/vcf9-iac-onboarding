@@ -110,8 +110,9 @@ All three deployments are also available as GitHub Actions workflows for automat
 | Deploy VKS Cluster | `deploy-vks.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks`) |
 | Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks-metrics`) |
 | Deploy ArgoCD Stack | `deploy-argocd.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-argocd`) |
+| Teardown VCF Stacks | `teardown.yml` | `workflow_dispatch` / `repository_dispatch` (event: `teardown`) |
 
-Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. The Teardown workflow reverses the deploy order (GitOps → Metrics → Cluster) with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
 
 ## Repository Structure
 
@@ -130,11 +131,13 @@ Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. See
 │       ├── deploy-vks.yml             # Deploy Cluster: Deploy VKS Cluster workflow
 │       ├── deploy-vks-metrics.yml     # Deploy Metrics: Deploy VKS Metrics Stack workflow
 │       ├── deploy-argocd.yml          # Deploy GitOps: Deploy ArgoCD Stack workflow
+│       ├── teardown.yml               # Teardown: Selective teardown of all stacks
 │       └── README.md                  # Workflow documentation (parameters, triggers, credentials)
 ├── scripts/
 │   ├── trigger-deploy.sh             # Companion trigger script for Deploy Cluster
 │   ├── trigger-deploy-metrics.sh     # Companion trigger script for Deploy Metrics
-│   └── trigger-deploy-argocd.sh      # Companion trigger script for Deploy GitOps
+│   ├── trigger-deploy-argocd.sh      # Companion trigger script for Deploy GitOps
+│   └── trigger-teardown.sh           # Companion trigger script for Teardown
 ├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
 ├── examples/
 │   ├── deploy-cluster/                          # Deploy Cluster
@@ -187,7 +190,8 @@ Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. See
     ├── test_gh_actions_deploy_properties.py    # Property tests for Deploy Cluster workflow
     ├── test_gh_actions_metrics_gitops_content.py    # Content tests for Deploy Metrics and Deploy GitOps workflows
     ├── test_gh_actions_metrics_gitops_properties.py # Property tests for Deploy Metrics and Deploy GitOps workflows
-    └── test_workflow_secrets_hardening.py      # Security hardening tests for all workflows
+    ├── test_workflow_secrets_hardening.py      # Security hardening tests for all workflows
+    └── test_teardown_workflow_content.py       # Content tests for Teardown workflow
 ```
 
 ## Documentation
@@ -204,7 +208,7 @@ Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. See
 | [Deploy GitOps Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
 | [Deploy GitOps Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
 | [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
-| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all three deployments |
+| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all four workflows (deploy and teardown) |
 
 ## Testing
 
