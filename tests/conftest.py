@@ -70,7 +70,7 @@ def sample_manifest_content() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 SCRIPT_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario1", "scenario1-full-stack-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-cluster", "deploy-cluster.sh"
 )
 
 # Matches heredoc blocks: cat <<EOF ... EOF  or  cat <<'EOF' ... EOF
@@ -156,15 +156,15 @@ def script_phases(script_text: str) -> dict[int, str]:
 # ---------------------------------------------------------------------------
 
 SCENARIO2_DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-metrics", "deploy-metrics.sh"
 )
 
 SCENARIO2_TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2", "scenario2-vks-metrics-teardown.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-metrics", "teardown-metrics.sh"
 )
 
 TELEGRAF_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario2", "telegraf-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-metrics", "telegraf-values.yaml"
 )
 
 
@@ -206,35 +206,35 @@ def telegraf_values_parsed(telegraf_values_text: str):
 # ---------------------------------------------------------------------------
 
 SCENARIO3_DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "deploy-gitops.sh"
 )
 
 SCENARIO3_TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-teardown.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "teardown-gitops.sh"
 )
 
 GITLAB_OPERATOR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-operator-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "gitlab-operator-values.yaml"
 )
 
 GITLAB_RUNNER_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-runner-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "gitlab-runner-values.yaml"
 )
 
 ARGOCD_APP_MANIFEST_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-microservices-demo.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "argocd-microservices-demo.yaml"
 )
 
 CONTOUR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "contour-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "contour-values.yaml"
 )
 
 HARBOR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "harbor-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "harbor-values.yaml"
 )
 
 ARGOCD_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "argocd-values.yaml"
 )
 
 

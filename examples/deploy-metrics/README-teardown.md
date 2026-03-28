@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario2-vks-metrics-teardown.sh` removes all observability components installed by `scenario2-vks-metrics-deploy.sh`, deleting resources in reverse dependency order. It is the "spin down" half of the metrics observability lifecycle.
+`teardown-metrics.sh` removes all observability components installed by `deploy-metrics.sh`, deleting resources in reverse dependency order. It is the "spin down" half of the metrics observability lifecycle.
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input or confirmation prompts are required.
 
@@ -77,7 +77,7 @@ The teardown script uses a subset of the deploy script's variables:
 ### Execute the teardown script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario2/scenario2-vks-metrics-teardown.sh
+docker exec vcf9-dev bash examples/deploy-metrics/teardown-metrics.sh
 ```
 
 ---

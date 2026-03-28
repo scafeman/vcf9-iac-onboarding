@@ -5,7 +5,7 @@ import re
 
 
 SCRIPT_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario1", "scenario1-full-stack-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-cluster", "deploy-cluster.sh"
 )
 
 
@@ -21,7 +21,7 @@ class TestScriptFileExists:
 
     def test_script_file_exists(self):
         assert os.path.isfile(SCRIPT_PATH), (
-            "Script not found at examples/scenario1/scenario1-full-stack-deploy.sh"
+            "Script not found at examples/deploy-cluster/deploy-cluster.sh"
         )
 
 

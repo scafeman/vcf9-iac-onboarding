@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario3-argocd-deploy.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Scenario 2. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
+`deploy-gitops.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Scenario 2. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 
 The script orchestrates: self-signed certificate generation, VKS package installation (cert-manager, Contour), envoy-lb LoadBalancer service creation, Harbor container registry installation, ArgoCD GitOps controller installation, ArgoCD CLI auto-download, CoreDNS configuration for internal DNS resolution, GitLab and GitLab Runner deployment for CI/CD, ArgoCD application synchronization, and Google Microservices Demo (Online Boutique) deployment via GitOps.
 
@@ -45,7 +45,7 @@ Kubeconfig Setup
 - **ArgoCD Cluster Registration** must complete before ArgoCD can deploy applications to the VKS cluster.
 - **ArgoCD Application Bootstrap** triggers the GitOps sync that deploys the Microservices Demo.
 
-The teardown script (`scenario3-argocd-teardown.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Scenario 2's teardown — Scenario 3 teardown does not remove them.
+The teardown script (`teardown-gitops.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Scenario 2's teardown — Scenario 3 teardown does not remove them.
 
 ---
 
@@ -57,7 +57,7 @@ Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced
 
 ### Phase 2: Self-Signed Certificate Generation
 
-Generates a self-signed CA certificate and a wildcard TLS certificate for `*.${DOMAIN}` using openssl. If the CA certificate already exists in `CERT_DIR`, the entire phase is skipped (idempotent). Creates: CA key+cert, wildcard CSR (using `examples/scenario3/wildcard.cnf`), signed wildcard cert, and fullchain cert. Exits with code 3 on failure.
+Generates a self-signed CA certificate and a wildcard TLS certificate for `*.${DOMAIN}` using openssl. If the CA certificate already exists in `CERT_DIR`, the entire phase is skipped (idempotent). Creates: CA key+cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert. Exits with code 3 on failure.
 
 ### Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 
@@ -161,11 +161,11 @@ The ArgoCD CLI is auto-downloaded if not already in PATH.
 | `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for VKS package repository |
 | `PACKAGE_REPO_NAME` | `tkg-packages` | VKS standard package repository name |
 | `PACKAGE_REPO_URL` | (platform-specific) | VKS standard package repository URL |
-| `HARBOR_VALUES_FILE` | `examples/scenario3/harbor-values.yaml` | Path to Harbor Helm values |
-| `ARGOCD_VALUES_FILE` | `examples/scenario3/argocd-values.yaml` | Path to ArgoCD Helm values |
-| `GITLAB_OPERATOR_VALUES_FILE` | `examples/scenario3/gitlab-operator-values.yaml` | Path to GitLab Helm values |
-| `GITLAB_RUNNER_VALUES_FILE` | `examples/scenario3/gitlab-runner-values.yaml` | Path to GitLab Runner Helm values |
-| `ARGOCD_APP_MANIFEST` | `examples/scenario3/argocd-microservices-demo.yaml` | Path to ArgoCD Application manifest |
+| `HARBOR_VALUES_FILE` | `examples/deploy-gitops/harbor-values.yaml` | Path to Harbor Helm values |
+| `ARGOCD_VALUES_FILE` | `examples/deploy-gitops/argocd-values.yaml` | Path to ArgoCD Helm values |
+| `GITLAB_OPERATOR_VALUES_FILE` | `examples/deploy-gitops/gitlab-operator-values.yaml` | Path to GitLab Helm values |
+| `GITLAB_RUNNER_VALUES_FILE` | `examples/deploy-gitops/gitlab-runner-values.yaml` | Path to GitLab Runner Helm values |
+| `ARGOCD_APP_MANIFEST` | `examples/deploy-gitops/argocd-microservices-demo.yaml` | Path to ArgoCD Application manifest |
 | `PACKAGE_TIMEOUT` | `900` | Wait loop timeout (seconds) |
 | `POLL_INTERVAL` | `15` | Wait loop polling interval (seconds) |
 
@@ -186,14 +186,14 @@ The ArgoCD CLI is auto-downloaded if not already in PATH.
 ### Execute the deploy script
 
 ```bash
-bash examples/scenario3/scenario3-argocd-deploy.sh
+bash examples/deploy-gitops/deploy-gitops.sh
 ```
 
 Or override variables inline:
 
 ```bash
 CLUSTER_NAME=my-cluster \
-  bash examples/scenario3/scenario3-argocd-deploy.sh
+  bash examples/deploy-gitops/deploy-gitops.sh
 ```
 
 Override the domain and versions:
@@ -203,7 +203,7 @@ CLUSTER_NAME=my-cluster \
 DOMAIN=mylab.example.com \
 HARBOR_VERSION=1.16.2 \
 ARGOCD_VERSION=7.8.13 \
-  bash examples/scenario3/scenario3-argocd-deploy.sh
+  bash examples/deploy-gitops/deploy-gitops.sh
 ```
 
 ---
@@ -307,7 +307,7 @@ Generated files in `CERT_DIR`:
 - `wildcard.crt` — Signed wildcard certificate
 - `fullchain.crt` — Wildcard cert + CA cert concatenated
 
-The wildcard certificate covers `*.${DOMAIN}` and `${DOMAIN}` (SANs configured in `examples/scenario3/wildcard.cnf`).
+The wildcard certificate covers `*.${DOMAIN}` and `${DOMAIN}` (SANs configured in `examples/deploy-gitops/wildcard.cnf`).
 
 To use your own certificates instead, pre-populate `CERT_DIR` with `ca.crt`, `wildcard.key`, `wildcard.crt`, and `fullchain.crt` before running the script.
 

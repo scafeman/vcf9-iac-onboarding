@@ -80,7 +80,7 @@ class TestProperty2SecretsNeverPlaintext:
 # ===================================================================
 # Property 3: No Deploy Script Reference
 # For any line in the workflow YAML, it shall not contain a reference
-# to scenario1-full-stack-deploy.sh.
+# to deploy-cluster.sh.
 # Validates: Requirements 3.2
 # ===================================================================
 
@@ -89,7 +89,7 @@ class TestProperty3NoDeployScriptReference:
     """Property 3: No Deploy Script Reference.
 
     For any line in the workflow YAML file, that line shall not contain
-    a reference to scenario1-full-stack-deploy.sh.
+    a reference to deploy-cluster.sh.
 
     **Validates: Requirements 3.2**
     """
@@ -101,7 +101,7 @@ class TestProperty3NoDeployScriptReference:
         lines = [l for l in workflow_yaml_text.splitlines() if l.strip()]
         assume(len(lines) > 0)
         line = data.draw(st.sampled_from(lines))
-        assert "scenario1-full-stack-deploy.sh" not in line, (
+        assert "deploy-cluster.sh" not in line, (
             f"Workflow line references deploy script: {line}"
         )
 

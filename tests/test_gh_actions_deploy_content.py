@@ -100,8 +100,8 @@ class TestWorkflowNoScriptWrapper:
     """Workflow does not reference the scenario1 deploy script."""
 
     def test_no_scenario1_script_reference(self, workflow_yaml_text):
-        assert "scenario1-full-stack-deploy.sh" not in workflow_yaml_text, (
-            "Workflow references scenario1-full-stack-deploy.sh — it should implement logic inline"
+        assert "deploy-cluster.sh" not in workflow_yaml_text, (
+            "Workflow references deploy-cluster.sh — it should implement logic inline"
         )
 
 

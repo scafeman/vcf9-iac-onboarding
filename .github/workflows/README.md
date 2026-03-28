@@ -322,8 +322,8 @@ Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on a
 | `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
 | `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
 | `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
-| `TELEGRAF_VALUES_FILE` | `telegraf_values_file` | `examples/scenario2/telegraf-values.yaml` | Telegraf Helm values file path |
-| `PROMETHEUS_VALUES_FILE` | `prometheus_values_file` | `examples/scenario2/prometheus-values.yaml` | Prometheus Helm values file path |
+| `TELEGRAF_VALUES_FILE` | `telegraf_values_file` | `examples/deploy-metrics/telegraf-values.yaml` | Telegraf Helm values file path |
+| `PROMETHEUS_VALUES_FILE` | `prometheus_values_file` | `examples/deploy-metrics/prometheus-values.yaml` | Prometheus Helm values file path |
 | `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs |
 | `GRAFANA_ADMIN_PASSWORD` | `grafana_admin_password` | (auto-generated) | Grafana admin password |
 | `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Package reconciliation timeout in seconds |
@@ -490,7 +490,7 @@ curl -X POST \
 | 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v4` |
 | 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path; fails if file not found |
 | 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
-| 4 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR (using `examples/scenario3/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist |
+| 4 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist |
 | 5 | **Create Package Namespace** | Creates the package namespace with privileged PodSecurity label; skips if exists |
 | 6 | **Register Package Repository** | Registers the VKS standard packages OCI repository; polls until reconciled; skips if already registered |
 | 7 | **Install cert-manager** | Installs the cert-manager VKS package; polls until reconciled; skips if already installed |

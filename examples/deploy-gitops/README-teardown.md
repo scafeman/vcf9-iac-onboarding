@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario3-argocd-teardown.sh` removes all ArgoCD Consumption Model components installed by `scenario3-argocd-deploy.sh`, deleting resources in reverse dependency order. It removes application components (GitLab, ArgoCD Application) and application-level infrastructure services (ArgoCD, Harbor) that were installed via Helm. Shared VKS packages (cert-manager, Contour) are not removed — they are managed by Scenario 2's teardown script.
+`teardown-gitops.sh` removes all ArgoCD Consumption Model components installed by `deploy-gitops.sh`, deleting resources in reverse dependency order. It removes application components (GitLab, ArgoCD Application) and application-level infrastructure services (ArgoCD, Harbor) that were installed via Helm. Shared VKS packages (cert-manager, Contour) are not removed — they are managed by Scenario 2's teardown script.
 
 The script is fully non-interactive. All configuration is driven by environment variables defined in the variable block at the top of the script. No user input or confirmation prompts are required.
 
@@ -88,13 +88,13 @@ Prints a summary of all removed components. Note: Contour and cert-manager are s
 ### Execute the teardown script
 
 ```bash
-bash examples/scenario3/scenario3-argocd-teardown.sh
+bash examples/deploy-gitops/teardown-gitops.sh
 ```
 
 Or override variables inline:
 
 ```bash
-CLUSTER_NAME=my-cluster bash examples/scenario3/scenario3-argocd-teardown.sh
+CLUSTER_NAME=my-cluster bash examples/deploy-gitops/teardown-gitops.sh
 ```
 
 ---

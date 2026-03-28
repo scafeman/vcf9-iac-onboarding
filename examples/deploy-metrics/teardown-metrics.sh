@@ -20,7 +20,7 @@ set -euo pipefail
 # kapp-controller releases them immediately, then clean up ourselves.
 #
 # Uses the same variable block as the deploy script (subset).
-# Run: bash examples/scenario2/scenario2-vks-metrics-teardown.sh
+# Run: bash examples/deploy-metrics/teardown-metrics.sh
 ###############################################################################
 
 ###############################################################################

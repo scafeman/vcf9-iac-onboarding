@@ -13,7 +13,7 @@ set -euo pipefail
 #   Phase 6: Functional Validation Workload Deployment
 #
 # Edit the variable block below with your environment-specific values,
-# then run: bash examples/scenario1/scenario1-full-stack-deploy.sh
+# then run: bash examples/deploy-cluster/deploy-cluster.sh
 ###############################################################################
 
 ###############################################################################

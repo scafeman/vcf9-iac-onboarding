@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario1-full-stack-deploy.sh` automates the complete VCF 9 provisioning workflow from zero to a fully validated VKS cluster with running workloads. It is the "spin up" half of the dev environment lifecycle — pair it with `scenario1-full-stack-teardown.sh` to tear everything down.
+`deploy-cluster.sh` automates the complete VCF 9 provisioning workflow from zero to a fully validated VKS cluster with running workloads. It is the "spin up" half of the dev environment lifecycle — pair it with `teardown-cluster.sh` to tear everything down.
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
@@ -134,7 +134,7 @@ docker compose up -d --build
 ### Execute the deploy script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-deploy.sh
+docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
 ### Monitor from a second terminal (optional)

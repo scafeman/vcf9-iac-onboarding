@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario1-full-stack-teardown.sh` reverses everything created by `scenario1-full-stack-deploy.sh`, deleting all VCF 9 resources in the correct dependency order. It is the "spin down" half of the dev environment lifecycle.
+`teardown-cluster.sh` reverses everything created by `deploy-cluster.sh`, deleting all VCF 9 resources in the correct dependency order. It is the "spin down" half of the dev environment lifecycle.
 
 The script is fully non-interactive. All configuration is driven by the same environment variables as the deploy script (loaded from `.env` via Docker Compose). No user input or confirmation prompts are required.
 
@@ -97,7 +97,7 @@ The teardown script uses a subset of the deploy script's variables:
 ### Execute the teardown script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
+docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
 ```
 
 ### Monitor from a second terminal (optional)

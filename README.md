@@ -74,7 +74,7 @@ REPO_URL=https://github.com/<OWNER>/<REPO>
 GITHUB_PAT=<your-github-personal-access-token>
 ```
 
-Replace all `<placeholder>` values with your environment-specific settings. See the [deploy script README](examples/scenario1/README-deploy.md) for the full variable reference including optional variables with defaults.
+Replace all `<placeholder>` values with your environment-specific settings. See the [deploy script README](examples/deploy-cluster/README-deploy.md) for the full variable reference including optional variables with defaults.
 
 ### 2. Build and start the dev container
 
@@ -87,7 +87,7 @@ This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2) and kubectl (v1.33.0
 ### 3. Deploy the full stack
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-deploy.sh
+docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
 Typical deployment time: 5–18 minutes. The script provisions a VCF project, supervisor namespace, VKS cluster with autoscaling workers, and validates the stack with a test workload.
@@ -95,7 +95,7 @@ Typical deployment time: 5–18 minutes. The script provisions a VCF project, su
 ### 4. Tear it all down
 
 ```bash
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
+docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
 ```
 
 Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempotent).
@@ -136,14 +136,14 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
 │   └── trigger-deploy-argocd.sh      # Companion trigger script for Scenario 3
 ├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
 ├── examples/
-│   ├── scenario1/                               # Scenario 1: Full Stack Deploy
-│   │   ├── scenario1-full-stack-deploy.sh       #   Deploy script
-│   │   ├── scenario1-full-stack-teardown.sh     #   Teardown script
+│   ├── deploy-cluster/                          # Deploy Cluster
+│   │   ├── deploy-cluster.sh                    #   Deploy script
+│   │   ├── teardown-cluster.sh                  #   Teardown script
 │   │   ├── README-deploy.md                     #   Deploy documentation
 │   │   └── README-teardown.md                   #   Teardown documentation
-│   ├── scenario2/                               # Scenario 2: VKS Metrics Observability
-│   │   ├── scenario2-vks-metrics-deploy.sh      #   Deploy script
-│   │   ├── scenario2-vks-metrics-teardown.sh    #   Teardown script
+│   ├── deploy-metrics/                           # Deploy Metrics
+│   │   ├── deploy-metrics.sh                    #   Deploy script
+│   │   ├── teardown-metrics.sh                  #   Teardown script
 │   │   ├── README-deploy.md                     #   Deploy documentation
 │   │   ├── README-teardown.md                   #   Teardown documentation
 │   │   ├── telegraf-values.yaml                 #   Telegraf Helm values
@@ -151,9 +151,9 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
 │   │   ├── grafana-instance.yaml                #   Grafana instance manifest
 │   │   ├── grafana-datasource-prometheus.yaml   #   Grafana datasource manifest
 │   │   └── grafana-dashboards-k8s.yaml          #   Grafana dashboards manifest
-│   ├── scenario3/                               # Scenario 3: ArgoCD Consumption Model
-│   │   ├── scenario3-argocd-deploy.sh           #   Deploy script
-│   │   ├── scenario3-argocd-teardown.sh         #   Teardown script
+│   ├── deploy-gitops/                            # Deploy GitOps
+│   │   ├── deploy-gitops.sh                     #   Deploy script
+│   │   ├── teardown-gitops.sh                   #   Teardown script
 │   │   ├── README-deploy.md                     #   Deploy documentation
 │   │   ├── README-teardown.md                   #   Teardown documentation
 │   │   ├── contour-values.yaml                  #   Contour Helm values
@@ -196,12 +196,12 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
 | [VCF 9 IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) | Full walkthrough of the VCF 9 IaC workflow with annotated manifests, CLI commands, troubleshooting, and an EKS-to-VKS migration mapping |
 | [Engineering Workflow](VCF_Engineering_Workflow.md) | Condensed step-by-step engineering workflow |
 | [Examples Overview](examples/README.md) | Summary of all scenarios, dependency chain, and deploy/teardown commands |
-| [Scenario 1 Deploy README](examples/scenario1/README-deploy.md) | Detailed breakdown of each Scenario 1 deploy phase, expected output, and timing |
-| [Scenario 1 Teardown README](examples/scenario1/README-teardown.md) | Detailed breakdown of each Scenario 1 teardown phase with idempotency notes |
-| [Scenario 2 Deploy README](examples/scenario2/README-deploy.md) | VKS Metrics Observability deploy documentation |
-| [Scenario 2 Teardown README](examples/scenario2/README-teardown.md) | VKS Metrics Observability teardown documentation |
-| [Scenario 3 Deploy README](examples/scenario3/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
-| [Scenario 3 Teardown README](examples/scenario3/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
+| [Scenario 1 Deploy README](examples/deploy-cluster/README-deploy.md) | Detailed breakdown of each Scenario 1 deploy phase, expected output, and timing |
+| [Scenario 1 Teardown README](examples/deploy-cluster/README-teardown.md) | Detailed breakdown of each Scenario 1 teardown phase with idempotency notes |
+| [Scenario 2 Deploy README](examples/deploy-metrics/README-deploy.md) | VKS Metrics Observability deploy documentation |
+| [Scenario 2 Teardown README](examples/deploy-metrics/README-teardown.md) | VKS Metrics Observability teardown documentation |
+| [Scenario 3 Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
+| [Scenario 3 Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
 | [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
 | [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all three scenarios |
 

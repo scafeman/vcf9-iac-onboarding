@@ -141,7 +141,7 @@ class TestArgocdStepContent:
 
     def test_cert_generation_references_wildcard_cnf(self, argocd_workflow_yaml):
         step = self._get_step_by_name(argocd_workflow_yaml, "Generate Self-Signed Certificates")
-        assert "examples/scenario3/wildcard.cnf" in step.get("run", "")
+        assert "examples/deploy-gitops/wildcard.cnf" in step.get("run", "")
 
     def test_coredns_contains_rollout_restart(self, argocd_workflow_yaml):
         step = self._get_step_by_name(argocd_workflow_yaml, "Configure CoreDNS")

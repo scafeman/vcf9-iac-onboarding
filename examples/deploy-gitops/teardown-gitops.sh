@@ -24,7 +24,7 @@ set -euo pipefail
 # `--ignore-not-found` or `|| true` for idempotent re-runs.
 #
 # Uses the same variable block as the deploy script (subset).
-# Run: bash examples/scenario3/scenario3-argocd-teardown.sh
+# Run: bash examples/deploy-gitops/teardown-gitops.sh
 ###############################################################################
 
 ###############################################################################

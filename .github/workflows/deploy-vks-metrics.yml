@@ -63,8 +63,8 @@ jobs:
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
       PACKAGE_REPO_URL: ${{ github.event.client_payload.package_repo_url || secrets.PACKAGE_REPO_URL || 'projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211' }}
-      TELEGRAF_VALUES_FILE: ${{ github.event.client_payload.telegraf_values_file || secrets.TELEGRAF_VALUES_FILE || 'examples/scenario2/telegraf-values.yaml' }}
-      PROMETHEUS_VALUES_FILE: ${{ github.event.client_payload.prometheus_values_file || secrets.PROMETHEUS_VALUES_FILE || 'examples/scenario2/prometheus-values.yaml' }}
+      TELEGRAF_VALUES_FILE: ${{ github.event.client_payload.telegraf_values_file || secrets.TELEGRAF_VALUES_FILE || 'examples/deploy-metrics/telegraf-values.yaml' }}
+      PROMETHEUS_VALUES_FILE: ${{ github.event.client_payload.prometheus_values_file || secrets.PROMETHEUS_VALUES_FILE || 'examples/deploy-metrics/prometheus-values.yaml' }}
       STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
       GRAFANA_ADMIN_PASSWORD: ${{ github.event.client_payload.grafana_admin_password || secrets.GRAFANA_ADMIN_PASSWORD }}
       PACKAGE_TIMEOUT: ${{ github.event.client_payload.package_timeout || secrets.PACKAGE_TIMEOUT || '600' }}
@@ -598,15 +598,15 @@ jobs:
           # Apply Grafana instance manifest with runtime variable substitution
           sed -e "s|GRAFANA_HOSTNAME|${GRAFANA_HOSTNAME}|g" \
               -e "s|GRAFANA_ADMIN_PASSWORD|${GRAFANA_ADMIN_PASSWORD}|g" \
-              examples/scenario2/grafana-instance.yaml | kubectl apply -f -
+              examples/deploy-metrics/grafana-instance.yaml | kubectl apply -f -
           echo "Grafana instance manifest applied"
 
           # Apply Prometheus datasource manifest
-          kubectl apply -f examples/scenario2/grafana-datasource-prometheus.yaml
+          kubectl apply -f examples/deploy-metrics/grafana-datasource-prometheus.yaml
           echo "Grafana Prometheus datasource applied"
 
           # Apply Kubernetes dashboards manifest
-          kubectl apply -f examples/scenario2/grafana-dashboards-k8s.yaml
+          kubectl apply -f examples/deploy-metrics/grafana-dashboards-k8s.yaml
           echo "Grafana Kubernetes dashboards applied"
 
           # Create Contour Ingress for HTTPS access

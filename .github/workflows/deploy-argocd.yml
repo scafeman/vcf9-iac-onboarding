@@ -158,7 +158,7 @@ jobs:
             # Generate wildcard certificate CSR using the OpenSSL config file
             if ! openssl req -new -nodes -newkey rsa:2048 \
               -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
-              -config examples/scenario3/wildcard.cnf; then
+              -config examples/deploy-gitops/wildcard.cnf; then
               echo "::error::Failed to generate wildcard certificate CSR"
               exit 1
             fi
@@ -168,7 +168,7 @@ jobs:
             if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
               -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
               -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
-              -days 3650 -extensions v3_req -extfile examples/scenario3/wildcard.cnf; then
+              -days 3650 -extensions v3_req -extfile examples/deploy-gitops/wildcard.cnf; then
               echo "::error::Failed to sign wildcard certificate"
               exit 1
             fi
@@ -392,7 +392,7 @@ jobs:
               -e "s|Harbor12345|${HARBOR_ADMIN_PASSWORD}|g" \
               -e "s|not-a-secure-key|${HARBOR_SECRET_KEY}|g" \
               -e "s|changeit|changeit|g" \
-              examples/scenario3/harbor-values.yaml > "$TEMP_HARBOR_VALUES"
+              examples/deploy-gitops/harbor-values.yaml > "$TEMP_HARBOR_VALUES"
 
             if ! helm upgrade --install harbor harbor/harbor \
               --namespace "$HARBOR_NAMESPACE" \
@@ -533,7 +533,7 @@ jobs:
             sed \
               -e "s|argocd\.lab\.local|${ARGOCD_HOSTNAME}|g" \
               -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g" \
-              examples/scenario3/argocd-values.yaml > "$TEMP_ARGOCD_VALUES"
+              examples/deploy-gitops/argocd-values.yaml > "$TEMP_ARGOCD_VALUES"
 
             if ! helm upgrade --install argocd argo/argo-cd \
               --namespace "$ARGOCD_NAMESPACE" \
@@ -690,7 +690,7 @@ jobs:
               -e "s|GITLAB_HOSTNAME|${GITLAB_HOSTNAME}|g" \
               -e "s|GITLAB_DOMAIN|${GITLAB_DOMAIN}|g" \
               -e "s|HARBOR_HOSTNAME|${HARBOR_HOSTNAME}|g" \
-              examples/scenario3/gitlab-operator-values.yaml > "$TEMP_GITLAB_VALUES"
+              examples/deploy-gitops/gitlab-operator-values.yaml > "$TEMP_GITLAB_VALUES"
 
             if ! helm upgrade --install gitlab gitlab/gitlab \
               --namespace "$GITLAB_NAMESPACE" \
@@ -731,7 +731,7 @@ jobs:
         run: |
           set -euo pipefail
           HARBOR_HOSTNAME="harbor.${DOMAIN}"
-          GITLAB_VALUES_FILE="examples/scenario3/gitlab-operator-values.yaml"
+          GITLAB_VALUES_FILE="examples/deploy-gitops/gitlab-operator-values.yaml"
 
           # Check if the GitLab Operator values file contains Harbor proxy cache configuration
           if grep -q "proxy/" "$GITLAB_VALUES_FILE" 2>/dev/null; then
@@ -807,7 +807,7 @@ jobs:
             -e "s|GITLAB_RUNNER_TOKEN|${GITLAB_RUNNER_TOKEN}|g" \
             -e "s|HARBOR_HOSTNAME|${HARBOR_HOSTNAME}|g" \
             -e "s|GITLAB_HOSTNAME|${GITLAB_HOSTNAME}|g" \
-            examples/scenario3/gitlab-runner-values.yaml > "$TEMP_RUNNER_VALUES"
+            examples/deploy-gitops/gitlab-runner-values.yaml > "$TEMP_RUNNER_VALUES"
 
           # Add GitLab Helm repository (may already be added from GitLab install)
           helm repo add gitlab https://charts.gitlab.io/ 2>/dev/null || true
@@ -966,7 +966,7 @@ jobs:
             -e "s|HELM_CHARTS_REPO_URL|${HELM_CHARTS_REPO_URL}|g" \
             -e "s|APP_NAMESPACE|${APP_NAMESPACE}|g" \
             -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g" \
-            examples/scenario3/argocd-microservices-demo.yaml > "$TEMP_ARGOCD_APP"
+            examples/deploy-gitops/argocd-microservices-demo.yaml > "$TEMP_ARGOCD_APP"
 
           if ! kubectl apply -f "$TEMP_ARGOCD_APP"; then
             echo "::error::Failed to apply ArgoCD Application manifest"

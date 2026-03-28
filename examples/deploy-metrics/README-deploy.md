@@ -2,7 +2,7 @@
 
 ## Overview
 
-`scenario2-vks-metrics-deploy.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
 
 Grafana is exposed externally via a Contour Ingress with TLS termination using a self-signed wildcard certificate (same pattern as Scenario 3). Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
 
@@ -124,17 +124,17 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `PACKAGE_NAMESPACE` | `tkg-packages` | Namespace for VKS standard packages |
 | `PACKAGE_REPO_NAME` | `tkg-packages` | Package repository name |
 | `PACKAGE_REPO_URL` | `projects.packages.broadcom.com/...` | OCI repository URL |
-| `TELEGRAF_VALUES_FILE` | `examples/scenario2/telegraf-values.yaml` | Path to Telegraf values file |
-| `PROMETHEUS_VALUES_FILE` | `examples/scenario2/prometheus-values.yaml` | Path to Prometheus values file |
+| `TELEGRAF_VALUES_FILE` | `examples/deploy-metrics/telegraf-values.yaml` | Path to Telegraf values file |
+| `PROMETHEUS_VALUES_FILE` | `examples/deploy-metrics/prometheus-values.yaml` | Path to Prometheus values file |
 | `STORAGE_CLASS` | `nfs` | StorageClass for Prometheus |
 | `NODE_CPU_THRESHOLD` | `4000` | Advisory CPU threshold (millicores) |
 | `GRAFANA_NAMESPACE` | `grafana` | Namespace for Grafana |
 | `GRAFANA_ADMIN_PASSWORD` | (auto-generated) | Grafana admin password (random 24-char base64) |
 | `CERT_DIR` | `./certs` | Directory for TLS certificates |
 | `CONTOUR_INGRESS_NAMESPACE` | `tanzu-system-ingress` | Namespace for VKS Contour Envoy service |
-| `GRAFANA_INSTANCE_FILE` | `examples/scenario2/grafana-instance.yaml` | Path to Grafana instance manifest |
-| `GRAFANA_DATASOURCE_FILE` | `examples/scenario2/grafana-datasource-prometheus.yaml` | Path to Grafana datasource manifest |
-| `GRAFANA_DASHBOARDS_FILE` | `examples/scenario2/grafana-dashboards-k8s.yaml` | Path to Grafana dashboards manifest |
+| `GRAFANA_INSTANCE_FILE` | `examples/deploy-metrics/grafana-instance.yaml` | Path to Grafana instance manifest |
+| `GRAFANA_DATASOURCE_FILE` | `examples/deploy-metrics/grafana-datasource-prometheus.yaml` | Path to Grafana datasource manifest |
+| `GRAFANA_DASHBOARDS_FILE` | `examples/deploy-metrics/grafana-dashboards-k8s.yaml` | Path to Grafana dashboards manifest |
 | `PACKAGE_TIMEOUT` | `600` | Package reconciliation timeout (seconds) |
 | `POLL_INTERVAL` | `15` | Polling interval for wait loops (seconds) |
 
@@ -151,7 +151,7 @@ docker compose up -d --build
 ### Execute the deploy script
 
 ```bash
-docker exec vcf9-dev bash examples/scenario2/scenario2-vks-metrics-deploy.sh
+docker exec vcf9-dev bash examples/deploy-metrics/deploy-metrics.sh
 ```
 
 ### Monitor from a second terminal (optional)
@@ -232,7 +232,7 @@ Package Repository → cert-manager → Contour → Certificates → CoreDNS →
 - **Prometheus** must be installed before Grafana (Grafana uses it as a datasource).
 - **Grafana** is installed last, after Prometheus is reconciled and serving metrics.
 
-The teardown script (`scenario2-vks-metrics-teardown.sh`) reverses this order: Grafana → Prometheus → Contour → cert-manager → Telegraf → repository → namespace.
+The teardown script (`teardown-metrics.sh`) reverses this order: Grafana → Prometheus → Contour → cert-manager → Telegraf → repository → namespace.
 
 ---
 

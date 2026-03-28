@@ -26,7 +26,7 @@ set -euo pipefail
 #   - Helm v3 installed (included in the vcf9-dev container Dockerfile)
 #
 # Edit the variable block below with your environment-specific values,
-# then run: bash examples/scenario2/scenario2-vks-metrics-deploy.sh
+# then run: bash examples/deploy-metrics/deploy-metrics.sh
 ###############################################################################
 
 ###############################################################################
@@ -52,16 +52,16 @@ PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/sup
 TELEGRAF_VERSION="${TELEGRAF_VERSION:-1.37.1+vmware.1-vks.1}"
 
 # --- Configuration ---
-TELEGRAF_VALUES_FILE="${TELEGRAF_VALUES_FILE:-examples/scenario2/telegraf-values.yaml}"
-PROMETHEUS_VALUES_FILE="${PROMETHEUS_VALUES_FILE:-examples/scenario2/prometheus-values.yaml}"
+TELEGRAF_VALUES_FILE="${TELEGRAF_VALUES_FILE:-examples/deploy-metrics/telegraf-values.yaml}"
+PROMETHEUS_VALUES_FILE="${PROMETHEUS_VALUES_FILE:-examples/deploy-metrics/prometheus-values.yaml}"
 STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
 NODE_CPU_THRESHOLD="${NODE_CPU_THRESHOLD:-4000}"
 
 # --- Grafana ---
 GRAFANA_NAMESPACE="${GRAFANA_NAMESPACE:-grafana}"
-GRAFANA_INSTANCE_FILE="${GRAFANA_INSTANCE_FILE:-examples/scenario2/grafana-instance.yaml}"
-GRAFANA_DATASOURCE_FILE="${GRAFANA_DATASOURCE_FILE:-examples/scenario2/grafana-datasource-prometheus.yaml}"
-GRAFANA_DASHBOARDS_FILE="${GRAFANA_DASHBOARDS_FILE:-examples/scenario2/grafana-dashboards-k8s.yaml}"
+GRAFANA_INSTANCE_FILE="${GRAFANA_INSTANCE_FILE:-examples/deploy-metrics/grafana-instance.yaml}"
+GRAFANA_DATASOURCE_FILE="${GRAFANA_DATASOURCE_FILE:-examples/deploy-metrics/grafana-datasource-prometheus.yaml}"
+GRAFANA_DASHBOARDS_FILE="${GRAFANA_DASHBOARDS_FILE:-examples/deploy-metrics/grafana-dashboards-k8s.yaml}"
 GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-$(openssl rand -base64 18)}"
 
 # --- Certificate Directory ---

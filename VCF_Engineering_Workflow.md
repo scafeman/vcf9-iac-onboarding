@@ -156,19 +156,19 @@ The manual workflow above has been fully automated into two scripts that handle 
 docker compose up -d --build
 
 # Run the full deploy — creates context, project, namespace, cluster, and test workloads
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-deploy.sh
+docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
-See [examples/scenario1/README-deploy.md](examples/scenario1/README-deploy.md) for a detailed breakdown of each phase.
+See [examples/deploy-cluster/README-deploy.md](examples/deploy-cluster/README-deploy.md) for a detailed breakdown of each phase.
 
 ### Teardown (Spin Down)
 
 ```bash
 # Tear down everything — deletes workloads, cluster, namespace, project, and context
-docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
+docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
 ```
 
-See [examples/scenario1/README-teardown.md](examples/scenario1/README-teardown.md) for a detailed breakdown of each phase.
+See [examples/deploy-cluster/README-teardown.md](examples/deploy-cluster/README-teardown.md) for a detailed breakdown of each phase.
 
 ### Configuration
 

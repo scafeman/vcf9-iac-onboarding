@@ -237,9 +237,9 @@ Provisions a complete VKS cluster from scratch using the VCF CLI. Handles projec
 
 | | |
 |---|---|
-| Folder | [`scenario1/`](scenario1/) |
-| Deploy | `bash examples/scenario1/scenario1-full-stack-deploy.sh` |
-| Teardown | `bash examples/scenario1/scenario1-full-stack-teardown.sh` |
+| Folder | [`deploy-cluster/`](deploy-cluster/) |
+| Deploy | `bash examples/deploy-cluster/deploy-cluster.sh` |
+| Teardown | `bash examples/deploy-cluster/teardown-cluster.sh` |
 | Output | Running VKS cluster + admin kubeconfig file |
 
 ## Scenario 2: VKS Metrics Observability
@@ -248,10 +248,10 @@ Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collec
 
 | | |
 |---|---|
-| Folder | [`scenario2/`](scenario2/) |
+| Folder | [`deploy-metrics/`](deploy-metrics/) |
 | Depends on | Scenario 1 (running VKS cluster) |
-| Deploy | `bash examples/scenario2/scenario2-vks-metrics-deploy.sh` |
-| Teardown | `bash examples/scenario2/scenario2-vks-metrics-teardown.sh` |
+| Deploy | `bash examples/deploy-metrics/deploy-metrics.sh` |
+| Teardown | `bash examples/deploy-metrics/teardown-metrics.sh` |
 | Output | Grafana dashboards with Kubernetes cluster metrics |
 
 ## Scenario 3: Self-Contained ArgoCD Consumption Model
@@ -260,10 +260,10 @@ Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructur
 
 | | |
 |---|---|
-| Folder | [`scenario3/`](scenario3/) |
+| Folder | [`deploy-gitops/`](deploy-gitops/) |
 | Depends on | Scenario 1 (running VKS cluster with LoadBalancer + nfs storageClass) |
-| Deploy | `bash examples/scenario3/scenario3-argocd-deploy.sh` |
-| Teardown | `bash examples/scenario3/scenario3-argocd-teardown.sh` |
+| Deploy | `bash examples/deploy-gitops/deploy-gitops.sh` |
+| Teardown | `bash examples/deploy-gitops/teardown-gitops.sh` |
 | Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |
 
 ---

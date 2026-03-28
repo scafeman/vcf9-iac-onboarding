@@ -35,7 +35,7 @@ set -euo pipefail
 #   - vcf CLI installed (for VKS package installation)
 #
 # Edit the variable block below with your environment-specific values,
-# then run: bash examples/scenario3/scenario3-argocd-deploy.sh
+# then run: bash examples/deploy-gitops/deploy-gitops.sh
 ###############################################################################
 
 ###############################################################################
@@ -93,11 +93,11 @@ PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
 PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
 
 # --- Configuration File Paths ---
-HARBOR_VALUES_FILE="${HARBOR_VALUES_FILE:-examples/scenario3/harbor-values.yaml}"
-ARGOCD_VALUES_FILE="${ARGOCD_VALUES_FILE:-examples/scenario3/argocd-values.yaml}"
-GITLAB_OPERATOR_VALUES_FILE="${GITLAB_OPERATOR_VALUES_FILE:-examples/scenario3/gitlab-operator-values.yaml}"
-GITLAB_RUNNER_VALUES_FILE="${GITLAB_RUNNER_VALUES_FILE:-examples/scenario3/gitlab-runner-values.yaml}"
-ARGOCD_APP_MANIFEST="${ARGOCD_APP_MANIFEST:-examples/scenario3/argocd-microservices-demo.yaml}"
+HARBOR_VALUES_FILE="${HARBOR_VALUES_FILE:-examples/deploy-gitops/harbor-values.yaml}"
+ARGOCD_VALUES_FILE="${ARGOCD_VALUES_FILE:-examples/deploy-gitops/argocd-values.yaml}"
+GITLAB_OPERATOR_VALUES_FILE="${GITLAB_OPERATOR_VALUES_FILE:-examples/deploy-gitops/gitlab-operator-values.yaml}"
+GITLAB_RUNNER_VALUES_FILE="${GITLAB_RUNNER_VALUES_FILE:-examples/deploy-gitops/gitlab-runner-values.yaml}"
+ARGOCD_APP_MANIFEST="${ARGOCD_APP_MANIFEST:-examples/deploy-gitops/argocd-microservices-demo.yaml}"
 
 # --- Timeouts and Polling ---
 PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-900}"
@@ -367,7 +367,7 @@ else
   # Generate wildcard certificate CSR using the OpenSSL config
   if ! openssl req -new -nodes -newkey rsa:2048 \
     -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
-    -config examples/scenario3/wildcard.cnf; then
+    -config examples/deploy-gitops/wildcard.cnf; then
     log_error "Failed to generate wildcard certificate CSR"
     exit 3
   fi
@@ -377,7 +377,7 @@ else
   if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
     -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
     -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
-    -days 3650 -extensions v3_req -extfile examples/scenario3/wildcard.cnf; then
+    -days 3650 -extensions v3_req -extfile examples/deploy-gitops/wildcard.cnf; then
     log_error "Failed to sign wildcard certificate"
     exit 3
   fi

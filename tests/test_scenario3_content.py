@@ -12,34 +12,34 @@ import yaml
 # ===================================================================
 
 DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-deploy.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "deploy-gitops.sh"
 )
 TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "scenario3-argocd-teardown.sh"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "teardown-gitops.sh"
 )
 DEPLOY_README_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "README-deploy.md"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "README-deploy.md"
 )
 TEARDOWN_README_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "README-teardown.md"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "README-teardown.md"
 )
 GITLAB_OPERATOR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-operator-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "gitlab-operator-values.yaml"
 )
 GITLAB_RUNNER_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "gitlab-runner-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "gitlab-runner-values.yaml"
 )
 ARGOCD_APP_MANIFEST_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-microservices-demo.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "argocd-microservices-demo.yaml"
 )
 HARBOR_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "harbor-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "harbor-values.yaml"
 )
 ARGOCD_VALUES_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "argocd-values.yaml"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "argocd-values.yaml"
 )
 WILDCARD_CNF_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "scenario3", "wildcard.cnf"
+    os.path.dirname(__file__), "..", "examples", "deploy-gitops", "wildcard.cnf"
 )
 
 
@@ -54,12 +54,12 @@ class TestScriptFileExists:
 
     def test_deploy_script_exists(self):
         assert os.path.isfile(DEPLOY_PATH), (
-            "Deploy script not found at examples/scenario3/scenario3-argocd-deploy.sh"
+            "Deploy script not found at examples/deploy-gitops/deploy-gitops.sh"
         )
 
     def test_teardown_script_exists(self):
         assert os.path.isfile(TEARDOWN_PATH), (
-            "Teardown script not found at examples/scenario3/scenario3-argocd-teardown.sh"
+            "Teardown script not found at examples/deploy-gitops/teardown-gitops.sh"
         )
 
 
@@ -1046,12 +1046,12 @@ class TestREADMEFiles:
 
     def test_deploy_readme_exists(self):
         assert os.path.isfile(DEPLOY_README_PATH), (
-            "Deploy README not found at examples/scenario3/README-deploy.md"
+            "Deploy README not found at examples/deploy-gitops/README-deploy.md"
         )
 
     def test_teardown_readme_exists(self):
         assert os.path.isfile(TEARDOWN_README_PATH), (
-            "Teardown README not found at examples/scenario3/README-teardown.md"
+            "Teardown README not found at examples/deploy-gitops/README-teardown.md"
         )
 
     def test_deploy_readme_contains_scenario1_prerequisite(self):
@@ -1103,32 +1103,32 @@ class TestSupportingYAMLFiles:
 
     def test_gitlab_operator_values_exists(self):
         assert os.path.isfile(GITLAB_OPERATOR_VALUES_PATH), (
-            "GitLab Operator values not found at examples/scenario3/gitlab-operator-values.yaml"
+            "GitLab Operator values not found at examples/deploy-gitops/gitlab-operator-values.yaml"
         )
 
     def test_gitlab_runner_values_exists(self):
         assert os.path.isfile(GITLAB_RUNNER_VALUES_PATH), (
-            "GitLab Runner values not found at examples/scenario3/gitlab-runner-values.yaml"
+            "GitLab Runner values not found at examples/deploy-gitops/gitlab-runner-values.yaml"
         )
 
     def test_argocd_app_manifest_exists(self):
         assert os.path.isfile(ARGOCD_APP_MANIFEST_PATH), (
-            "ArgoCD Application manifest not found at examples/scenario3/argocd-microservices-demo.yaml"
+            "ArgoCD Application manifest not found at examples/deploy-gitops/argocd-microservices-demo.yaml"
         )
 
     def test_harbor_values_exists(self):
         assert os.path.isfile(HARBOR_VALUES_PATH), (
-            "Harbor values not found at examples/scenario3/harbor-values.yaml"
+            "Harbor values not found at examples/deploy-gitops/harbor-values.yaml"
         )
 
     def test_argocd_values_exists(self):
         assert os.path.isfile(ARGOCD_VALUES_PATH), (
-            "ArgoCD values not found at examples/scenario3/argocd-values.yaml"
+            "ArgoCD values not found at examples/deploy-gitops/argocd-values.yaml"
         )
 
     def test_wildcard_cnf_exists(self):
         assert os.path.isfile(WILDCARD_CNF_PATH), (
-            "Wildcard CNF not found at examples/scenario3/wildcard.cnf"
+            "Wildcard CNF not found at examples/deploy-gitops/wildcard.cnf"
         )
 
     def test_harbor_values_is_valid_yaml(self):
