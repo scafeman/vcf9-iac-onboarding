@@ -90,6 +90,15 @@ After worker nodes are ready, the script installs the Cluster Autoscaler as a VK
 
 The autoscaler uses the min/max annotations already set on the cluster manifest (`MIN_NODES` / `MAX_NODES`) to determine scaling bounds. When pods are Pending due to insufficient resources, the autoscaler adds worker nodes up to `MAX_NODES`. When nodes are underutilized, it scales back down to `MIN_NODES`.
 
+The following tuning parameters control scale-down behavior:
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | `5m` | Time a node must be underutilized before removal |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | `5m` | Cooldown after scale-up before scale-down resumes |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` | `10s` | Cooldown after node deletion before next scale-down |
+| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `0.5` | Node utilization threshold (0.0–1.0) below which scale-down is considered |
+
 ### Phase 6: Functional Validation Workload Deployment
 
 Deploys three resources to the guest cluster to validate storage, compute, and networking:
@@ -130,7 +139,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
 | `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
 
-Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `CONTROL_PLANE_REPLICAS` (`1` — set to `3` for HA), `NODE_POOL_NAME` (`node-pool-01`), `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` (`5m`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` (`5m`), `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` (`0.5`), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
+Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `CONTROL_PLANE_REPLICAS` (`1` — set to `3` for HA), `NODE_POOL_NAME` (`node-pool-01`), `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` (`5m`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` (`5m`), `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` (`0.5`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` (`10s`), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
 
 ---
 
