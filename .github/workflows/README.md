@@ -177,45 +177,6 @@ The runner image is built from `Dockerfile.runner`, which extends `myoung34/gith
 
 Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and namespace provisioning, context bridge, cluster deployment, kubeconfig retrieval, and functional validation. This workflow must complete successfully before Deploy Metrics or Deploy GitOps can run.
 
-## Parameters
-
-### Overridable via `client_payload` (fall back to secrets)
-
-| Parameter | `client_payload` key | Description |
-|---|---|---|
-| `USER_IDENTITY` | `user_identity` | SSO user identity for RBAC (ProjectRoleBinding subject) |
-| `CONTENT_LIBRARY_ID` | `content_library_id` | vSphere content library ID used for OS image resolution |
-| `ZONE_NAME` | `zone_name` | Availability zone name for Supervisor Namespace placement |
-
-### Overridable via `client_payload` (fall back to secrets, then defaults)
-
-| Parameter | `client_payload` key | Default | Description |
-|---|---|---|---|
-| `PROJECT_NAME` | `project_name` | (required) | VCF Project name |
-| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
-| `NAMESPACE_PREFIX` | `namespace_prefix` | (required) | Supervisor Namespace prefix |
-| `ENVIRONMENT` | `environment` | `demo` | Environment label |
-| `REGION_NAME` | `region_name` | `region-us1-a` | Region for Supervisor Namespace |
-| `VPC_NAME` | `vpc_name` | `region-us1-a-default-vpc` | VPC for Supervisor Namespace |
-| `RESOURCE_CLASS` | `resource_class` | `xxlarge` | Resource class for Supervisor Namespace |
-| `K8S_VERSION` | `k8s_version` | `v1.33.6+vmware.1-fips` | Kubernetes version for the VKS cluster |
-| `VM_CLASS` | `vm_class` | `best-effort-large` | VM class for cluster worker nodes |
-| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs and containerd volumes |
-| `MIN_NODES` | `min_nodes` | `2` | Minimum worker nodes (autoscaler min) |
-| `MAX_NODES` | `max_nodes` | `10` | Maximum worker nodes (autoscaler max) |
-| `CONTAINERD_VOLUME_SIZE` | `containerd_volume_size` | `50Gi` | Containerd data volume size per node |
-| `OS_NAME` | `os_name` | `photon` | Node OS image name (`photon` or `ubuntu`) |
-| `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
-| `CONTROL_PLANE_REPLICAS` | `control_plane_replicas` | `1` | Control plane node count: `1` (default) or `3` (HA) |
-| `NODE_POOL_NAME` | `node_pool_name` | `node-pool-01` | Worker node pool name |
-| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | `autoscaler_scale_down_unneeded_time` | `5m` | Time a node must be underutilized before removal |
-| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | `autoscaler_scale_down_delay_after_add` | `5m` | Cooldown after scale-up before scale-down is considered |
-| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `autoscaler_scale_down_utilization_threshold` | `0.5` | Node utilization threshold below which scale-down is considered (0.0–1.0) |
-| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` | `autoscaler_scale_down_delay_after_delete` | `10s` | Cooldown after node deletion before next scale-down scan |
-| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages and Cluster Autoscaler |
-| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages 3.6.0 | Package repository URL |
-| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Timeout (seconds) for package reconciliation |
-
 ## Triggering the Workflow
 
 ### GitHub UI (workflow_dispatch)
@@ -258,6 +219,45 @@ curl -X POST \
     }
   }'
 ```
+
+## Parameters
+
+### Overridable via `client_payload` (fall back to secrets)
+
+| Parameter | `client_payload` key | Description |
+|---|---|---|
+| `USER_IDENTITY` | `user_identity` | SSO user identity for RBAC (ProjectRoleBinding subject) |
+| `CONTENT_LIBRARY_ID` | `content_library_id` | vSphere content library ID used for OS image resolution |
+| `ZONE_NAME` | `zone_name` | Availability zone name for Supervisor Namespace placement |
+
+### Overridable via `client_payload` (fall back to secrets, then defaults)
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `PROJECT_NAME` | `project_name` | (required) | VCF Project name |
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `NAMESPACE_PREFIX` | `namespace_prefix` | (required) | Supervisor Namespace prefix |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label |
+| `REGION_NAME` | `region_name` | `region-us1-a` | Region for Supervisor Namespace |
+| `VPC_NAME` | `vpc_name` | `region-us1-a-default-vpc` | VPC for Supervisor Namespace |
+| `RESOURCE_CLASS` | `resource_class` | `xxlarge` | Resource class for Supervisor Namespace |
+| `K8S_VERSION` | `k8s_version` | `v1.33.6+vmware.1-fips` | Kubernetes version for the VKS cluster |
+| `VM_CLASS` | `vm_class` | `best-effort-large` | VM class for cluster worker nodes |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs and containerd volumes |
+| `MIN_NODES` | `min_nodes` | `2` | Minimum worker nodes (autoscaler min) |
+| `MAX_NODES` | `max_nodes` | `10` | Maximum worker nodes (autoscaler max) |
+| `CONTAINERD_VOLUME_SIZE` | `containerd_volume_size` | `50Gi` | Containerd data volume size per node |
+| `OS_NAME` | `os_name` | `photon` | Node OS image name (`photon` or `ubuntu`) |
+| `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
+| `CONTROL_PLANE_REPLICAS` | `control_plane_replicas` | `1` | Control plane node count: `1` (default) or `3` (HA) |
+| `NODE_POOL_NAME` | `node_pool_name` | `node-pool-01` | Worker node pool name |
+| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | `autoscaler_scale_down_unneeded_time` | `5m` | Time a node must be underutilized before removal |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | `autoscaler_scale_down_delay_after_add` | `5m` | Cooldown after scale-up before scale-down is considered |
+| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `autoscaler_scale_down_utilization_threshold` | `0.5` | Node utilization threshold below which scale-down is considered (0.0–1.0) |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` | `autoscaler_scale_down_delay_after_delete` | `10s` | Cooldown after node deletion before next scale-down scan |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages and Cluster Autoscaler |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages 3.6.0 | Package repository URL |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Timeout (seconds) for package reconciliation |
 
 ## Workflow Steps
 
@@ -338,24 +338,6 @@ curl -X POST \
 
 Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster provisioned by Deploy Cluster. Requires a running VKS cluster with a valid admin kubeconfig file.
 
-## Parameters
-
-| Parameter | `client_payload` key | Default | Description |
-|---|---|---|---|
-| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
-| `TELEGRAF_VERSION` | `telegraf_version` | `1.37.1+vmware.1-vks.1` | Telegraf package version to install |
-| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
-| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
-| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
-| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
-| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
-| `TELEGRAF_VALUES_FILE` | `telegraf_values_file` | `examples/deploy-metrics/telegraf-values.yaml` | Telegraf Helm values file path |
-| `PROMETHEUS_VALUES_FILE` | `prometheus_values_file` | `examples/deploy-metrics/prometheus-values.yaml` | Prometheus Helm values file path |
-| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs |
-| `GRAFANA_ADMIN_PASSWORD` | `grafana_admin_password` | (auto-generated) | Grafana admin password |
-| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Package reconciliation timeout in seconds |
-| `NODE_CPU_THRESHOLD` | `node_cpu_threshold` | `4000` | Minimum allocatable CPU (millicores) for node sizing advisory |
-
 ## Triggering the Workflow
 
 ### GitHub UI (workflow_dispatch)
@@ -397,6 +379,24 @@ curl -X POST \
     }
   }'
 ```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `TELEGRAF_VERSION` | `telegraf_version` | `1.37.1+vmware.1-vks.1` | Telegraf package version to install |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
+| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
+| `TELEGRAF_VALUES_FILE` | `telegraf_values_file` | `examples/deploy-metrics/telegraf-values.yaml` | Telegraf Helm values file path |
+| `PROMETHEUS_VALUES_FILE` | `prometheus_values_file` | `examples/deploy-metrics/prometheus-values.yaml` | Prometheus Helm values file path |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs |
+| `GRAFANA_ADMIN_PASSWORD` | `grafana_admin_password` | (auto-generated) | Grafana admin password |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Package reconciliation timeout in seconds |
+| `NODE_CPU_THRESHOLD` | `node_cpu_threshold` | `4000` | Minimum allocatable CPU (millicores) for node sizing advisory |
 
 ## Workflow Steps
 
@@ -453,23 +453,6 @@ curl -X POST \
 
 Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Deploy Cluster. Requires a running VKS cluster with a valid admin kubeconfig file.
 
-## Parameters
-
-| Parameter | `client_payload` key | Default | Description |
-|---|---|---|---|
-| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
-| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
-| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
-| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
-| `HARBOR_VERSION` | `harbor_version` | `1.18.3` | Harbor Helm chart version |
-| `ARGOCD_VERSION` | `argocd_version` | `9.4.17` | ArgoCD Helm chart version |
-| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.1` | GitLab Operator Helm chart version |
-| `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.75.0` | GitLab Runner Helm chart version |
-| `HARBOR_ADMIN_PASSWORD` | `harbor_admin_password` | (auto-generated) | Harbor admin password |
-| `PACKAGE_TIMEOUT` | `package_timeout` | `900` | Package reconciliation timeout in seconds |
-| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
-| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
-
 ## Triggering the Workflow
 
 ### GitHub UI (workflow_dispatch)
@@ -509,6 +492,23 @@ curl -X POST \
     }
   }'
 ```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
+| `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `HARBOR_VERSION` | `harbor_version` | `1.18.3` | Harbor Helm chart version |
+| `ARGOCD_VERSION` | `argocd_version` | `9.4.17` | ArgoCD Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.1` | GitLab Operator Helm chart version |
+| `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.75.0` | GitLab Runner Helm chart version |
+| `HARBOR_ADMIN_PASSWORD` | `harbor_admin_password` | (auto-generated) | Harbor admin password |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `900` | Package reconciliation timeout in seconds |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages OCI URL | VKS standard packages OCI repository URL |
 
 ## Workflow Steps
 
@@ -601,18 +601,6 @@ Deploy Metrics and Deploy GitOps share these components, all handled idempotentl
 
 Selectively tears down the three VCF 9 deployment stacks (GitOps, Metrics, Cluster) in reverse dependency order. The workflow consolidates the logic from the three existing teardown shell scripts into inline workflow steps, following the same patterns as the deploy workflows. Boolean inputs control which stacks are torn down, enabling selective teardown (e.g., tear down only GitOps while keeping Metrics and the Cluster).
 
-## Parameters
-
-| Parameter | `client_payload` key | Type | Default | Description |
-|---|---|---|---|---|
-| `CLUSTER_NAME` | `cluster_name` | string | (required) | VKS cluster name to tear down |
-| `TEARDOWN_GITOPS` | `teardown_gitops` | boolean | `true` | Tear down the GitOps stack (ArgoCD, GitLab, Harbor) |
-| `TEARDOWN_METRICS` | `teardown_metrics` | boolean | `true` | Tear down the Metrics stack (Grafana, packages) |
-| `TEARDOWN_CLUSTER` | `teardown_cluster` | boolean | `true` | Tear down the VKS cluster and project |
-| `DOMAIN` | `domain` | string | `lab.local` | Domain suffix for service hostnames |
-| `KUBECONFIG_PATH` | `kubeconfig_path` | string | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
-| `PACKAGE_NAMESPACE` | `package_namespace` | string | `tkg-packages` | Namespace for VKS standard packages |
-
 ## Triggering the Workflow
 
 ### GitHub UI (workflow_dispatch)
@@ -662,6 +650,18 @@ curl -X POST \
     }
   }'
 ```
+
+## Parameters
+
+| Parameter | `client_payload` key | Type | Default | Description |
+|---|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | string | (required) | VKS cluster name to tear down |
+| `TEARDOWN_GITOPS` | `teardown_gitops` | boolean | `true` | Tear down the GitOps stack (ArgoCD, GitLab, Harbor) |
+| `TEARDOWN_METRICS` | `teardown_metrics` | boolean | `true` | Tear down the Metrics stack (Grafana, packages) |
+| `TEARDOWN_CLUSTER` | `teardown_cluster` | boolean | `true` | Tear down the VKS cluster and project |
+| `DOMAIN` | `domain` | string | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | string | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `PACKAGE_NAMESPACE` | `package_namespace` | string | `tkg-packages` | Namespace for VKS standard packages |
 
 ## Workflow Steps
 
