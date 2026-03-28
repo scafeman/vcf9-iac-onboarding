@@ -6,7 +6,7 @@ This repository contains three GitHub Actions workflows that automate the end-to
 
 | Workflow | File | Description |
 |---|---|---|
-| Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, and functional validation |
+| Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
 
@@ -200,6 +200,9 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 | `CONTAINERD_VOLUME_SIZE` | `containerd_volume_size` | `50Gi` | Containerd data volume size per node |
 | `OS_NAME` | `os_name` | `photon` | Node OS image name (`photon` or `ubuntu`) |
 | `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
+| `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages and Cluster Autoscaler |
+| `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages 3.6.0 | Package repository URL |
+| `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Timeout (seconds) for package reconciliation |
 
 ## Triggering the Workflow
 
@@ -258,6 +261,10 @@ curl -X POST \
 | 6 | **Retrieve Kubeconfig** | Exports the admin kubeconfig for the guest cluster |
 | 6b | **Wait for Guest Cluster API** | Polls until the guest cluster API server is reachable (300s timeout) |
 | 6c | **Wait for Worker Nodes Ready** | Waits for minimum worker nodes to reach Ready status (600s timeout) |
+| 6d | **Create Package Namespace** | Creates the `tkg-packages` namespace with privileged PodSecurity standard |
+| 6e | **Register Package Repository** | Registers the VKS standard packages repository and waits for reconciliation |
+| 6f | **Install Cluster Autoscaler** | Installs the Cluster Autoscaler package to enable automatic node scaling |
+| 6g | **Wait for Autoscaler Ready** | Confirms the autoscaler deployment in `kube-system` is ready |
 | 7 | **Deploy Functional Test Workload** | Deploys a PVC, nginx Deployment, and LoadBalancer Service to validate the cluster |
 | 7b | **Wait for PVC Bound** | Waits for the PersistentVolumeClaim to bind (300s timeout) |
 | 7c | **Wait for LoadBalancer IP** | Waits for the Service to receive an external IP (300s timeout) |

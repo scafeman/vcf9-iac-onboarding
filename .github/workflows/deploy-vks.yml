@@ -121,6 +121,11 @@ jobs:
       OS_NAME: ${{ github.event.inputs.os_name || github.event.client_payload.os_name || 'photon' }}
       OS_VERSION: ${{ github.event.inputs.os_version || github.event.client_payload.os_version || '' }}
 
+      # --- Package Configuration (for Cluster Autoscaler) ---
+      PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
+      PACKAGE_REPO_URL: ${{ github.event.client_payload.package_repo_url || secrets.PACKAGE_REPO_URL || 'projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211' }}
+      PACKAGE_TIMEOUT: ${{ github.event.client_payload.package_timeout || secrets.PACKAGE_TIMEOUT || '600' }}
+
       # --- Static Configuration ---
       CONTEXT_NAME: gh-actions-deploy
 
@@ -430,6 +435,109 @@ jobs:
           echo "::error::Only $READY_COUNT of $MIN_NODES worker nodes reached Ready within ${TIMEOUT}s"
           kubectl get nodes 2>/dev/null || true
           exit 1
+
+      # Phase 6d: Create Package Namespace
+      - name: Create Package Namespace
+        run: |
+          set -euo pipefail
+          if kubectl get ns "$PACKAGE_NAMESPACE" >/dev/null 2>&1; then
+            echo "Namespace '$PACKAGE_NAMESPACE' already exists, skipping creation"
+          else
+            kubectl create ns "$PACKAGE_NAMESPACE"
+            echo "Namespace '$PACKAGE_NAMESPACE' created"
+          fi
+          kubectl label ns "$PACKAGE_NAMESPACE" \
+            pod-security.kubernetes.io/enforce=privileged \
+            --overwrite
+          echo "Namespace '$PACKAGE_NAMESPACE' labelled with privileged PodSecurity standard"
+
+      # Phase 6e: Register Package Repository
+      - name: Register Package Repository
+        run: |
+          set -euo pipefail
+          PACKAGE_REPO_NAME="tkg-packages"
+          if vcf package repository list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "$PACKAGE_REPO_NAME"; then
+            echo "Package repository '$PACKAGE_REPO_NAME' already registered, skipping"
+          else
+            vcf package repository add "$PACKAGE_REPO_NAME" \
+              --url "$PACKAGE_REPO_URL" \
+              --namespace "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package repository list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "$PACKAGE_REPO_NAME" | grep -qi "reconcile"; then
+                echo "Package repository '$PACKAGE_REPO_NAME' reconciled"
+                break
+              fi
+              echo "Waiting for package repository to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::Package repository '$PACKAGE_REPO_NAME' did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "Package repository setup complete"
+
+      # Phase 6f: Install Cluster Autoscaler
+      - name: Install Cluster Autoscaler
+        run: |
+          set -euo pipefail
+          if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "cluster-autoscaler"; then
+            echo "Cluster Autoscaler already installed, skipping"
+          else
+            vcf package install cluster-autoscaler \
+              -p cluster-autoscaler.kubernetes.vmware.com \
+              -n "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cluster-autoscaler" | grep -qi "reconcile"; then
+                echo "Cluster Autoscaler package reconciled"
+                break
+              fi
+              echo "Waiting for Cluster Autoscaler package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::Cluster Autoscaler package did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "Cluster Autoscaler setup complete"
+
+      # Phase 6g: Wait for Autoscaler Ready
+      - name: Wait for Autoscaler Ready
+        run: |
+          set -euo pipefail
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get deployment -n kube-system cluster-autoscaler >/dev/null 2>&1; then
+              READY=$(kubectl get deployment -n kube-system cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+              if [ "${READY:-0}" -ge 1 ]; then
+                echo "Cluster Autoscaler deployment is ready (${READY} replica(s))"
+                echo "Autoscaler configured: min=${MIN_NODES}, max=${MAX_NODES} worker nodes"
+                exit 0
+              fi
+            fi
+            echo "Waiting for Cluster Autoscaler deployment to be ready... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::warning::Cluster Autoscaler deployment did not reach Ready within ${TIMEOUT}s — autoscaling may not be active"
+          kubectl get deployment -n kube-system cluster-autoscaler 2>/dev/null || true
 
       # Phase 7: Build and Push Web App Image
       - name: Build and Push Web App Image

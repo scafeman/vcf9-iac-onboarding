@@ -79,6 +79,17 @@ After the API server is reachable, the script waits for at least `MIN_NODES` (de
 kubectl get nodes --no-headers | grep -c ' Ready'
 ```
 
+### Phase 5c–5f: Cluster Autoscaler Installation
+
+After worker nodes are ready, the script installs the Cluster Autoscaler as a VKS standard package. This enables automatic node scaling when pods can't be scheduled due to insufficient resources.
+
+1. **Create Package Namespace** (`tkg-packages`) — creates and labels the namespace with privileged PodSecurity standard.
+2. **Register Package Repository** — registers the VKS standard packages repository and waits for reconciliation.
+3. **Install Cluster Autoscaler** — installs the `cluster-autoscaler.kubernetes.vmware.com` package. The package version is automatically matched to the cluster's VKR version.
+4. **Wait for Autoscaler Ready** — confirms the autoscaler deployment in `kube-system` has at least one ready replica.
+
+The autoscaler uses the min/max annotations already set on the cluster manifest (`MIN_NODES` / `MAX_NODES`) to determine scaling bounds. When pods are Pending due to insufficient resources, the autoscaler adds worker nodes up to `MAX_NODES`. When nodes are underutilized, it scales back down to `MIN_NODES`.
+
 ### Phase 6: Functional Validation Workload Deployment
 
 Deploys three resources to the guest cluster to validate storage, compute, and networking:
@@ -119,7 +130,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
 | `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
 
-Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), and all timeout values.
+Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
 
 ---
 
@@ -176,6 +187,14 @@ A successful run produces output like this:
 ✓ Kubeconfig retrieved and saved to './kubeconfig-...' — connected to VKS guest cluster '...'
 [Step 5b] Waiting for worker nodes to become Ready...
 ✓ All worker nodes are Ready
+[Step 5c] Creating package namespace 'tkg-packages'...
+✓ Namespace 'tkg-packages' created
+[Step 5d] Registering package repository 'tkg-packages'...
+✓ Package repository setup complete
+[Step 5e] Installing Cluster Autoscaler package...
+✓ Cluster Autoscaler installed and reconciled
+[Step 5f] Waiting for Cluster Autoscaler deployment to be ready...
+✓ Cluster Autoscaler is ready (min=2, max=10 worker nodes)
 [Step 6] Deploying functional validation workload (PVC, Deployment, LoadBalancer Service)...
 ✓ PVC 'vks-test-pvc' is Bound
 ✓ LoadBalancer 'vks-test-lb' assigned external IP: 74.205.11.86
@@ -203,5 +222,6 @@ A successful run produces output like this:
 | Phase 4 (Cluster provisioning) | 1-10 min |
 | Phase 5 (API server reachable) | 1-2 min |
 | Phase 5b (Worker nodes ready) | 2-3 min |
+| Phase 5c-5f (Cluster Autoscaler) | 1-3 min |
 | Phase 6 (Workload validation) | 1-2 min |
-| **Total** | **~5-18 min** |
+| **Total** | **~6-21 min** |

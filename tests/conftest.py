@@ -78,8 +78,11 @@ _HEREDOC_RE = re.compile(
     r"cat\s+<<'?EOF'?\s*.*?\n(.*?\n)EOF\b", re.DOTALL
 )
 
-# Matches lines containing kubectl create or kubectl apply commands
-_KUBECTL_CMD_RE = re.compile(r"^.*kubectl\s+(?:create|apply)\b.*$", re.MULTILINE)
+# Matches lines containing kubectl create or kubectl apply commands that use manifests
+# Excludes imperative commands like 'kubectl create ns', 'kubectl create secret', etc.
+_KUBECTL_CMD_RE = re.compile(
+    r"^.*kubectl\s+(?:create|apply)\b(?!\s+(?:ns|namespace|secret)\b).*$", re.MULTILINE
+)
 
 # Matches phase section headers like:
 #   # Phase 1: VCF CLI Context Creation

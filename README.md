@@ -23,7 +23,8 @@ The toolkit automates the VCF 9 provisioning workflow across six phases:
 3. **Context Bridge** — Switching from global to namespace-scoped context to expose Cluster API resources
 4. **VKS Cluster Deployment** — Cluster API manifest with autoscaling worker pools
 5. **Kubeconfig Retrieval** — Admin kubeconfig via VCF CLI with guest cluster connectivity verification
-6. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
+6. **Cluster Autoscaler Installation** — VKS standard package for automatic node scaling based on pod resource demands
+7. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
 
 ## Quick Start
 
@@ -265,6 +266,9 @@ pytest tests/ -v
 | `CONTAINERD_VOLUME_SIZE` | No | Containerd data volume per node (default: `50Gi`) |
 | `OS_NAME` | No | Node OS image: `photon` or `ubuntu` (default: `photon`) |
 | `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
+| `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
+| `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
+| `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |
 
 ### Deploy Metrics — VKS Metrics Observability
 

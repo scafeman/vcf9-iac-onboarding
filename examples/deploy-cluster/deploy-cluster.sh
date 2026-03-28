@@ -66,6 +66,12 @@ NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
 OS_NAME="${OS_NAME:-photon}"
 OS_VERSION="${OS_VERSION:-}"
 
+# --- Package Configuration (for Cluster Autoscaler) ---
+PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
+PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
+PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
+PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-600}"
+
 # --- Timeouts and Polling ---
 CLUSTER_TIMEOUT="${CLUSTER_TIMEOUT:-1800}"
 WORKER_TIMEOUT="${WORKER_TIMEOUT:-600}"
@@ -429,6 +435,85 @@ fi
 
 kubectl get nodes -o wide
 log_success "All worker nodes are Ready"
+
+###############################################################################
+# Phase 5c: Create Package Namespace
+###############################################################################
+
+log_step "5c" "Creating package namespace '${PACKAGE_NAMESPACE}'"
+
+if kubectl get ns "${PACKAGE_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Namespace '${PACKAGE_NAMESPACE}' already exists, skipping creation"
+else
+  kubectl create ns "${PACKAGE_NAMESPACE}"
+  log_success "Namespace '${PACKAGE_NAMESPACE}' created"
+fi
+
+kubectl label ns "${PACKAGE_NAMESPACE}" \
+  pod-security.kubernetes.io/enforce=privileged \
+  --overwrite
+log_success "Namespace '${PACKAGE_NAMESPACE}' labelled with privileged PodSecurity standard"
+
+###############################################################################
+# Phase 5d: Register Package Repository
+###############################################################################
+
+log_step "5d" "Registering package repository '${PACKAGE_REPO_NAME}'"
+
+if vcf package repository list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "${PACKAGE_REPO_NAME}"; then
+  log_success "Package repository '${PACKAGE_REPO_NAME}' already registered, skipping"
+else
+  vcf package repository add "${PACKAGE_REPO_NAME}" \
+    --url "${PACKAGE_REPO_URL}" \
+    --namespace "${PACKAGE_NAMESPACE}"
+
+  if ! wait_for_condition "package repository '${PACKAGE_REPO_NAME}' to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package repository list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep '${PACKAGE_REPO_NAME}' | grep -qi 'reconcile'"; then
+    log_error "Package repository '${PACKAGE_REPO_NAME}' did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 7
+  fi
+fi
+
+log_success "Package repository setup complete"
+
+###############################################################################
+# Phase 5e: Install Cluster Autoscaler
+###############################################################################
+
+log_step "5e" "Installing Cluster Autoscaler package"
+
+if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
+  log_success "Cluster Autoscaler already installed, skipping"
+else
+  vcf package install cluster-autoscaler \
+    -p cluster-autoscaler.kubernetes.vmware.com \
+    -n "${PACKAGE_NAMESPACE}"
+
+  if ! wait_for_condition "Cluster Autoscaler package to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package installed list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep 'cluster-autoscaler' | grep -qi 'reconcile'"; then
+    log_error "Cluster Autoscaler package did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 7
+  fi
+fi
+
+log_success "Cluster Autoscaler installed and reconciled"
+
+###############################################################################
+# Phase 5f: Wait for Autoscaler Ready
+###############################################################################
+
+log_step "5f" "Waiting for Cluster Autoscaler deployment to be ready"
+
+if ! wait_for_condition "Cluster Autoscaler deployment to be ready" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl get deployment -n kube-system cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '[1-9]'"; then
+  echo "  WARNING: Cluster Autoscaler deployment did not reach Ready within ${PACKAGE_TIMEOUT}s — autoscaling may not be active"
+  kubectl get deployment -n kube-system cluster-autoscaler 2>/dev/null || true
+else
+  log_success "Cluster Autoscaler is ready (min=${MIN_NODES}, max=${MAX_NODES} worker nodes)"
+fi
 
 ###############################################################################
 # Phase 6: Functional Validation Workload Deployment
