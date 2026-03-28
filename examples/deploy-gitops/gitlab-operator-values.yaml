@@ -113,3 +113,12 @@ prometheus:
   server:
     persistentVolume:
       storageClass: nfs
+
+# ---------------------------------------------------------------------------
+# Bundled GitLab Runner — enable privileged mode for Docker-in-Docker
+# The gitlab/gitlab chart bundles a GitLab Runner sub-chart. This setting
+# enables privileged containers so CI jobs can run Docker-in-Docker builds.
+# ---------------------------------------------------------------------------
+gitlab-runner:
+  runners:
+    privileged: true
