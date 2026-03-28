@@ -9,6 +9,9 @@ Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Founda
 - A Dockerized development environment with VCF CLI, kubectl, and all tooling pre-installed
 - Declarative YAML manifests for VCF 9 resources (Projects, Namespaces, VKS Clusters, functional test workloads)
 - Property-based and content-presence test suites validating manifest correctness and guide accuracy
+- GitHub Actions workflows for automated deployment of all three scenarios via CI/CD
+- Companion trigger scripts for dispatching workflows from the command line
+- A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS
 
 ## Architecture Overview
@@ -78,6 +81,18 @@ docker exec vcf9-dev bash examples/scenario1/scenario1-full-stack-teardown.sh
 
 Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempotent).
 
+## GitHub Actions Workflows
+
+All three scenarios are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
+
+| Workflow | File | Trigger |
+|---|---|---|
+| Deploy VKS Cluster | `deploy-vks.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks`) |
+| Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks-metrics`) |
+| Deploy ArgoCD Stack | `deploy-argocd.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-argocd`) |
+
+Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+
 ## Repository Structure
 
 ```
@@ -90,6 +105,17 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 ├── docker-compose.yml                 # Container orchestration config
 ├── .env                               # Environment variables (not committed)
 ├── .gitignore                         # Git ignore rules
+├── .github/
+│   └── workflows/
+│       ├── deploy-vks.yml             # Scenario 1: Deploy VKS Cluster workflow
+│       ├── deploy-vks-metrics.yml     # Scenario 2: Deploy VKS Metrics Stack workflow
+│       ├── deploy-argocd.yml          # Scenario 3: Deploy ArgoCD Stack workflow
+│       └── README.md                  # Workflow documentation (parameters, triggers, credentials)
+├── scripts/
+│   ├── trigger-deploy.sh             # Companion trigger script for Scenario 1
+│   ├── trigger-deploy-metrics.sh     # Companion trigger script for Scenario 2
+│   └── trigger-deploy-argocd.sh      # Companion trigger script for Scenario 3
+├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
 ├── examples/
 │   ├── scenario1/                               # Scenario 1: Full Stack Deploy
 │   │   ├── scenario1-full-stack-deploy.sh       #   Deploy script
@@ -136,7 +162,12 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
     ├── test_scenario2_content.py      # Content-presence tests for Scenario 2 scripts
     ├── test_scenario2_properties.py   # Property-based tests for Scenario 2 scripts
     ├── test_scenario3_content.py      # Content-presence tests for Scenario 3 scripts
-    └── test_scenario3_properties.py   # Property-based tests for Scenario 3 scripts
+    ├── test_scenario3_properties.py   # Property-based tests for Scenario 3 scripts
+    ├── test_gh_actions_deploy_content.py       # Content tests for Scenario 1 workflow
+    ├── test_gh_actions_deploy_properties.py    # Property tests for Scenario 1 workflow
+    ├── test_gh_actions_scenarios_2_3_content.py    # Content tests for Scenarios 2 & 3 workflows
+    ├── test_gh_actions_scenarios_2_3_properties.py # Property tests for Scenarios 2 & 3 workflows
+    └── test_workflow_secrets_hardening.py      # Security hardening tests for all workflows
 ```
 
 ## Documentation
@@ -153,6 +184,7 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 | [Scenario 3 Deploy README](examples/scenario3/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
 | [Scenario 3 Teardown README](examples/scenario3/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
 | [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
+| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all three scenarios |
 
 ## Testing
 
