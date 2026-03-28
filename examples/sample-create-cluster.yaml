@@ -93,3 +93,25 @@ spec:
         mountPath: /var/lib/containerd
         # CHANGE: Replace with your available storage class.
         storageClass: nfs
+    # --- Optional: Trusted CA Certificate for Private Container Registries ---
+    # Uncomment the block below to inject a trusted CA certificate into cluster
+    # nodes at boot. This enables nodes to pull images from private registries
+    # (e.g., Harbor) that use self-signed certificates.
+    #
+    # Prerequisites:
+    #   1. Create a Kubernetes Secret in the Supervisor Namespace containing the
+    #      CA certificate, double-base64-encoded:
+    #        DOUBLE_B64=$(base64 -w 0 < ca.crt | base64 -w 0)
+    #        kubectl create secret generic harbor-trusted-ca \
+    #          --from-literal=ca-cert="$DOUBLE_B64" --namespace <SUPERVISOR_NS> \
+    #          --dry-run=client -o yaml | kubectl apply -f -
+    #   2. The Secret must exist BEFORE applying this cluster manifest.
+    #
+    # - name: osConfiguration
+    #   value:
+    #     trust:
+    #       additionalTrustedCAs:
+    #       - caCert:
+    #           secretRef:
+    #             name: harbor-trusted-ca    # CHANGE: your secret name
+    #             key: ca-cert               # CHANGE: your secret data key

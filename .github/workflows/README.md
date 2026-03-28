@@ -182,7 +182,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy VKS Cluster"** → **"Run workflow"**
-2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**, **node_pool_name**, **vpc_name**
+2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**, **node_pool_name**, **vpc_name**, **trusted_ca_path**, **trusted_ca_secret_name**
 
 ### Trigger Script (repository_dispatch)
 
@@ -199,7 +199,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 
 **Required:** `--repo`, `--token`, `--project-name`, `--cluster-name`, `--namespace-prefix`
 
-**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--containerd-volume-size`, `--os-name`, `--os-version`, `--control-plane-replicas`, `--node-pool-name`, `--vcfa-endpoint`, `--tenant-name`
+**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--containerd-volume-size`, `--os-name`, `--os-version`, `--control-plane-replicas`, `--node-pool-name`, `--trusted-ca-path`, `--trusted-ca-secret-name`, `--vcfa-endpoint`, `--tenant-name`
 
 ### Direct API Call (curl)
 
@@ -251,6 +251,8 @@ curl -X POST \
 | `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
 | `CONTROL_PLANE_REPLICAS` | `control_plane_replicas` | `1` | Control plane node count: `1` (default) or `3` (HA) |
 | `NODE_POOL_NAME` | `node_pool_name` | `node-pool-01` | Worker node pool name |
+| `TRUSTED_CA_PATH` | `trusted_ca_path` | (none) | Path to PEM CA certificate file for private registry trust (optional) |
+| `TRUSTED_CA_SECRET_NAME` | `trusted_ca_secret_name` | `harbor-trusted-ca` | Kubernetes Secret name for the trusted CA certificate |
 | `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | `autoscaler_scale_down_unneeded_time` | `5m` | Time a node must be underutilized before removal |
 | `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | `autoscaler_scale_down_delay_after_add` | `5m` | Cooldown after scale-up before scale-down is considered |
 | `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `autoscaler_scale_down_utilization_threshold` | `0.5` | Node utilization threshold below which scale-down is considered (0.0–1.0) |
@@ -268,6 +270,7 @@ curl -X POST \
 | 3 | **Create Project and Namespace** | Applies a multi-document manifest to create the VCF Project, RBAC binding, and Supervisor Namespace (skips if project already exists) |
 | 3b | **Get Dynamic Namespace Name** | Retrieves the auto-generated namespace name and passes it to subsequent steps |
 | 4 | **Execute Context Bridge** | Retries context recreation to discover the new namespace (120s timeout, 10s interval) |
+| 4b | **Create Trusted CA Secret** | Conditionally creates a Kubernetes Secret with the double-base64-encoded CA certificate (skipped when `TRUSTED_CA_PATH` is empty) |
 | 5 | **Deploy VKS Cluster** | Applies the Cluster API manifest to create the VKS cluster (skips if cluster already exists) |
 | 5b | **Wait for Cluster Provisioning** | Polls cluster status until `Provisioned` (1800s timeout, 15s interval) |
 | 6 | **Retrieve Kubeconfig** | Exports the admin kubeconfig for the guest cluster |

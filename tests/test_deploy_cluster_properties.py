@@ -381,6 +381,7 @@ class TestProperty5HeredocYAMLValidity:
         "K8S_VERSION": st.just("v1.33.6"),
         "STORAGE_CLASS": _SIMPLE_STRINGS,
         "VM_CLASS": _SIMPLE_STRINGS,
+        "OS_CONFIG_FRAGMENT": st.just(""),
     }
 
     @classmethod
@@ -620,6 +621,7 @@ class TestProperty7APIVersionConsistency:
             "MIN_NODES": "3",
             "VM_CLASS": "best-effort-large",
             "STORAGE_CLASS": "nfs",
+            "OS_CONFIG_FRAGMENT": "",
         }
         pairs: set[tuple[str, str]] = set()
         for heredoc in heredocs:

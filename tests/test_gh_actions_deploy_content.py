@@ -15,12 +15,12 @@ class TestWorkflowStructure:
     def test_workflow_yaml_parses(self, workflow_yaml):
         assert isinstance(workflow_yaml, dict), "Workflow YAML did not parse as a dict"
 
-    def test_workflow_dispatch_has_fourteen_inputs(self, workflow_yaml):
+    def test_workflow_dispatch_has_sixteen_inputs(self, workflow_yaml):
         # PyYAML parses the YAML key `on` as boolean True
         triggers = workflow_yaml.get("on") or workflow_yaml.get(True)
         inputs = triggers["workflow_dispatch"]["inputs"]
-        assert len(inputs) == 14, (
-            f"Expected 14 workflow_dispatch inputs, got {len(inputs)}"
+        assert len(inputs) == 16, (
+            f"Expected 16 workflow_dispatch inputs, got {len(inputs)}"
         )
 
     def test_workflow_dispatch_input_names(self, workflow_yaml):
@@ -29,7 +29,8 @@ class TestWorkflowStructure:
         expected = {"project_name", "cluster_name", "namespace_prefix", "environment",
                     "resource_class", "vm_class", "min_nodes", "max_nodes",
                     "containerd_volume_size", "os_name", "os_version",
-                    "control_plane_replicas", "node_pool_name", "vpc_name"}
+                    "control_plane_replicas", "node_pool_name", "vpc_name",
+                    "trusted_ca_path", "trusted_ca_secret_name"}
         assert set(inputs.keys()) == expected
 
     def test_repository_dispatch_has_deploy_vks(self, workflow_yaml):
@@ -303,4 +304,117 @@ class TestDockerComposeRunner:
             env_str = " ".join(f"{k}={v}" for k, v in env.items())
         assert "RUNNER_TOKEN" in env_str, (
             "Runner service missing RUNNER_TOKEN environment variable"
+        )
+
+
+# ===================================================================
+# Task 8.2 — Trusted CA content-presence tests for workflow
+# Validates: Requirements 8.2, 8.6
+# ===================================================================
+
+
+class TestTrustedCAWorkflowInputs:
+    """Workflow defines trusted_ca_path and trusted_ca_secret_name inputs.
+    Validates: Requirement 8.2"""
+
+    def test_trusted_ca_path_input_defined(self, workflow_yaml):
+        triggers = workflow_yaml.get("on") or workflow_yaml.get(True)
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        assert "trusted_ca_path" in inputs, (
+            "Workflow missing 'trusted_ca_path' input"
+        )
+
+    def test_trusted_ca_secret_name_input_defined(self, workflow_yaml):
+        triggers = workflow_yaml.get("on") or workflow_yaml.get(True)
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        assert "trusted_ca_secret_name" in inputs, (
+            "Workflow missing 'trusted_ca_secret_name' input"
+        )
+
+
+class TestTrustedCAWorkflowEnv:
+    """Workflow env block resolves TRUSTED_CA_PATH and TRUSTED_CA_SECRET_NAME.
+    Validates: Requirement 8.6"""
+
+    def test_trusted_ca_path_env_resolution(self, workflow_yaml_text):
+        assert "TRUSTED_CA_PATH:" in workflow_yaml_text, (
+            "Workflow env block missing TRUSTED_CA_PATH resolution"
+        )
+
+    def test_trusted_ca_secret_name_env_resolution(self, workflow_yaml_text):
+        assert "TRUSTED_CA_SECRET_NAME:" in workflow_yaml_text, (
+            "Workflow env block missing TRUSTED_CA_SECRET_NAME resolution"
+        )
+
+
+class TestTrustedCAWorkflowStep:
+    """Workflow contains a 'Create Trusted CA Secret' step.
+    Validates: Requirement 8.6"""
+
+    def test_create_trusted_ca_secret_step_exists(self, workflow_yaml):
+        steps = workflow_yaml["jobs"]["deploy"]["steps"]
+        step_names = [s.get("name", "") for s in steps]
+        assert any("Trusted CA Secret" in name for name in step_names), (
+            "Workflow missing 'Create Trusted CA Secret' step"
+        )
+
+    def test_trusted_ca_step_has_conditional(self, workflow_yaml):
+        steps = workflow_yaml["jobs"]["deploy"]["steps"]
+        for step in steps:
+            if "Trusted CA Secret" in step.get("name", ""):
+                assert "if" in step, (
+                    "'Create Trusted CA Secret' step missing 'if' conditional"
+                )
+                break
+
+
+class TestTrustedCAWorkflowManifest:
+    """Workflow contains osConfiguration in the cluster manifest block.
+    Validates: Requirement 8.6"""
+
+    def test_os_configuration_in_workflow(self, workflow_yaml_text):
+        assert "osConfiguration" in workflow_yaml_text, (
+            "Workflow missing 'osConfiguration' in cluster manifest"
+        )
+
+
+# ===================================================================
+# Task 8.3 — Trigger script Trusted CA content tests
+# Validates: Requirement 8.3
+# ===================================================================
+
+
+class TestTrustedCATriggerScript:
+    """Trigger script accepts --trusted-ca-path and --trusted-ca-secret-name arguments.
+    Validates: Requirement 8.3"""
+
+    def test_trusted_ca_path_argument(self, trigger_script_text):
+        assert "--trusted-ca-path" in trigger_script_text, (
+            "Trigger script missing '--trusted-ca-path' argument"
+        )
+
+    def test_trusted_ca_secret_name_argument(self, trigger_script_text):
+        assert "--trusted-ca-secret-name" in trigger_script_text, (
+            "Trigger script missing '--trusted-ca-secret-name' argument"
+        )
+
+    def test_add_field_trusted_ca_path(self, trigger_script_text):
+        assert 'add_field "trusted_ca_path"' in trigger_script_text, (
+            "Trigger script missing add_field call for trusted_ca_path"
+        )
+
+    def test_add_field_trusted_ca_secret_name(self, trigger_script_text):
+        assert 'add_field "trusted_ca_secret_name"' in trigger_script_text, (
+            "Trigger script missing add_field call for trusted_ca_secret_name"
+        )
+
+    def test_usage_documents_trusted_ca_path(self, trigger_script_text):
+        # The usage function should mention --trusted-ca-path
+        assert "--trusted-ca-path" in trigger_script_text, (
+            "Trigger script usage does not document --trusted-ca-path"
+        )
+
+    def test_usage_documents_trusted_ca_secret_name(self, trigger_script_text):
+        assert "--trusted-ca-secret-name" in trigger_script_text, (
+            "Trigger script usage does not document --trusted-ca-secret-name"
         )

@@ -537,3 +537,82 @@ class TestAPIVersions:
         assert re.search(
             r"apiVersion:\s*apps/v1\s*\n\s*kind:\s*Deployment", script_text
         ), "Script missing Deployment with apiVersion 'apps/v1'"
+
+
+# ===================================================================
+# Task 8.1 — Trusted CA content-presence tests for deploy script
+# Validates: Requirements 8.1, 8.5, 8.7
+# ===================================================================
+
+
+class TestTrustedCAVariables:
+    """Deploy script declares TRUSTED_CA_PATH and TRUSTED_CA_SECRET_NAME variables.
+    Validates: Requirement 8.1"""
+
+    def test_trusted_ca_path_variable_declared(self, script_text):
+        pattern = r'^TRUSTED_CA_PATH='
+        assert re.search(pattern, script_text, re.MULTILINE), (
+            "TRUSTED_CA_PATH variable not declared in deploy script"
+        )
+
+    def test_trusted_ca_secret_name_variable_declared(self, script_text):
+        pattern = r'^TRUSTED_CA_SECRET_NAME='
+        assert re.search(pattern, script_text, re.MULTILINE), (
+            "TRUSTED_CA_SECRET_NAME variable not declared in deploy script"
+        )
+
+
+class TestTrustedCABase64Encoding:
+    """Deploy script contains double-base64 encoding command.
+    Validates: Requirement 8.5"""
+
+    def test_base64_encoding_command_present(self, script_text):
+        assert "base64 -w 0" in script_text, (
+            "Deploy script missing 'base64 -w 0' encoding command"
+        )
+
+
+class TestTrustedCAOsConfiguration:
+    """Deploy script contains osConfiguration in the cluster manifest heredoc.
+    Validates: Requirement 8.7"""
+
+    def test_os_configuration_in_script(self, script_text):
+        assert "osConfiguration" in script_text, (
+            "Deploy script missing 'osConfiguration' in cluster manifest"
+        )
+
+
+class TestTrustedCAFileCheck:
+    """Deploy script contains file existence check for TRUSTED_CA_PATH.
+    Validates: Requirement 8.1"""
+
+    def test_file_existence_check_present(self, script_text):
+        assert re.search(r'!\s*-f.*TRUSTED_CA_PATH', script_text), (
+            "Deploy script missing file existence check for TRUSTED_CA_PATH"
+        )
+
+
+class TestTrustedCAIdempotentSecret:
+    """Deploy script contains idempotent secret creation pattern.
+    Validates: Requirement 8.5"""
+
+    def test_dry_run_client_pattern(self, script_text):
+        assert "--dry-run=client" in script_text, (
+            "Deploy script missing '--dry-run=client' for idempotent secret creation"
+        )
+
+
+class TestTrustedCAOrdering:
+    """Secret creation block appears after context bridge and before cluster manifest apply.
+    Validates: Requirement 8.7"""
+
+    def test_secret_creation_after_bridge_before_cluster(self, script_text):
+        bridge_pos = script_text.find("Context bridge complete")
+        secret_pos = script_text.find("kubectl create secret generic")
+        cluster_apply_pos = script_text.find("kubectl apply --validate=false --insecure-skip-tls-verify")
+        assert bridge_pos != -1, "Context bridge completion message not found"
+        assert secret_pos != -1, "kubectl create secret generic not found"
+        assert cluster_apply_pos != -1, "kubectl apply for cluster manifest not found"
+        assert bridge_pos < secret_pos < cluster_apply_pos, (
+            "Secret creation must appear after context bridge and before cluster manifest apply"
+        )
