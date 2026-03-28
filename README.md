@@ -43,19 +43,37 @@ cd vcf9-iac-onboarding
 Create a `.env` file at the project root with your environment-specific values:
 
 ```env
+# --- API Token (from VCF Automation portal) ---
 VCF_API_TOKEN=<your-api-token>
+
+# --- VCFA Connection ---
 VCFA_ENDPOINT=<vcfa-hostname>
 TENANT_NAME=<sso-tenant>
 CONTEXT_NAME=<cli-context-name>
+
+# --- Project & Namespace ---
 PROJECT_NAME=<project-name>
 USER_IDENTITY=<sso-user>
 NAMESPACE_PREFIX=<namespace-prefix->
+
+# --- Infrastructure (Zone) ---
 ZONE_NAME=<availability-zone>
+
+# --- VKS Cluster ---
 CLUSTER_NAME=<cluster-name>
 CONTENT_LIBRARY_ID=<content-library-id>
+
+# --- VKS Packages (Scenarios 2 & 3) ---
+PACKAGE_NAMESPACE=tkg-packages
+PACKAGE_REPO_NAME=tkg-packages
+PACKAGE_REPO_URL=projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211
+
+# --- GitHub Actions Runner ---
+RUNNER_TOKEN=<your-runner-registration-token>
+REPO_URL=https://github.com/<OWNER>/<REPO>
 ```
 
-See the [deploy script README](examples/scenario1/README-deploy.md) for the full variable reference including optional variables with defaults.
+Replace all `<placeholder>` values with your environment-specific settings. See the [deploy script README](examples/scenario1/README-deploy.md) for the full variable reference including optional variables with defaults.
 
 ### 2. Build and start the dev container
 
