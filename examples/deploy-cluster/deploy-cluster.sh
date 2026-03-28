@@ -68,6 +68,7 @@ NODE_POOL_NAME="${NODE_POOL_NAME:-node-pool-01}"
 AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME:-5m}"
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD:-5m}"
 AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD:-0.5}"
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE="${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE:-10s}"
 
 # --- OS Image ---
 OS_NAME="${OS_NAME:-photon}"
@@ -503,11 +504,13 @@ fi
 
 if ! vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
   # Create values file with required cluster config and autoscaler tuning
+  # Schema keys: clusterConfig, arguments (camelCase), extraArguments for CLI flags not in schema
   AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scale-down-unneeded-time: %s\n  scale-down-delay-after-add: %s\n  scale-down-utilization-threshold: %s\n' \
+  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scaleDownUnneededTime: "%s"\n  scaleDownDelayAfterAdd: "%s"\n  scaleDownDelayAfterDelete: "%s"\n  extraArguments:\n  - "--scale-down-utilization-threshold=%s"\n' \
     "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" \
     "${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}" \
     "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}" \
+    "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE}" \
     "${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}" > "${AUTOSCALER_VALUES}"
   log_success "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
   log_success "Autoscaler tuning: scaleDownUnneededTime=${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}, scaleDownDelayAfterAdd=${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}, scaleDownUtilizationThreshold=${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}"

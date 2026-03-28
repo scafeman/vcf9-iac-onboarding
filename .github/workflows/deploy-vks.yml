@@ -137,6 +137,7 @@ jobs:
       AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME: ${{ github.event.client_payload.autoscaler_scale_down_unneeded_time || '5m' }}
       AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD: ${{ github.event.client_payload.autoscaler_scale_down_delay_after_add || '5m' }}
       AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD: ${{ github.event.client_payload.autoscaler_scale_down_utilization_threshold || '0.5' }}
+      AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE: ${{ github.event.client_payload.autoscaler_scale_down_delay_after_delete || '10s' }}
 
       # --- Package Configuration (for Cluster Autoscaler) ---
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -519,11 +520,13 @@ jobs:
           fi
 
           # Create values file with required cluster config and autoscaler tuning
+          # Schema keys: clusterConfig, arguments (camelCase), extraArguments for CLI flags not in schema
           AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-          printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scale-down-unneeded-time: %s\n  scale-down-delay-after-add: %s\n  scale-down-utilization-threshold: %s\n' \
+          printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\narguments:\n  scaleDownUnneededTime: "%s"\n  scaleDownDelayAfterAdd: "%s"\n  scaleDownDelayAfterDelete: "%s"\n  extraArguments:\n  - "--scale-down-utilization-threshold=%s"\n' \
             "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" \
             "${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}" \
             "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}" \
+            "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE}" \
             "${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}" > "$AUTOSCALER_VALUES"
           echo "Autoscaler values file contents:"
           cat "$AUTOSCALER_VALUES"

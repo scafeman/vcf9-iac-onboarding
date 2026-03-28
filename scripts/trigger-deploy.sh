@@ -44,6 +44,7 @@ Optional (override workflow defaults):
   --autoscaler-scale-down-unneeded-time     Time before underutilized node removal (default: 5m)
   --autoscaler-scale-down-delay-after-add   Cooldown after scale-up before scale-down (default: 5m)
   --autoscaler-scale-down-utilization-threshold  Node utilization threshold for scale-down (default: 0.5)
+  --autoscaler-scale-down-delay-after-delete  Cooldown after node deletion before next scale-down (default: 10s)
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -85,6 +86,7 @@ NODE_POOL_NAME=""
 AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME=""
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD=""
 AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD=""
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -116,6 +118,7 @@ while [[ $# -gt 0 ]]; do
     --autoscaler-scale-down-unneeded-time) AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="$2"; shift 2 ;;
     --autoscaler-scale-down-delay-after-add) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="$2"; shift 2 ;;
     --autoscaler-scale-down-utilization-threshold) AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="$2"; shift 2 ;;
+    --autoscaler-scale-down-delay-after-delete) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -179,6 +182,7 @@ add_field "node_pool_name"     "$NODE_POOL_NAME"
 add_field "autoscaler_scale_down_unneeded_time" "$AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME"
 add_field "autoscaler_scale_down_delay_after_add" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD"
 add_field "autoscaler_scale_down_utilization_threshold" "$AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD"
+add_field "autoscaler_scale_down_delay_after_delete" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 
