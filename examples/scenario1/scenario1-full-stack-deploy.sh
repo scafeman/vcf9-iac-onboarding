@@ -62,6 +62,10 @@ MIN_NODES="${MIN_NODES:-2}"
 MAX_NODES="${MAX_NODES:-10}"
 NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
 
+# --- OS Image ---
+OS_NAME="${OS_NAME:-photon}"
+OS_VERSION="${OS_VERSION:-}"
+
 # --- Timeouts and Polling ---
 CLUSTER_TIMEOUT="${CLUSTER_TIMEOUT:-1800}"
 WORKER_TIMEOUT="${WORKER_TIMEOUT:-600}"
@@ -288,6 +292,13 @@ if kubectl get cluster "${CLUSTER_NAME}" -n "${DYNAMIC_NS_NAME}" 2>/dev/null; th
   log_success "Cluster '${CLUSTER_NAME}' already exists in namespace '${DYNAMIC_NS_NAME}', skipping creation"
 else
   # Generate and apply the Cluster manifest
+  # Build the OS image annotation — include os-version only if set (required for ubuntu)
+  OS_IMAGE_ANNOTATION="os-name=${OS_NAME}, content-library=${CONTENT_LIBRARY_ID}"
+  if [[ -n "${OS_VERSION}" ]]; then
+    OS_IMAGE_ANNOTATION="${OS_IMAGE_ANNOTATION}, os-version=${OS_VERSION}"
+  fi
+  log_success "OS image annotation: ${OS_IMAGE_ANNOTATION}"
+
   if ! cat <<EOF | kubectl apply --validate=false --insecure-skip-tls-verify -f -
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
@@ -310,7 +321,7 @@ spec:
     controlPlane:
       metadata:
         annotations:
-          run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=${CONTENT_LIBRARY_ID}"
+          run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
       replicas: 1
     workers:
       machineDeployments:
@@ -318,7 +329,7 @@ spec:
         name: node-pool-01
         metadata:
           annotations:
-            run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=${CONTENT_LIBRARY_ID}"
+            run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
             cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: "${MAX_NODES}"
             cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: "${MIN_NODES}"
     variables:

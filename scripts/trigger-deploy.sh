@@ -37,6 +37,8 @@ Optional (override workflow defaults):
   --min-nodes         Autoscaler minimum worker nodes
   --max-nodes         Autoscaler maximum worker nodes
   --containerd-volume-size  Containerd data volume size per node
+  --os-name           Node OS image name (photon or ubuntu, default: photon)
+  --os-version        Node OS version (required for ubuntu, e.g., 24.04)
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -71,6 +73,8 @@ STORAGE_CLASS=""
 MIN_NODES=""
 MAX_NODES=""
 CONTAINERD_VOLUME_SIZE=""
+OS_NAME=""
+OS_VERSION=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -95,6 +99,8 @@ while [[ $# -gt 0 ]]; do
     --min-nodes)          MIN_NODES="$2"; shift 2 ;;
     --max-nodes)          MAX_NODES="$2"; shift 2 ;;
     --containerd-volume-size) CONTAINERD_VOLUME_SIZE="$2"; shift 2 ;;
+    --os-name)            OS_NAME="$2"; shift 2 ;;
+    --os-version)         OS_VERSION="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -151,6 +157,8 @@ add_field "storage_class"      "$STORAGE_CLASS"
 add_field "min_nodes"          "$MIN_NODES"
 add_field "max_nodes"          "$MAX_NODES"
 add_field "containerd_volume_size" "$CONTAINERD_VOLUME_SIZE"
+add_field "os_name"            "$OS_NAME"
+add_field "os_version"         "$OS_VERSION"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 

@@ -70,6 +70,15 @@ on:
         required: false
         type: string
         default: "50Gi"
+      os_name:
+        description: "Node OS image name: photon or ubuntu (default: photon)"
+        required: false
+        type: string
+        default: "photon"
+      os_version:
+        description: "Node OS version (required for ubuntu, e.g., 24.04)"
+        required: false
+        type: string
 
   repository_dispatch:
     types: [deploy-vks]
@@ -109,6 +118,8 @@ jobs:
       MIN_NODES: ${{ github.event.inputs.min_nodes || github.event.client_payload.min_nodes || secrets.MIN_NODES || '2' }}
       MAX_NODES: ${{ github.event.inputs.max_nodes || github.event.client_payload.max_nodes || secrets.MAX_NODES || '10' }}
       CONTAINERD_VOLUME_SIZE: ${{ github.event.inputs.containerd_volume_size || github.event.client_payload.containerd_volume_size || '50Gi' }}
+      OS_NAME: ${{ github.event.inputs.os_name || github.event.client_payload.os_name || 'photon' }}
+      OS_VERSION: ${{ github.event.inputs.os_version || github.event.client_payload.os_version || '' }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: gh-actions-deploy
@@ -287,6 +298,13 @@ jobs:
           if kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
             echo "Cluster '$CLUSTER_NAME' already exists, skipping creation"
           else
+            # Build the OS image annotation — include os-version only if set (required for ubuntu)
+            OS_IMAGE_ANNOTATION="os-name=${OS_NAME}, content-library=${CONTENT_LIBRARY_ID}"
+            if [ -n "${OS_VERSION}" ]; then
+              OS_IMAGE_ANNOTATION="${OS_IMAGE_ANNOTATION}, os-version=${OS_VERSION}"
+            fi
+            echo "OS image annotation: ${OS_IMAGE_ANNOTATION}"
+
             cat <<EOF | kubectl apply -f - --validate=false --insecure-skip-tls-verify
           apiVersion: cluster.x-k8s.io/v1beta1
           kind: Cluster
@@ -309,7 +327,7 @@ jobs:
               controlPlane:
                 metadata:
                   annotations:
-                    run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=$CONTENT_LIBRARY_ID"
+                    run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
                 replicas: 1
               workers:
                 machineDeployments:
@@ -317,7 +335,7 @@ jobs:
                   name: node-pool-01
                   metadata:
                     annotations:
-                      run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=$CONTENT_LIBRARY_ID"
+                      run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
                       cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: "$MAX_NODES"
                       cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: "$MIN_NODES"
               variables:
