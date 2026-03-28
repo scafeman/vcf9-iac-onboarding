@@ -583,19 +583,25 @@ jobs:
           CLUSTER_DELETE_TIMEOUT="${CLUSTER_DELETE_TIMEOUT:-1800}"
           POLL_INTERVAL="${POLL_INTERVAL:-15}"
 
-          # Switch to the VCF CLI context for cluster operations
+          # Unset the guest cluster kubeconfig so kubectl uses the VCF CLI context
+          unset KUBECONFIG
+
+          # Derive project name from cluster name
+          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+
+          # Switch to the namespace-scoped VCF CLI context for cluster operations
           if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
-            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}" 2>/dev/null || true
+            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null || true
           fi
 
           # Check if the cluster exists
-          if kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
-            kubectl delete cluster "$CLUSTER_NAME"
+          if kubectl get cluster "$CLUSTER_NAME" -n "${DYNAMIC_NS_NAME:-}" 2>/dev/null; then
+            kubectl delete cluster "$CLUSTER_NAME" -n "${DYNAMIC_NS_NAME:-}"
 
             # Wait for cluster deletion
             ELAPSED=0
             while [ "$ELAPSED" -lt "$CLUSTER_DELETE_TIMEOUT" ]; do
-              if ! kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
+              if ! kubectl get cluster "$CLUSTER_NAME" -n "${DYNAMIC_NS_NAME:-}" 2>/dev/null; then
                 echo "VKS cluster '$CLUSTER_NAME' deleted"
                 break
               fi
@@ -619,6 +625,9 @@ jobs:
           CONTEXT_NAME="teardown-deploy"
           NS_DELETE_TIMEOUT="${NS_DELETE_TIMEOUT:-600}"
           POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+          # Unset the guest cluster kubeconfig so kubectl uses the VCF CLI context
+          unset KUBECONFIG
 
           # Switch back to project-level context
           vcf context use "$CONTEXT_NAME" 2>/dev/null || true
