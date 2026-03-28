@@ -1,4 +1,4 @@
-# Scenario 1: Full Stack Deploy Script
+# Deploy Cluster: Full Stack Deploy Script
 
 ## Overview
 
@@ -182,7 +182,7 @@ A successful run produces output like this:
 ✓ HTTP connectivity test passed — received status 200 from http://74.205.11.86
 
 =============================================
-  VCF 9 Scenario 1 — Deployment Complete
+  VCF 9 Deploy Cluster — Deployment Complete
 =============================================
   Cluster:    my-dev-project-01-clus-01
   Namespace:  my-dev-project-01-ns-x3qk6

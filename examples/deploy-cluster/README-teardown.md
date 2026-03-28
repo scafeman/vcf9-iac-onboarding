@@ -1,4 +1,4 @@
-# Scenario 1: Full Stack Teardown Script
+# Deploy Cluster: Full Stack Teardown Script
 
 ## Overview
 
@@ -145,7 +145,7 @@ supervisornamespace.infrastructure.cci.vmware.com "my-dev-project-01-ns-x3qk6" d
 ✓ Local kubeconfig './kubeconfig-my-dev-project-01-clus-01.yaml' removed
 
 =============================================
-  VCF 9 Scenario 1 — Teardown Complete
+  VCF 9 Deploy Cluster — Teardown Complete
 =============================================
   Cluster:    my-dev-project-01-clus-01 (deleted)
   Project:    my-dev-project-01 (deleted)

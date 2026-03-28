@@ -1,8 +1,8 @@
-# Scenario 3: Self-Contained ArgoCD Consumption Model Teardown Script
+# Deploy GitOps: Self-Contained ArgoCD Consumption Model Teardown Script
 
 ## Overview
 
-`teardown-gitops.sh` removes all ArgoCD Consumption Model components installed by `deploy-gitops.sh`, deleting resources in reverse dependency order. It removes application components (GitLab, ArgoCD Application) and application-level infrastructure services (ArgoCD, Harbor) that were installed via Helm. Shared VKS packages (cert-manager, Contour) are not removed — they are managed by Scenario 2's teardown script.
+`teardown-gitops.sh` removes all ArgoCD Consumption Model components installed by `deploy-gitops.sh`, deleting resources in reverse dependency order. It removes application components (GitLab, ArgoCD Application) and application-level infrastructure services (ArgoCD, Harbor) that were installed via Helm. Shared VKS packages (cert-manager, Contour) are not removed — they are managed by Deploy Metrics's teardown script.
 
 The script is fully non-interactive. All configuration is driven by environment variables defined in the variable block at the top of the script. No user input or confirmation prompts are required.
 
@@ -20,7 +20,7 @@ Deletes the ArgoCD Application custom resource (`microservices-demo`) from the A
 
 ### Phase 3: Delete GitLab Runner
 
-Uninstalls the GitLab Runner Helm release via `helm uninstall`. Strips finalizers from all resources in the GitLab Runner namespace to prevent stuck namespace deletion (lesson learned from Scenario 2). Deletes the GitLab Runner namespace.
+Uninstalls the GitLab Runner Helm release via `helm uninstall`. Strips finalizers from all resources in the GitLab Runner namespace to prevent stuck namespace deletion (lesson learned from Deploy Metrics). Deletes the GitLab Runner namespace.
 
 ### Phase 4: Delete GitLab
 
@@ -129,7 +129,7 @@ A successful run produces output similar to:
 ✓ Certificate file cleanup complete
 [Step 10] Teardown summary...
 =============================================
-  VCF 9 Scenario 3 — Teardown Complete
+  VCF 9 Deploy GitOps — Teardown Complete
 =============================================
   Cluster:              my-cluster
   Domain:               lab.local
@@ -144,7 +144,7 @@ A successful run produces output similar to:
     - Certificate secrets (harbor-ca-cert, gitlab-wildcard-tls)
     - Certificate files (./certs)
 =============================================
-✓ Scenario 3 teardown complete
+✓ Deploy GitOps teardown complete
 ```
 
 ---
@@ -156,7 +156,7 @@ The teardown script is safe to run multiple times. If resources are already dele
 - Missing kubeconfig → prints warning, continues cleanup
 - Missing ArgoCD Application → `--ignore-not-found` and `|| true` handle it
 - Missing Helm release → `helm uninstall` with `|| true` handles it
-- Stuck resources with finalizers → finalizers stripped before namespace deletion so they cannot block (lesson learned from Scenario 2)
+- Stuck resources with finalizers → finalizers stripped before namespace deletion so they cannot block (lesson learned from Deploy Metrics)
 - Missing namespace → `--ignore-not-found` handles it
 - Missing certificate Secrets → `--ignore-not-found` handles it
 - CoreDNS without custom hosts block → detects no changes needed, skips patch
@@ -169,7 +169,7 @@ This makes it safe to re-run after a partial failure or manual cleanup.
 
 ## Finalizer Stripping
 
-The teardown script strips finalizers from common resource types in each namespace before deleting that namespace. This is a pattern learned from Scenario 2, where stuck finalizers on resources can prevent namespace deletion from completing, leaving the namespace in a `Terminating` state indefinitely.
+The teardown script strips finalizers from common resource types in each namespace before deleting that namespace. This is a pattern learned from Deploy Metrics, where stuck finalizers on resources can prevent namespace deletion from completing, leaving the namespace in a `Terminating` state indefinitely.
 
 The script uses a `strip_finalizers_in_namespace` helper that targets ~11 common resource types (pods, services, deployments, statefulsets, replicasets, jobs, persistentvolumeclaims, secrets, configmaps, serviceaccounts, ingresses) rather than enumerating all 100+ API types. Additional component-specific resource types can be passed as extra arguments (e.g., `gitlabs runners` for GitLab, `applications applicationsets appprojects` for ArgoCD):
 

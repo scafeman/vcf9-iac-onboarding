@@ -1,4 +1,4 @@
-# Scenario 2: VKS Metrics Observability Teardown Script
+# Deploy Metrics: VKS Metrics Observability Teardown Script
 
 ## Overview
 

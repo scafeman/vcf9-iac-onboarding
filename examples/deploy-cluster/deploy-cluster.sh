@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 1 — Full Stack Deploy Script
+# VCF 9 Deploy Cluster — Full Stack Deploy Script
 #
 # This script automates the complete VCF 9 provisioning workflow end to end:
 #   Phase 1: VCF CLI Context Creation
@@ -33,10 +33,10 @@ CONTEXT_NAME="${CONTEXT_NAME:-}"
 
 # --- Project & Namespace ---
 PROJECT_NAME="${PROJECT_NAME:-}"
-PROJECT_DESCRIPTION="${PROJECT_DESCRIPTION:-Scenario 1 project}"
+PROJECT_DESCRIPTION="${PROJECT_DESCRIPTION:-Deploy Cluster project}"
 USER_IDENTITY="${USER_IDENTITY:-}"
 NAMESPACE_PREFIX="${NAMESPACE_PREFIX:-}"
-NAMESPACE_DESCRIPTION="${NAMESPACE_DESCRIPTION:-Scenario 1 namespace}"
+NAMESPACE_DESCRIPTION="${NAMESPACE_DESCRIPTION:-Deploy Cluster namespace}"
 
 # --- Pre-Existing Resources (Region, Zone, Networking) ---
 REGION_NAME="${REGION_NAME:-region-us1-a}"
@@ -536,7 +536,7 @@ log_success "HTTP connectivity test passed — received status 200 from http://$
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 1 — Deployment Complete"
+echo "  VCF 9 Deploy Cluster — Deployment Complete"
 echo "============================================="
 echo "  Cluster:    ${CLUSTER_NAME}"
 echo "  Namespace:  ${DYNAMIC_NS_NAME}"

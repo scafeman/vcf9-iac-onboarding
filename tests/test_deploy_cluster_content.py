@@ -1,4 +1,4 @@
-"""Content-presence unit tests for VCF 9 Scenario 1 — Full Stack Deploy Script."""
+"""Content-presence unit tests for VCF 9 Deploy Cluster — Full Stack Deploy Script."""
 
 import os
 import re

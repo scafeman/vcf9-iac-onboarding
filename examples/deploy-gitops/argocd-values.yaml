@@ -1,4 +1,4 @@
-# ArgoCD Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# ArgoCD Helm values for Deploy GitOps — Self-Contained ArgoCD Consumption Model
 # Chart: argo/argo-cd
 # Configures the ArgoCD server with ingress via Contour.
 

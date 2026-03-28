@@ -1,4 +1,4 @@
-# Contour Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# Contour Helm values for Deploy GitOps — Self-Contained ArgoCD Consumption Model
 # Chart: contour/contour (official Project Contour Helm chart)
 # Installs Envoy as a Deployment with LoadBalancer service for ingress traffic.
 

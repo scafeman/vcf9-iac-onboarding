@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 2 — VKS Metrics Observability Deploy Script
+# VCF 9 Deploy Metrics — VKS Metrics Observability Deploy Script
 #
 # This script installs the metrics observability stack on an existing VKS
-# cluster provisioned by Scenario 1:
+# cluster provisioned by Deploy Cluster:
 #   Phase 1:  Kubeconfig Setup & Connectivity Check
 #   Phase 2:  Node Sizing Advisory
 #   Phase 3:  Package Namespace Creation
@@ -21,7 +21,7 @@ set -euo pipefail
 #   Phase 11: Verification
 #
 # Prerequisites:
-#   - Scenario 1 completed successfully (VKS cluster running)
+#   - Deploy Cluster completed successfully (VKS cluster running)
 #   - Valid admin kubeconfig file for the target cluster
 #   - Helm v3 installed (included in the vcf9-dev container Dockerfile)
 #
@@ -224,7 +224,7 @@ log_step 1 "Setting up kubeconfig"
 export KUBECONFIG="${KUBECONFIG_FILE}"
 
 if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
-  log_error "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+  log_error "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
   exit 2
 fi
 
@@ -707,7 +707,7 @@ log_success "Verification complete"
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 2 — Deployment Complete"
+echo "  VCF 9 Deploy Metrics — Deployment Complete"
 echo "============================================="
 echo "  Cluster:      ${CLUSTER_NAME}"
 echo "  Domain:       ${DOMAIN}"

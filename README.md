@@ -9,7 +9,7 @@ Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Founda
 - A Dockerized development environment with VCF CLI, kubectl, and all tooling pre-installed
 - Declarative YAML manifests for VCF 9 resources (Projects, Namespaces, VKS Clusters, functional test workloads)
 - Property-based and content-presence test suites validating manifest correctness and guide accuracy
-- GitHub Actions workflows for automated deployment of all three scenarios via CI/CD
+- GitHub Actions workflows for automated deployment of all three deployments via CI/CD
 - Companion trigger scripts for dispatching workflows from the command line
 - A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS
@@ -63,7 +63,7 @@ ZONE_NAME=<availability-zone>
 CLUSTER_NAME=<cluster-name>
 CONTENT_LIBRARY_ID=<content-library-id>
 
-# --- VKS Packages (Scenarios 2 & 3) ---
+# --- VKS Packages (Deploy Metrics and Deploy GitOps) ---
 PACKAGE_NAMESPACE=tkg-packages
 PACKAGE_REPO_NAME=tkg-packages
 PACKAGE_REPO_URL=projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211
@@ -102,7 +102,7 @@ Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempote
 
 ## GitHub Actions Workflows
 
-All three scenarios are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
+All three deployments are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
 
 | Workflow | File | Trigger |
 |---|---|---|
@@ -110,7 +110,7 @@ All three scenarios are also available as GitHub Actions workflows for automated
 | Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks-metrics`) |
 | Deploy ArgoCD Stack | `deploy-argocd.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-argocd`) |
 
-Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+Deploy Cluster must complete before Deploy Metrics or Deploy GitOps can run. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
 
 ## Repository Structure
 
@@ -126,14 +126,14 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
 ├── .gitignore                         # Git ignore rules
 ├── .github/
 │   └── workflows/
-│       ├── deploy-vks.yml             # Scenario 1: Deploy VKS Cluster workflow
-│       ├── deploy-vks-metrics.yml     # Scenario 2: Deploy VKS Metrics Stack workflow
-│       ├── deploy-argocd.yml          # Scenario 3: Deploy ArgoCD Stack workflow
+│       ├── deploy-vks.yml             # Deploy Cluster: Deploy VKS Cluster workflow
+│       ├── deploy-vks-metrics.yml     # Deploy Metrics: Deploy VKS Metrics Stack workflow
+│       ├── deploy-argocd.yml          # Deploy GitOps: Deploy ArgoCD Stack workflow
 │       └── README.md                  # Workflow documentation (parameters, triggers, credentials)
 ├── scripts/
-│   ├── trigger-deploy.sh             # Companion trigger script for Scenario 1
-│   ├── trigger-deploy-metrics.sh     # Companion trigger script for Scenario 2
-│   └── trigger-deploy-argocd.sh      # Companion trigger script for Scenario 3
+│   ├── trigger-deploy.sh             # Companion trigger script for Deploy Cluster
+│   ├── trigger-deploy-metrics.sh     # Companion trigger script for Deploy Metrics
+│   └── trigger-deploy-argocd.sh      # Companion trigger script for Deploy GitOps
 ├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
 ├── examples/
 │   ├── deploy-cluster/                          # Deploy Cluster
@@ -176,16 +176,16 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
     ├── requirements.txt               # Python test dependencies
     ├── test_content.py                # Content-presence tests for the onboarding guide
     ├── test_properties.py             # Property-based tests for guide YAML manifests
-    ├── test_scenario1_content.py      # Content-presence tests for Scenario 1 scripts
-    ├── test_scenario1_properties.py   # Property-based tests for Scenario 1 scripts
-    ├── test_scenario2_content.py      # Content-presence tests for Scenario 2 scripts
-    ├── test_scenario2_properties.py   # Property-based tests for Scenario 2 scripts
-    ├── test_scenario3_content.py      # Content-presence tests for Scenario 3 scripts
-    ├── test_scenario3_properties.py   # Property-based tests for Scenario 3 scripts
-    ├── test_gh_actions_deploy_content.py       # Content tests for Scenario 1 workflow
-    ├── test_gh_actions_deploy_properties.py    # Property tests for Scenario 1 workflow
-    ├── test_gh_actions_scenarios_2_3_content.py    # Content tests for Scenarios 2 & 3 workflows
-    ├── test_gh_actions_scenarios_2_3_properties.py # Property tests for Scenarios 2 & 3 workflows
+    ├── test_deploy_cluster_content.py      # Content-presence tests for Deploy Cluster scripts
+    ├── test_deploy_cluster_properties.py   # Property-based tests for Deploy Cluster scripts
+    ├── test_deploy_metrics_content.py      # Content-presence tests for Deploy Metrics scripts
+    ├── test_deploy_metrics_properties.py   # Property-based tests for Deploy Metrics scripts
+    ├── test_deploy_gitops_content.py      # Content-presence tests for Deploy GitOps scripts
+    ├── test_deploy_gitops_properties.py   # Property-based tests for Deploy GitOps scripts
+    ├── test_gh_actions_deploy_content.py       # Content tests for Deploy Cluster workflow
+    ├── test_gh_actions_deploy_properties.py    # Property tests for Deploy Cluster workflow
+    ├── test_gh_actions_metrics_gitops_content.py    # Content tests for Deploy Metrics and Deploy GitOps workflows
+    ├── test_gh_actions_metrics_gitops_properties.py # Property tests for Deploy Metrics and Deploy GitOps workflows
     └── test_workflow_secrets_hardening.py      # Security hardening tests for all workflows
 ```
 
@@ -195,15 +195,15 @@ Scenario 1 must complete before Scenarios 2 or 3 can run. See the [Workflows REA
 |---|---|
 | [VCF 9 IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) | Full walkthrough of the VCF 9 IaC workflow with annotated manifests, CLI commands, troubleshooting, and an EKS-to-VKS migration mapping |
 | [Engineering Workflow](VCF_Engineering_Workflow.md) | Condensed step-by-step engineering workflow |
-| [Examples Overview](examples/README.md) | Summary of all scenarios, dependency chain, and deploy/teardown commands |
-| [Scenario 1 Deploy README](examples/deploy-cluster/README-deploy.md) | Detailed breakdown of each Scenario 1 deploy phase, expected output, and timing |
-| [Scenario 1 Teardown README](examples/deploy-cluster/README-teardown.md) | Detailed breakdown of each Scenario 1 teardown phase with idempotency notes |
-| [Scenario 2 Deploy README](examples/deploy-metrics/README-deploy.md) | VKS Metrics Observability deploy documentation |
-| [Scenario 2 Teardown README](examples/deploy-metrics/README-teardown.md) | VKS Metrics Observability teardown documentation |
-| [Scenario 3 Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
-| [Scenario 3 Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
+| [Examples Overview](examples/README.md) | Summary of all deployments, dependency chain, and deploy/teardown commands |
+| [Deploy Cluster Deploy README](examples/deploy-cluster/README-deploy.md) | Detailed breakdown of each Deploy Cluster deploy phase, expected output, and timing |
+| [Deploy Cluster Teardown README](examples/deploy-cluster/README-teardown.md) | Detailed breakdown of each Deploy Cluster teardown phase with idempotency notes |
+| [Deploy Metrics Deploy README](examples/deploy-metrics/README-deploy.md) | VKS Metrics Observability deploy documentation |
+| [Deploy Metrics Teardown README](examples/deploy-metrics/README-teardown.md) | VKS Metrics Observability teardown documentation |
+| [Deploy GitOps Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
+| [Deploy GitOps Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
 | [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
-| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all three scenarios |
+| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all three deployments |
 
 ## Testing
 
@@ -240,7 +240,7 @@ pytest tests/ -v
 
 ## Environment Variables Reference
 
-### Scenario 1 — VKS Cluster Deployment
+### Deploy Cluster — VKS Cluster Deployment
 
 | Variable | Required | Description |
 |---|---|---|
@@ -266,7 +266,7 @@ pytest tests/ -v
 | `OS_NAME` | No | Node OS image: `photon` or `ubuntu` (default: `photon`) |
 | `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
 
-### Scenario 2 — VKS Metrics Observability
+### Deploy Metrics — VKS Metrics Observability
 
 | Variable | Required | Description |
 |---|---|---|
@@ -274,7 +274,7 @@ pytest tests/ -v
 | `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
 | `TELEGRAF_VERSION` | No | Telegraf package version (default: `1.37.1+vmware.1-vks.1`) |
 
-### Scenario 3 — ArgoCD Consumption Model
+### Deploy GitOps — ArgoCD Consumption Model
 
 | Variable | Required | Description |
 |---|---|---|

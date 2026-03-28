@@ -91,15 +91,15 @@ class TestWorkflowSecrets:
 
 
 # ===================================================================
-# TestWorkflowNoScriptWrapper — no reference to scenario1 deploy script
+# TestWorkflowNoScriptWrapper — no reference to deploy-cluster deploy script
 # Validates: Requirements 3.2
 # ===================================================================
 
 
 class TestWorkflowNoScriptWrapper:
-    """Workflow does not reference the scenario1 deploy script."""
+    """Workflow does not reference the deploy-cluster deploy script."""
 
-    def test_no_scenario1_script_reference(self, workflow_yaml_text):
+    def test_no_deploy_cluster_script_reference(self, workflow_yaml_text):
         assert "deploy-cluster.sh" not in workflow_yaml_text, (
             "Workflow references deploy-cluster.sh — it should implement logic inline"
         )

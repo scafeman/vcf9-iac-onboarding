@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 3 — Self-Contained ArgoCD Consumption Model Teardown Script
+# VCF 9 Deploy GitOps — Self-Contained ArgoCD Consumption Model Teardown Script
 #
 # This script removes the self-contained ArgoCD Consumption Model stack
-# installed by the Scenario 3 deploy script, deleting resources in reverse
+# installed by the Deploy GitOps deploy script, deleting resources in reverse
 # dependency order:
 #   Phase 1:  Kubeconfig Setup
 #   Phase 2:  Delete ArgoCD Application
@@ -20,7 +20,7 @@ set -euo pipefail
 #
 # IMPORTANT: Helm releases are removed via `helm uninstall`. Finalizers are
 # stripped from stuck resources before namespace deletion to prevent hanging
-# namespaces (lesson learned from Scenario 2). All deletion commands use
+# namespaces (lesson learned from Deploy Metrics). All deletion commands use
 # `--ignore-not-found` or `|| true` for idempotent re-runs.
 #
 # Uses the same variable block as the deploy script (subset).
@@ -351,7 +351,7 @@ log_step 10 "Teardown summary"
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 3 — Teardown Complete"
+echo "  VCF 9 Deploy GitOps — Teardown Complete"
 echo "============================================="
 echo "  Cluster:              ${CLUSTER_NAME}"
 echo "  Domain:               ${DOMAIN}"
@@ -368,6 +368,6 @@ echo "    - Certificate files (${CERT_DIR})"
 echo "============================================="
 echo ""
 
-log_success "Scenario 3 teardown complete"
+log_success "Deploy GitOps teardown complete"
 
 exit 0

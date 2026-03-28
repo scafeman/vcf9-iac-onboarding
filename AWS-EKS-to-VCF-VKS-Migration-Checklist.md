@@ -389,13 +389,13 @@ All 9 phases must pass for the VKS cluster to be considered migration-ready. If 
 
 ### Automated Validation
 
-The full provisioning and validation workflow (Phases 1–9) is automated in the Scenario 1 deploy script:
+The full provisioning and validation workflow (Phases 1–9) is automated in the Deploy Cluster deploy script:
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
-This script executes all phases non-interactively and reports pass/fail status for each step. See [Scenario 1 Deploy README](examples/deploy-cluster/README-deploy.md) for details.
+This script executes all phases non-interactively and reports pass/fail status for each step. See [Deploy Cluster Deploy README](examples/deploy-cluster/README-deploy.md) for details.
 
 ---
 

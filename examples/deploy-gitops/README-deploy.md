@@ -1,8 +1,8 @@
-# Scenario 3: Self-Contained ArgoCD Consumption Model Deploy Script
+# Deploy GitOps: Self-Contained ArgoCD Consumption Model Deploy Script
 
 ## Overview
 
-`deploy-gitops.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Scenario 2. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
+`deploy-gitops.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Deploy Cluster. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Deploy Metrics. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 
 The script orchestrates: self-signed certificate generation, VKS package installation (cert-manager, Contour), envoy-lb LoadBalancer service creation, Harbor container registry installation, ArgoCD GitOps controller installation, ArgoCD CLI auto-download, CoreDNS configuration for internal DNS resolution, GitLab and GitLab Runner deployment for CI/CD, ArgoCD application synchronization, and Google Microservices Demo (Online Boutique) deployment via GitOps.
 
@@ -33,7 +33,7 @@ Kubeconfig Setup
 ```
 
 - **Certificates** are generated first so all subsequent Helm installs can use TLS from the start.
-- **VKS Packages** (cert-manager, Contour) are installed as shared VKS standard packages. If Scenario 2 has already been deployed, these packages already exist and installation is skipped. A separate `envoy-lb` LoadBalancer service is created for external access (the VKS Contour package creates Envoy as NodePort by default).
+- **VKS Packages** (cert-manager, Contour) are installed as shared VKS standard packages. If Deploy Metrics has already been deployed, these packages already exist and installation is skipped. A separate `envoy-lb` LoadBalancer service is created for external access (the VKS Contour package creates Envoy as NodePort by default).
 - **Harbor** is installed with TLS via Contour Ingress and serves as the container registry.
 - **CoreDNS** is patched with static entries using the auto-detected Contour LB IP for all service hostnames.
 - **ArgoCD** is installed with ingress via Contour and its admin password is auto-retrieved from the K8s Secret.
@@ -45,7 +45,7 @@ Kubeconfig Setup
 - **ArgoCD Cluster Registration** must complete before ArgoCD can deploy applications to the VKS cluster.
 - **ArgoCD Application Bootstrap** triggers the GitOps sync that deploys the Microservices Demo.
 
-The teardown script (`teardown-gitops.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Scenario 2's teardown — Scenario 3 teardown does not remove them.
+The teardown script (`teardown-gitops.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Deploy Metrics's teardown — Deploy GitOps teardown does not remove them.
 
 ---
 
@@ -53,7 +53,7 @@ The teardown script (`teardown-gitops.sh`) reverses this order, removing applica
 
 ### Phase 1: Kubeconfig Setup & Connectivity Check
 
-Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced by Scenario 1. Verifies the file exists and that the VKS cluster is reachable by running `kubectl get namespaces`. Exits with code 2 if the kubeconfig is missing or the cluster is unreachable.
+Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced by Deploy Cluster. Verifies the file exists and that the VKS cluster is reachable by running `kubectl get namespaces`. Exits with code 2 if the kubeconfig is missing or the cluster is unreachable.
 
 ### Phase 2: Self-Signed Certificate Generation
 
@@ -61,7 +61,7 @@ Generates a self-signed CA certificate and a wildcard TLS certificate for `*.${D
 
 ### Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 
-Installs cert-manager and Contour as VKS standard packages (the same packages used by Scenario 2). If Scenario 2 has already been deployed, these packages already exist and installation is skipped. Creates the package namespace and registers the VKS standard package repository if not already present. Creates a separate `envoy-lb` LoadBalancer service in `tanzu-system-ingress` to provide external access — the VKS Contour package creates Envoy as a DaemonSet with NodePort service by default, and kapp-controller reverts direct patches. Waits for the envoy-lb service to receive an external IP address. Stores the IP in `CONTOUR_LB_IP` for use in CoreDNS configuration. Exits with code 4 if package installation fails or the LB IP is not assigned within the timeout.
+Installs cert-manager and Contour as VKS standard packages (the same packages used by Deploy Metrics). If Deploy Metrics has already been deployed, these packages already exist and installation is skipped. Creates the package namespace and registers the VKS standard package repository if not already present. Creates a separate `envoy-lb` LoadBalancer service in `tanzu-system-ingress` to provide external access — the VKS Contour package creates Envoy as a DaemonSet with NodePort service by default, and kapp-controller reverts direct patches. Waits for the envoy-lb service to receive an external IP address. Stores the IP in `CONTOUR_LB_IP` for use in CoreDNS configuration. Exits with code 4 if package installation fails or the LB IP is not assigned within the timeout.
 
 ### Phase 4: Harbor Installation
 
@@ -119,8 +119,8 @@ Prints a summary of all deployed components, their namespaces, versions, and acc
 
 ## Prerequisites
 
-- **Scenario 1 completed successfully** — a VKS cluster must be running and accessible with LoadBalancer support and `nfs` storageClass. The deploy script does not create a cluster; it installs the ArgoCD Consumption Model stack on an existing one.
-- **Valid admin kubeconfig file** for the target VKS cluster (produced by Scenario 1). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
+- **Deploy Cluster completed successfully** — a VKS cluster must be running and accessible with LoadBalancer support and `nfs` storageClass. The deploy script does not create a cluster; it installs the ArgoCD Consumption Model stack on an existing one.
+- **Valid admin kubeconfig file** for the target VKS cluster (produced by Deploy Cluster). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
 - **Helm v3 installed** — required for Harbor, ArgoCD, GitLab, and GitLab Runner installation.
 - **kubectl installed** — required for all Kubernetes operations.
 - **openssl installed** — required for self-signed certificate generation.
@@ -134,7 +134,7 @@ The ArgoCD CLI is auto-downloaded if not already in PATH.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `CLUSTER_NAME` | Yes | (none) | VKS cluster name (from Scenario 1) |
+| `CLUSTER_NAME` | Yes | (none) | VKS cluster name (from Deploy Cluster) |
 
 ### Optional Variables (with defaults)
 
@@ -263,10 +263,10 @@ A successful run produces output similar to:
 ✓ Microservices Demo verification complete
 [Step 15] Deployment summary...
 =============================================
-  VCF 9 Scenario 3 — Deployment Complete
+  VCF 9 Deploy GitOps — Deployment Complete
 =============================================
   ...
-✓ Scenario 3 deployment complete
+✓ Deploy GitOps deployment complete
 ```
 
 ---
@@ -277,7 +277,7 @@ A successful run produces output similar to:
 |---|---|---|
 | Phase 1: Kubeconfig Setup | < 5 seconds | |
 | Phase 2: Certificate Generation | < 5 seconds | Skipped if certs already exist |
-| Phase 3: VKS Package Prerequisites | 1–3 minutes | Skipped if Scenario 2 already deployed |
+| Phase 3: VKS Package Prerequisites | 1–3 minutes | Skipped if Deploy Metrics already deployed |
 | Phase 4: Harbor Installation | 3–5 minutes | Includes pod startup wait |
 | Phase 5: CoreDNS Configuration | 15–30 seconds | Includes pod restart wait |
 | Phase 6: ArgoCD Installation | 1–3 minutes | Includes pod startup wait |

@@ -1,19 +1,19 @@
-# Feature: gh-actions-scenarios-2-3, Content Tests
-# Unit tests for the GitHub Actions Scenarios 2 & 3 workflows.
+# Feature: gh-actions-metrics-gitops, Content Tests
+# Unit tests for the GitHub Actions Deploy Metrics and Deploy GitOps workflows.
 
-"""Content-presence unit tests for the GitHub Actions Scenarios 2 & 3 workflows."""
+"""Content-presence unit tests for the GitHub Actions Deploy Metrics and Deploy GitOps workflows."""
 
 import re
 
 
 # ===================================================================
-# TestMetricsWorkflowStructure — Scenario 2 YAML structure and triggers
+# TestMetricsWorkflowStructure — Deploy Metrics YAML structure and triggers
 # Validates: Requirements 1.1, 1.2, 1.3, 3.1, 3.2, 4.1
 # ===================================================================
 
 
 class TestMetricsWorkflowStructure:
-    """Scenario 2 workflow YAML parses correctly and has expected triggers and runner config."""
+    """Deploy Metrics workflow YAML parses correctly and has expected triggers and runner config."""
 
     def test_workflow_yaml_parses(self, metrics_workflow_yaml):
         assert isinstance(metrics_workflow_yaml, dict), "Metrics workflow YAML did not parse as a dict"
@@ -48,13 +48,13 @@ class TestMetricsWorkflowStructure:
 
 
 # ===================================================================
-# TestArgocdWorkflowStructure — Scenario 3 YAML structure and triggers
+# TestArgocdWorkflowStructure — Deploy GitOps YAML structure and triggers
 # Validates: Requirements 2.1, 2.2, 2.3, 3.1, 3.2, 4.1
 # ===================================================================
 
 
 class TestArgocdWorkflowStructure:
-    """Scenario 3 workflow YAML parses correctly and has expected triggers and runner config."""
+    """Deploy GitOps workflow YAML parses correctly and has expected triggers and runner config."""
 
     def test_workflow_yaml_parses(self, argocd_workflow_yaml):
         assert isinstance(argocd_workflow_yaml, dict), "ArgoCD workflow YAML did not parse as a dict"
@@ -89,13 +89,13 @@ class TestArgocdWorkflowStructure:
 
 
 # ===================================================================
-# TestMetricsStepContent — key commands in Scenario 2 steps
+# TestMetricsStepContent — key commands in Deploy Metrics steps
 # Validates: Requirements 6.1, 9.3, 11.1
 # ===================================================================
 
 
 class TestMetricsStepContent:
-    """Key commands and patterns exist in the correct Scenario 2 workflow steps."""
+    """Key commands and patterns exist in the correct Deploy Metrics workflow steps."""
 
     @staticmethod
     def _get_step_by_name(workflow_yaml, name):
@@ -120,13 +120,13 @@ class TestMetricsStepContent:
 
 
 # ===================================================================
-# TestArgocdStepContent — key commands in Scenario 3 steps
+# TestArgocdStepContent — key commands in Deploy GitOps steps
 # Validates: Requirements 16.1, 19.1, 20.4, 20.5
 # ===================================================================
 
 
 class TestArgocdStepContent:
-    """Key commands and patterns exist in the correct Scenario 3 workflow steps."""
+    """Key commands and patterns exist in the correct Deploy GitOps workflow steps."""
 
     @staticmethod
     def _get_step_by_name(workflow_yaml, name):
@@ -161,16 +161,16 @@ class TestArgocdStepContent:
 
 
 class TestWorkflowReadme:
-    """Workflow README contains required documentation for Scenarios 2 & 3."""
+    """Workflow README contains required documentation for Deploy Metrics and Deploy GitOps."""
 
     def test_readme_contains_troubleshooting(self, workflow_readme_text):
         assert "troubleshooting" in workflow_readme_text.lower()
 
     def test_readme_contains_dependency_documentation(self, workflow_readme_text):
         text_lower = workflow_readme_text.lower()
-        assert "scenario 1" in text_lower
-        assert "scenario 2" in text_lower
-        assert "scenario 3" in text_lower
+        assert "deploy cluster" in text_lower
+        assert "deploy metrics" in text_lower
+        assert "deploy gitops" in text_lower
 
     def test_readme_contains_deploy_vks_metrics_table(self, workflow_readme_text):
         assert "deploy-vks-metrics" in workflow_readme_text
@@ -186,7 +186,7 @@ class TestWorkflowReadme:
 
 
 class TestTriggerMetricsScript:
-    """Trigger script for Scenario 2 contains required content."""
+    """Trigger script for Deploy Metrics contains required content."""
 
     def test_contains_deploy_vks_metrics_event_type(self, trigger_metrics_script_text):
         assert "deploy-vks-metrics" in trigger_metrics_script_text
@@ -214,7 +214,7 @@ class TestTriggerMetricsScript:
 
 
 class TestTriggerArgocdScript:
-    """Trigger script for Scenario 3 contains required content."""
+    """Trigger script for Deploy GitOps contains required content."""
 
     def test_contains_deploy_argocd_event_type(self, trigger_argocd_script_text):
         assert "deploy-argocd" in trigger_argocd_script_text

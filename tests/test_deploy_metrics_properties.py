@@ -1,8 +1,8 @@
-# Feature: scenario2-vks-metrics-observability, Property 1: Phase Messaging
+# Feature: deploy-metrics-vks-metrics-observability, Property 1: Phase Messaging
 # Every phase has pre (log_step) and post (log_success) messages
 # Validates: Requirements 12.1, 12.2
 
-"""Property-based tests for the VCF 9 Scenario 2 — VKS Metrics Observability scripts."""
+"""Property-based tests for the VCF 9 Deploy Metrics — VKS Metrics Observability scripts."""
 
 import re
 
@@ -22,22 +22,22 @@ class TestProperty1PhaseMessaging:
     **Validates: Requirements 12.1, 12.2**
     """
 
-    def test_all_eleven_phases_found(self, scenario2_deploy_phases: dict[int, str]):
+    def test_all_eleven_phases_found(self, metrics_deploy_phases: dict[int, str]):
         """Precondition: the fixture must find phases 1 through 11."""
         for phase_num in range(1, 12):
-            assert phase_num in scenario2_deploy_phases, (
+            assert phase_num in metrics_deploy_phases, (
                 f"Phase {phase_num} not found in the script. "
-                f"Found phases: {sorted(scenario2_deploy_phases.keys())}"
+                f"Found phases: {sorted(metrics_deploy_phases.keys())}"
             )
 
     @given(phase_num=st.integers(min_value=1, max_value=11))
     @settings(max_examples=100)
     def test_phase_has_pre_message(
-        self, scenario2_deploy_phases: dict[int, str], phase_num: int
+        self, metrics_deploy_phases: dict[int, str], phase_num: int
     ):
         """Every phase has a log_step call (pre-message)."""
-        assume(phase_num in scenario2_deploy_phases)
-        phase_text = scenario2_deploy_phases[phase_num]
+        assume(phase_num in metrics_deploy_phases)
+        phase_text = metrics_deploy_phases[phase_num]
         assert "log_step" in phase_text, (
             f"Phase {phase_num} is missing a log_step pre-message"
         )
@@ -45,17 +45,17 @@ class TestProperty1PhaseMessaging:
     @given(phase_num=st.integers(min_value=1, max_value=11))
     @settings(max_examples=100)
     def test_phase_has_post_message(
-        self, scenario2_deploy_phases: dict[int, str], phase_num: int
+        self, metrics_deploy_phases: dict[int, str], phase_num: int
     ):
         """Every phase has a log_success call (post-message)."""
-        assume(phase_num in scenario2_deploy_phases)
-        phase_text = scenario2_deploy_phases[phase_num]
+        assume(phase_num in metrics_deploy_phases)
+        phase_text = metrics_deploy_phases[phase_num]
         assert "log_success" in phase_text, (
             f"Phase {phase_num} is missing a log_success post-message"
         )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 2: Distinct Exit Codes
+# Feature: deploy-metrics-vks-metrics-observability, Property 2: Distinct Exit Codes
 # No two different failure categories share the same exit code
 # Validates: Requirements 12.3, 12.4
 
@@ -90,26 +90,26 @@ class TestProperty2DistinctExitCodes:
         """Extract all exit code integers from ``exit N`` statements."""
         return [int(m.group(1)) for m in re.finditer(r"\bexit\s+(\d+)", script_text)]
 
-    def test_all_failure_exit_codes_present(self, scenario2_deploy_text: str):
+    def test_all_failure_exit_codes_present(self, metrics_deploy_text: str):
         """Exit codes 1 through 10 must all appear in the script."""
-        codes = set(self._extract_exit_codes(scenario2_deploy_text))
+        codes = set(self._extract_exit_codes(metrics_deploy_text))
         for code in range(1, 11):
             assert code in codes, (
                 f"Exit code {code} ({self.EXPECTED_EXIT_CODES[code]}) "
                 f"not found in the script"
             )
 
-    def test_exit_zero_appears_once(self, scenario2_deploy_text: str):
+    def test_exit_zero_appears_once(self, metrics_deploy_text: str):
         """``exit 0`` should appear exactly once (the success path)."""
-        codes = self._extract_exit_codes(scenario2_deploy_text)
+        codes = self._extract_exit_codes(metrics_deploy_text)
         zero_count = codes.count(0)
         assert zero_count == 1, (
             f"Expected exactly 1 'exit 0' (success path), found {zero_count}"
         )
 
-    def test_non_zero_exit_codes_are_all_distinct(self, scenario2_deploy_text: str):
+    def test_non_zero_exit_codes_are_all_distinct(self, metrics_deploy_text: str):
         """All 10 non-zero exit codes (1-10) are distinct failure categories."""
-        codes = self._extract_exit_codes(scenario2_deploy_text)
+        codes = self._extract_exit_codes(metrics_deploy_text)
         non_zero = [c for c in codes if c != 0]
         unique_non_zero = set(non_zero)
         assert len(unique_non_zero) == 10, (
@@ -120,15 +120,15 @@ class TestProperty2DistinctExitCodes:
     @given(data=st.data())
     @settings(max_examples=100)
     def test_random_exit_code_pairs_are_distinct(
-        self, scenario2_deploy_text: str, data: st.DataObject
+        self, metrics_deploy_text: str, data: st.DataObject
     ):
         """Randomly pick two failure categories and verify distinct codes."""
         code_to_contexts: dict[int, set[str]] = {}
-        for m in re.finditer(r"\bexit\s+(\d+)", scenario2_deploy_text):
+        for m in re.finditer(r"\bexit\s+(\d+)", metrics_deploy_text):
             code = int(m.group(1))
             start = max(0, m.start() - 200)
-            end = min(len(scenario2_deploy_text), m.end() + 50)
-            context = scenario2_deploy_text[start:end]
+            end = min(len(metrics_deploy_text), m.end() + 50)
+            context = metrics_deploy_text[start:end]
             code_to_contexts.setdefault(code, set()).add(context)
 
         non_zero_codes = [c for c in code_to_contexts if c != 0]
@@ -153,7 +153,7 @@ class TestProperty2DistinctExitCodes:
         )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 3: Wait Loop Progress Reporting
+# Feature: deploy-metrics-vks-metrics-observability, Property 3: Wait Loop Progress Reporting
 # The wait_for_condition function contains progress echo with elapsed time,
 # and all expected wait calls exist in the script.
 # Validates: Requirements 12.5
@@ -197,10 +197,10 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_wait_for_condition_function_has_progress_echo(
-        self, scenario2_deploy_text: str
+        self, metrics_deploy_text: str
     ):
         """The wait_for_condition function body contains an echo/printf."""
-        body = self._extract_wait_for_condition_body(scenario2_deploy_text)
+        body = self._extract_wait_for_condition_body(metrics_deploy_text)
         assert body is not None, (
             "wait_for_condition function not found in the script"
         )
@@ -211,10 +211,10 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_wait_for_condition_progress_includes_elapsed_time(
-        self, scenario2_deploy_text: str
+        self, metrics_deploy_text: str
     ):
         """The progress message in wait_for_condition includes elapsed time."""
-        body = self._extract_wait_for_condition_body(scenario2_deploy_text)
+        body = self._extract_wait_for_condition_body(metrics_deploy_text)
         assert body is not None, (
             "wait_for_condition function not found in the script"
         )
@@ -223,13 +223,13 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_at_least_five_wait_for_condition_calls_exist(
-        self, scenario2_deploy_text: str
+        self, metrics_deploy_text: str
     ):
         """The script contains at least 5 wait_for_condition invocations.
 
         Expected: repository, Telegraf, cert-manager, Contour, Prometheus.
         """
-        calls = self._extract_wait_for_condition_calls(scenario2_deploy_text)
+        calls = self._extract_wait_for_condition_calls(metrics_deploy_text)
         invocations = [
             c for c in calls
             if "wait_for_condition()" not in c  # exclude function def
@@ -242,7 +242,7 @@ class TestProperty3WaitLoopProgressReporting:
     @given(idx=st.integers(min_value=0, max_value=5))
     @settings(max_examples=100)
     def test_each_wait_call_passes_description_parameter(
-        self, scenario2_deploy_text: str, idx: int
+        self, metrics_deploy_text: str, idx: int
     ):
         """Every wait_for_condition call passes a description string.
 
@@ -250,7 +250,7 @@ class TestProperty3WaitLoopProgressReporting:
         a matching wait_for_condition call exists in the script.
         """
         desc_keyword = self.EXPECTED_WAIT_DESCRIPTIONS[idx]
-        calls = self._extract_wait_for_condition_calls(scenario2_deploy_text)
+        calls = self._extract_wait_for_condition_calls(metrics_deploy_text)
         invocations = [
             c for c in calls if "wait_for_condition()" not in c
         ]
@@ -261,7 +261,7 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 4: Telegraf Values YAML Round-Trip
+# Feature: deploy-metrics-vks-metrics-observability, Property 4: Telegraf Values YAML Round-Trip
 # Parse telegraf-values.yaml, serialize, parse again, assert deep equality
 # Validates: Requirements 15.1, 15.2
 
@@ -308,7 +308,7 @@ class TestProperty4TelegrafValuesYAMLRoundTrip:
         )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 5: Default Variable Pattern
+# Feature: deploy-metrics-vks-metrics-observability, Property 5: Default Variable Pattern
 # For any variable with a default, verify ${VAR:-default} pattern with non-empty default
 # Validates: Requirements 2.2
 
@@ -355,10 +355,10 @@ class TestProperty5DefaultVariablePattern:
         return {m.group(1): m.group(2) for m in pattern.finditer(script_text)}
 
     def test_all_expected_variables_have_defaults(
-        self, scenario2_deploy_text: str
+        self, metrics_deploy_text: str
     ):
         """All expected variables with defaults are present in the script."""
-        defaults = self._extract_default_assignments(scenario2_deploy_text)
+        defaults = self._extract_default_assignments(metrics_deploy_text)
         for var_name in self.VARIABLES_WITH_DEFAULTS:
             assert var_name in defaults, (
                 f"Variable '{var_name}' not found with a ${{VAR:-default}} "
@@ -368,11 +368,11 @@ class TestProperty5DefaultVariablePattern:
     @given(idx=st.integers(min_value=0, max_value=12))
     @settings(max_examples=100)
     def test_variable_default_is_non_empty(
-        self, scenario2_deploy_text: str, idx: int
+        self, metrics_deploy_text: str, idx: int
     ):
         """For any variable with a default, the default value is non-empty."""
         var_name = self.VARIABLES_WITH_DEFAULTS[idx]
-        defaults = self._extract_default_assignments(scenario2_deploy_text)
+        defaults = self._extract_default_assignments(metrics_deploy_text)
         assume(var_name in defaults)
         default_value = defaults[var_name]
         assert len(default_value.strip()) > 0, (
@@ -380,7 +380,7 @@ class TestProperty5DefaultVariablePattern:
         )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 6: Teardown Reverse Dependency Order
+# Feature: deploy-metrics-vks-metrics-observability, Property 6: Teardown Reverse Dependency Order
 # Verify deletion commands appear in correct order
 # Validates: Requirements 11.1
 
@@ -410,14 +410,14 @@ class TestProperty6TeardownReverseDependencyOrder:
     @given(idx=st.integers(min_value=0, max_value=5))
     @settings(max_examples=100)
     def test_adjacent_deletion_order(
-        self, scenario2_teardown_text: str, idx: int
+        self, metrics_teardown_text: str, idx: int
     ):
         """For any adjacent pair in the deletion order, the first appears before the second."""
         name_a, pattern_a = self.DELETION_ORDER[idx]
         name_b, pattern_b = self.DELETION_ORDER[idx + 1]
 
-        pos_a = scenario2_teardown_text.find(pattern_a)
-        pos_b = scenario2_teardown_text.find(pattern_b)
+        pos_a = metrics_teardown_text.find(pattern_a)
+        pos_b = metrics_teardown_text.find(pattern_b)
 
         assert pos_a != -1, (
             f"Deletion pattern for '{name_a}' not found in teardown script: "
@@ -433,16 +433,16 @@ class TestProperty6TeardownReverseDependencyOrder:
         )
 
     def test_all_deletion_patterns_present(
-        self, scenario2_teardown_text: str
+        self, metrics_teardown_text: str
     ):
         """All 7 deletion patterns must be present in the teardown script."""
         for name, pattern in self.DELETION_ORDER:
-            assert pattern in scenario2_teardown_text, (
+            assert pattern in metrics_teardown_text, (
                 f"Deletion pattern for '{name}' not found: '{pattern}'"
             )
 
 
-# Feature: scenario2-vks-metrics-observability, Property 7: Teardown Idempotency
+# Feature: deploy-metrics-vks-metrics-observability, Property 7: Teardown Idempotency
 # For any deletion step, verify existence check or error suppression
 # Validates: Requirements 11.6, 11.7
 
@@ -482,11 +482,11 @@ class TestProperty7TeardownIdempotency:
     @given(idx=st.integers(min_value=0, max_value=6))
     @settings(max_examples=100)
     def test_deletion_step_has_idempotency_guard(
-        self, scenario2_teardown_text: str, idx: int
+        self, metrics_teardown_text: str, idx: int
     ):
         """Every deletion step has an existence check or error suppression."""
         name, pattern = self.DELETION_STEPS[idx]
-        context = self._get_deletion_context(scenario2_teardown_text, pattern)
+        context = self._get_deletion_context(metrics_teardown_text, pattern)
 
         assert len(context) > 0, (
             f"Deletion pattern for '{name}' not found in teardown script"
@@ -496,7 +496,7 @@ class TestProperty7TeardownIdempotency:
         # delete_package helper function (kubectl get + grep check, || true).
         # Check both the call context and the helper function body.
         helper_context = self._get_deletion_context(
-            scenario2_teardown_text, "delete_package()", context_chars=1000
+            metrics_teardown_text, "delete_package()", context_chars=1000
         )
         combined_context = context + helper_context
 

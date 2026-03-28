@@ -1,8 +1,8 @@
-# Feature: gh-actions-scenarios-2-3, Property-Based Tests
-# Property-based tests for the GitHub Actions Scenarios 2 & 3 workflows.
+# Feature: gh-actions-metrics-gitops, Property-Based Tests
+# Property-based tests for the GitHub Actions Deploy Metrics and Deploy GitOps workflows.
 # Each test validates one correctness property from the design document.
 
-"""Property-based tests for the GitHub Actions Scenarios 2 & 3 workflows."""
+"""Property-based tests for the GitHub Actions Deploy Metrics and Deploy GitOps workflows."""
 
 import re
 
@@ -117,7 +117,7 @@ class TestProperty2RunnerConfigurationConsistency:
 
 
 # ===================================================================
-# Property 3: Scenario 2 Required Phase Names
+# Property 3: Deploy Metrics Required Phase Names
 # For any required phase name from the design doc list, a matching
 # step exists in metrics workflow.
 # Validates: Requirements 5.1, 5.2, 6.1, 7.1, 7.2, 8.1, 9.1, 9.2,
@@ -125,10 +125,10 @@ class TestProperty2RunnerConfigurationConsistency:
 # ===================================================================
 
 
-class TestProperty3Scenario2RequiredPhaseNames:
-    """Property 3: Scenario 2 Required Phase Names.
+class TestProperty3DeployMetricsRequiredPhaseNames:
+    """Property 3: Deploy Metrics Required Phase Names.
 
-    For any required phase name from the Scenario 2 phase list,
+    For any required phase name from the Deploy Metrics phase list,
     there must exist a step in deploy-vks-metrics.yml with a matching name.
 
     **Validates: Requirements 5.1, 5.2, 6.1, 7.1, 7.2, 8.1, 9.1, 9.2, 9.3, 10.1, 11.1, 12.1, 13.1, 13.3, 14.1, 14.2**
@@ -156,17 +156,17 @@ class TestProperty3Scenario2RequiredPhaseNames:
     @given(phase=st.sampled_from(REQUIRED_PHASES))
     @settings(max_examples=100)
     def test_phase_has_named_step(self, metrics_workflow_yaml: dict, phase: str):
-        """Each required Scenario 2 phase has a matching named step."""
+        """Each required Deploy Metrics phase has a matching named step."""
         steps = metrics_workflow_yaml["jobs"]["deploy"]["steps"]
         step_names = [s.get("name", "") for s in steps]
         assert any(phase.lower() == name.lower() for name in step_names), (
-            f"Required Scenario 2 phase '{phase}' not found in workflow steps. "
+            f"Required Deploy Metrics phase '{phase}' not found in workflow steps. "
             f"Available: {step_names}"
         )
 
 
 # ===================================================================
-# Property 4: Scenario 3 Required Phase Names
+# Property 4: Deploy GitOps Required Phase Names
 # For any required phase name from the design doc list, a matching
 # step exists in argocd workflow.
 # Validates: Requirements 15.1, 15.2, 16.1, 17.1, 17.2, 18.1, 19.1,
@@ -175,10 +175,10 @@ class TestProperty3Scenario2RequiredPhaseNames:
 # ===================================================================
 
 
-class TestProperty4Scenario3RequiredPhaseNames:
-    """Property 4: Scenario 3 Required Phase Names.
+class TestProperty4DeployGitOpsRequiredPhaseNames:
+    """Property 4: Deploy GitOps Required Phase Names.
 
-    For any required phase name from the Scenario 3 phase list,
+    For any required phase name from the Deploy GitOps phase list,
     there must exist a step in deploy-argocd.yml with a matching name.
 
     **Validates: Requirements 15.1, 15.2, 16.1, 17.1, 17.2, 18.1, 19.1, 20.1, 21.1, 22.1, 23.1, 24.1, 25.1, 26.1, 27.1, 27.3, 28.1, 29.1**
@@ -211,11 +211,11 @@ class TestProperty4Scenario3RequiredPhaseNames:
     @given(phase=st.sampled_from(REQUIRED_PHASES))
     @settings(max_examples=100)
     def test_phase_has_named_step(self, argocd_workflow_yaml: dict, phase: str):
-        """Each required Scenario 3 phase has a matching named step."""
+        """Each required Deploy GitOps phase has a matching named step."""
         steps = argocd_workflow_yaml["jobs"]["deploy"]["steps"]
         step_names = [s.get("name", "") for s in steps]
         assert any(phase.lower() == name.lower() for name in step_names), (
-            f"Required Scenario 3 phase '{phase}' not found in workflow steps. "
+            f"Required Deploy GitOps phase '{phase}' not found in workflow steps. "
             f"Available: {step_names}"
         )
 
@@ -302,14 +302,14 @@ class TestProperty6FailureSummaryConditionalStep:
 
 
 # ===================================================================
-# Property 7: Scenario 2 Job Summary Contains Required Fields
+# Property 7: Deploy Metrics Job Summary Contains Required Fields
 # For any required field, the Write Job Summary step references it.
 # Validates: Requirements 14.2
 # ===================================================================
 
 
-class TestProperty7Scenario2JobSummaryFields:
-    """Property 7: Scenario 2 Job Summary Contains Required Fields.
+class TestProperty7DeployMetricsJobSummaryFields:
+    """Property 7: Deploy Metrics Job Summary Contains Required Fields.
 
     For any required field from the set (CLUSTER_NAME, DOMAIN,
     CONTOUR_LB_IP, grafana, GRAFANA_ADMIN_PASSWORD), the Write Job
@@ -341,14 +341,14 @@ class TestProperty7Scenario2JobSummaryFields:
 
 
 # ===================================================================
-# Property 8: Scenario 3 Job Summary Contains Required Fields
+# Property 8: Deploy GitOps Job Summary Contains Required Fields
 # For any required field, the Write Job Summary step references it.
 # Validates: Requirements 29.1
 # ===================================================================
 
 
-class TestProperty8Scenario3JobSummaryFields:
-    """Property 8: Scenario 3 Job Summary Contains Required Fields.
+class TestProperty8DeployGitOpsJobSummaryFields:
+    """Property 8: Deploy GitOps Job Summary Contains Required Fields.
 
     For any required field from the set (CLUSTER_NAME, DOMAIN,
     CONTOUR_LB_IP, harbor, argocd, gitlab, FRONTEND_IP,
@@ -537,7 +537,7 @@ class TestProperty11IdempotentSecretCreationPattern:
 
 
 # ===================================================================
-# Property 12: Scenario 3 Microservices Demo Verification Completeness
+# Property 12: Deploy GitOps Microservices Demo Verification Completeness
 # For any microservice name from the 11 services, the Verify
 # Microservices Demo step references it.
 # Validates: Requirements 28.1
@@ -545,7 +545,7 @@ class TestProperty11IdempotentSecretCreationPattern:
 
 
 class TestProperty12MicroservicesDemoVerification:
-    """Property 12: Scenario 3 Microservices Demo Verification Completeness.
+    """Property 12: Deploy GitOps Microservices Demo Verification Completeness.
 
     For any microservice name from the set of 11 services, the Verify
     Microservices Demo step must reference it.
@@ -612,7 +612,7 @@ class TestProperty13ReadmeDocumentsWorkflowNames:
 # ===================================================================
 # Property 14: Self-Hosted Runner Comment Block
 # For any workflow text, it contains a comment mentioning self-hosted
-# runner and Scenario 1.
+# runner and Deploy Cluster.
 # Validates: Requirements 3.3
 # ===================================================================
 
@@ -622,7 +622,7 @@ class TestProperty14SelfHostedRunnerCommentBlock:
 
     For any workflow in the set {deploy-vks-metrics.yml, deploy-argocd.yml},
     the raw YAML text must contain a comment block mentioning the
-    self-hosted runner requirement and Scenario 1 prerequisite.
+    self-hosted runner requirement and Deploy Cluster prerequisite.
 
     **Validates: Requirements 3.3**
     """
@@ -637,7 +637,7 @@ class TestProperty14SelfHostedRunnerCommentBlock:
         argocd_workflow_yaml_text: str,
         workflow_name: str,
     ):
-        """Each workflow has a comment mentioning self-hosted runner and Scenario 1."""
+        """Each workflow has a comment mentioning self-hosted runner and Deploy Cluster."""
         text = (
             metrics_workflow_yaml_text if workflow_name == "metrics"
             else argocd_workflow_yaml_text
@@ -646,15 +646,15 @@ class TestProperty14SelfHostedRunnerCommentBlock:
         assert "self-hosted" in text_lower, (
             f"{workflow_name} workflow missing 'self-hosted' in comment block"
         )
-        assert "scenario 1" in text_lower, (
-            f"{workflow_name} workflow missing 'Scenario 1' in comment block"
+        assert "deploy cluster" in text_lower, (
+            f"{workflow_name} workflow missing 'Deploy Cluster' in comment block"
         )
 
 
 # ===================================================================
 # Property 15: Workflow Dispatch Inputs Completeness
-# For any required input (Scenario 2: cluster_name, telegraf_version;
-# Scenario 3: cluster_name), the workflow_dispatch defines it with
+# For any required input (Deploy Metrics: cluster_name, telegraf_version;
+# Deploy GitOps: cluster_name), the workflow_dispatch defines it with
 # required: true.
 # Validates: Requirements 1.1, 2.1
 # ===================================================================
@@ -663,8 +663,8 @@ class TestProperty14SelfHostedRunnerCommentBlock:
 class TestProperty15WorkflowDispatchInputsCompleteness:
     """Property 15: Workflow Dispatch Inputs Completeness.
 
-    For any required input parameter (Scenario 2: cluster_name,
-    telegraf_version; Scenario 3: cluster_name), the workflow_dispatch
+    For any required input parameter (Deploy Metrics: cluster_name,
+    telegraf_version; Deploy GitOps: cluster_name), the workflow_dispatch
     trigger must define it with required: true.
 
     **Validates: Requirements 1.1, 2.1**
@@ -678,7 +678,7 @@ class TestProperty15WorkflowDispatchInputsCompleteness:
     def test_metrics_required_input_is_required(
         self, metrics_workflow_yaml: dict, input_name: str
     ):
-        """Each required Scenario 2 input has required: true."""
+        """Each required Deploy Metrics input has required: true."""
         triggers = metrics_workflow_yaml.get("on") or metrics_workflow_yaml.get(True)
         inputs = triggers["workflow_dispatch"]["inputs"]
         assert input_name in inputs, (
@@ -693,7 +693,7 @@ class TestProperty15WorkflowDispatchInputsCompleteness:
     def test_argocd_required_input_is_required(
         self, argocd_workflow_yaml: dict, input_name: str
     ):
-        """Each required Scenario 3 input has required: true."""
+        """Each required Deploy GitOps input has required: true."""
         triggers = argocd_workflow_yaml.get("on") or argocd_workflow_yaml.get(True)
         inputs = triggers["workflow_dispatch"]["inputs"]
         assert input_name in inputs, (

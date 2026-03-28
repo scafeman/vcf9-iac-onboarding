@@ -3,7 +3,7 @@
 This folder contains two types of resources:
 
 1. **Sample Manifests** — standalone YAML files for creating individual VCF 9 resources. Start here if you are following the [VCF 9 IaC Onboarding Guide](../vcf9-iac-onboarding-guide.md) step by step.
-2. **Automation Scenarios** — end-to-end shell scripts that orchestrate full deployments. Use these once you are familiar with the individual resources.
+2. **Automation Scripts** — end-to-end shell scripts that orchestrate full deployments. Use these once you are familiar with the individual resources.
 
 ---
 
@@ -215,23 +215,23 @@ kubectl delete -f sample-vks-functional-test.yaml
 
 ---
 
-## Automation Scenarios
+## Automation Scripts
 
-These end-to-end scripts orchestrate full deployments across multiple VCF resources. Each scenario builds on the previous one.
+These end-to-end scripts orchestrate full deployments across multiple VCF resources. Each deployment builds on the previous one.
 
 ## Dependency Chain
 
 ```
-Scenario 1: Full Stack Deploy (VKS cluster provisioning)
-  ├─► Scenario 2: VKS Metrics Observability (monitoring stack)
-  └─► Scenario 3: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
+Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
+  ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
+  └─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
 ```
 
-Scenarios 2 and 3 both require a running VKS cluster provisioned by Scenario 1. They are independent of each other and can be deployed in any order (or only one of them).
+Deploy Metrics and Deploy GitOps both require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order (or only one of them).
 
 ---
 
-## Scenario 1: Full Stack Deploy
+## Deploy Cluster: Full Stack Deploy
 
 Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, and cluster lifecycle — from zero to a running Kubernetes cluster with LoadBalancer support and `nfs` storageClass.
 
@@ -242,26 +242,26 @@ Provisions a complete VKS cluster from scratch using the VCF CLI. Handles projec
 | Teardown | `bash examples/deploy-cluster/teardown-cluster.sh` |
 | Output | Running VKS cluster + admin kubeconfig file |
 
-## Scenario 2: VKS Metrics Observability
+## Deploy Metrics: VKS Metrics Observability
 
 Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collection), Prometheus (metrics storage), and Grafana (dashboards). Uses VCF Supervisor packages for Telegraf and Prometheus, and Helm for the Grafana Operator.
 
 | | |
 |---|---|
 | Folder | [`deploy-metrics/`](deploy-metrics/) |
-| Depends on | Scenario 1 (running VKS cluster) |
+| Depends on | Deploy Cluster (running VKS cluster) |
 | Deploy | `bash examples/deploy-metrics/deploy-metrics.sh` |
 | Teardown | `bash examples/deploy-metrics/teardown-metrics.sh` |
 | Output | Grafana dashboards with Kubernetes cluster metrics |
 
-## Scenario 3: Self-Contained ArgoCD Consumption Model
+## Deploy GitOps: Self-Contained ArgoCD Consumption Model
 
 Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application.
 
 | | |
 |---|---|
 | Folder | [`deploy-gitops/`](deploy-gitops/) |
-| Depends on | Scenario 1 (running VKS cluster with LoadBalancer + nfs storageClass) |
+| Depends on | Deploy Cluster (running VKS cluster with LoadBalancer + nfs storageClass) |
 | Deploy | `bash examples/deploy-gitops/deploy-gitops.sh` |
 | Teardown | `bash examples/deploy-gitops/teardown-gitops.sh` |
 | Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |

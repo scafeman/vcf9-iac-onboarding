@@ -6,21 +6,21 @@ This repository contains three GitHub Actions workflows that automate the end-to
 
 | Workflow | File | Description |
 |---|---|---|
-| Scenario 1 — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, and functional validation |
-| Scenario 2 — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
-| Scenario 3 — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
+| Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, and functional validation |
+| Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
+| Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
 
 ## Execution Order
 
-Scenario 1 must complete successfully before Scenarios 2 or 3 can run. Scenarios 2 and 3 can run in any order after Scenario 1.
+Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps can run. Deploy Metrics and Deploy GitOps can run in any order after Deploy Cluster.
 
 ```
-Scenario 1 (deploy-vks.yml)  ← must run first
-    ├── Scenario 2 (deploy-vks-metrics.yml)
-    └── Scenario 3 (deploy-argocd.yml)
+Deploy Cluster (deploy-vks.yml)  ← must run first
+    ├── Deploy Metrics (deploy-vks-metrics.yml)
+    └── Deploy GitOps (deploy-argocd.yml)
 ```
 
-Scenarios 2 and 3 share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
+Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
 
 ## Shared Configuration
 
@@ -165,11 +165,11 @@ The runner image is built from `Dockerfile.runner`, which extends `myoung34/gith
 
 ---
 
-# Scenario 1 — Deploy VKS Cluster (`deploy-vks.yml`)
+# Deploy Cluster — Deploy VKS Cluster (`deploy-vks.yml`)
 
 ## Overview
 
-Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and namespace provisioning, context bridge, cluster deployment, kubeconfig retrieval, and functional validation. This workflow must complete successfully before Scenarios 2 or 3 can run.
+Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and namespace provisioning, context bridge, cluster deployment, kubeconfig retrieval, and functional validation. This workflow must complete successfully before Deploy Metrics or Deploy GitOps can run.
 
 ## Parameters
 
@@ -305,11 +305,11 @@ curl -X POST \
 
 ---
 
-# Scenario 2 — Deploy VKS Metrics Stack (`deploy-vks-metrics.yml`)
+# Deploy Metrics — Deploy VKS Metrics Stack (`deploy-vks-metrics.yml`)
 
 ## Overview
 
-Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster provisioned by Scenario 1. Requires a running VKS cluster with a valid admin kubeconfig file.
+Deploys the VKS Metrics Observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster provisioned by Deploy Cluster. Requires a running VKS cluster with a valid admin kubeconfig file.
 
 ## Parameters
 
@@ -398,7 +398,7 @@ curl -X POST \
 
 ### Kubeconfig not found
 
-- Verify Scenario 1 has completed and the kubeconfig file exists on the runner
+- Verify Deploy Cluster has completed and the kubeconfig file exists on the runner
 - If stored at a non-default path, pass `--kubeconfig-path` via the trigger script or set the `KUBECONFIG_PATH` secret
 
 ### Package reconciliation timeout
@@ -420,11 +420,11 @@ curl -X POST \
 
 ---
 
-# Scenario 3 — Deploy ArgoCD Stack (`deploy-argocd.yml`)
+# Deploy GitOps — Deploy ArgoCD Stack (`deploy-argocd.yml`)
 
 ## Overview
 
-Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Scenario 1. Requires a running VKS cluster with a valid admin kubeconfig file.
+Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Deploy Cluster. Requires a running VKS cluster with a valid admin kubeconfig file.
 
 ## Parameters
 
@@ -513,7 +513,7 @@ curl -X POST \
 
 ## Shared Infrastructure Idempotency
 
-Scenarios 2 and 3 share these components, all handled idempotently:
+Deploy Metrics and Deploy GitOps share these components, all handled idempotently:
 
 | Shared Component | Idempotency Check | Behavior |
 |---|---|---|
@@ -529,14 +529,14 @@ Scenarios 2 and 3 share these components, all handled idempotently:
 
 ### Kubeconfig not found
 
-- Verify Scenario 1 has completed and the kubeconfig file exists on the runner
+- Verify Deploy Cluster has completed and the kubeconfig file exists on the runner
 - If stored at a non-default path, pass `--kubeconfig-path` via the trigger script
 
 ### Cluster unreachable
 
-- Verify the VKS cluster from Scenario 1 is still running
+- Verify the VKS cluster from Deploy Cluster is still running
 - Check network connectivity from the runner host to the cluster API endpoint
-- If the kubeconfig contains an expired token, re-run Scenario 1 to regenerate it
+- If the kubeconfig contains an expired token, re-run Deploy Cluster to regenerate it
 
 ### Package reconciliation timeout
 

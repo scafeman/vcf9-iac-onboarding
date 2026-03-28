@@ -66,7 +66,7 @@ def sample_manifest_content() -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Scenario Script Fixtures
+# Deploy Cluster Script Fixtures
 # ---------------------------------------------------------------------------
 
 SCRIPT_PATH = os.path.join(
@@ -128,7 +128,7 @@ def _extract_phases(script_text: str) -> dict[int, str]:
 
 @pytest.fixture(scope="session")
 def script_text() -> str:
-    """Return the full text of the scenario script."""
+    """Return the full text of the deploy cluster script."""
     with open(SCRIPT_PATH, encoding="utf-8") as f:
         return f.read()
 
@@ -152,14 +152,14 @@ def script_phases(script_text: str) -> dict[int, str]:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2 Fixtures
+# Deploy Metrics Fixtures
 # ---------------------------------------------------------------------------
 
-SCENARIO2_DEPLOY_PATH = os.path.join(
+METRICS_DEPLOY_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "deploy-metrics", "deploy-metrics.sh"
 )
 
-SCENARIO2_TEARDOWN_PATH = os.path.join(
+METRICS_TEARDOWN_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "deploy-metrics", "teardown-metrics.sh"
 )
 
@@ -169,23 +169,23 @@ TELEGRAF_VALUES_PATH = os.path.join(
 
 
 @pytest.fixture(scope="session")
-def scenario2_deploy_text() -> str:
-    """Return the full text of the Scenario 2 deploy script."""
-    with open(SCENARIO2_DEPLOY_PATH, encoding="utf-8") as f:
+def metrics_deploy_text() -> str:
+    """Return the full text of the Deploy Metrics deploy script."""
+    with open(METRICS_DEPLOY_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def scenario2_teardown_text() -> str:
-    """Return the full text of the Scenario 2 teardown script."""
-    with open(SCENARIO2_TEARDOWN_PATH, encoding="utf-8") as f:
+def metrics_teardown_text() -> str:
+    """Return the full text of the Deploy Metrics teardown script."""
+    with open(METRICS_TEARDOWN_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def scenario2_deploy_phases(scenario2_deploy_text: str) -> dict[int, str]:
+def metrics_deploy_phases(metrics_deploy_text: str) -> dict[int, str]:
     """Return phase sections from the deploy script keyed by phase number."""
-    return _extract_phases(scenario2_deploy_text)
+    return _extract_phases(metrics_deploy_text)
 
 
 @pytest.fixture(scope="session")
@@ -202,14 +202,14 @@ def telegraf_values_parsed(telegraf_values_text: str):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3 Fixtures
+# Deploy GitOps Fixtures
 # ---------------------------------------------------------------------------
 
-SCENARIO3_DEPLOY_PATH = os.path.join(
+GITOPS_DEPLOY_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "deploy-gitops", "deploy-gitops.sh"
 )
 
-SCENARIO3_TEARDOWN_PATH = os.path.join(
+GITOPS_TEARDOWN_PATH = os.path.join(
     os.path.dirname(__file__), "..", "examples", "deploy-gitops", "teardown-gitops.sh"
 )
 
@@ -239,23 +239,23 @@ ARGOCD_VALUES_PATH = os.path.join(
 
 
 @pytest.fixture(scope="session")
-def scenario3_deploy_text() -> str:
-    """Return the full text of the Scenario 3 deploy script."""
-    with open(SCENARIO3_DEPLOY_PATH, encoding="utf-8") as f:
+def gitops_deploy_text() -> str:
+    """Return the full text of the Deploy GitOps deploy script."""
+    with open(GITOPS_DEPLOY_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def scenario3_teardown_text() -> str:
-    """Return the full text of the Scenario 3 teardown script."""
-    with open(SCENARIO3_TEARDOWN_PATH, encoding="utf-8") as f:
+def gitops_teardown_text() -> str:
+    """Return the full text of the Deploy GitOps teardown script."""
+    with open(GITOPS_TEARDOWN_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def scenario3_deploy_phases(scenario3_deploy_text: str) -> dict[int, str]:
-    """Return phase sections from the Scenario 3 deploy script keyed by phase number."""
-    return _extract_phases(scenario3_deploy_text)
+def gitops_deploy_phases(gitops_deploy_text: str) -> dict[int, str]:
+    """Return phase sections from the Deploy GitOps deploy script keyed by phase number."""
+    return _extract_phases(gitops_deploy_text)
 
 
 @pytest.fixture(scope="session")
@@ -392,7 +392,7 @@ def docker_compose_yaml() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# GitHub Actions Scenarios 2 & 3 Workflow Fixtures
+# GitHub Actions Deploy Metrics and Deploy GitOps Workflow Fixtures
 # ---------------------------------------------------------------------------
 
 METRICS_WORKFLOW_YAML_PATH = os.path.join(

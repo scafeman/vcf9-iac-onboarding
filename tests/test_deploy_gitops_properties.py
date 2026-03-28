@@ -1,8 +1,8 @@
-# Feature: scenario3-self-contained-deploy, Property 1: Phase Messaging
+# Feature: deploy-gitops-self-contained-deploy, Property 1: Phase Messaging
 # Every phase has pre (log_step) and post (log_success) messages
 # Validates: Requirements 17.1, 17.2
 
-"""Property-based tests for the VCF 9 Scenario 3 — Self-Contained ArgoCD Consumption Model scripts."""
+"""Property-based tests for the VCF 9 Deploy GitOps — Self-Contained ArgoCD Consumption Model scripts."""
 
 import re
 
@@ -22,22 +22,22 @@ class TestProperty1PhaseMessaging:
     **Validates: Requirements 17.1, 17.2**
     """
 
-    def test_all_fifteen_phases_found(self, scenario3_deploy_phases: dict[int, str]):
+    def test_all_fifteen_phases_found(self, gitops_deploy_phases: dict[int, str]):
         """Precondition: the fixture must find phases 1 through 15."""
         for phase_num in range(1, 16):
-            assert phase_num in scenario3_deploy_phases, (
+            assert phase_num in gitops_deploy_phases, (
                 f"Phase {phase_num} not found in the script. "
-                f"Found phases: {sorted(scenario3_deploy_phases.keys())}"
+                f"Found phases: {sorted(gitops_deploy_phases.keys())}"
             )
 
     @given(phase_num=st.integers(min_value=1, max_value=15))
     @settings(max_examples=100)
     def test_phase_has_pre_message(
-        self, scenario3_deploy_phases: dict[int, str], phase_num: int
+        self, gitops_deploy_phases: dict[int, str], phase_num: int
     ):
         """Every phase has a log_step call (pre-message)."""
-        assume(phase_num in scenario3_deploy_phases)
-        phase_text = scenario3_deploy_phases[phase_num]
+        assume(phase_num in gitops_deploy_phases)
+        phase_text = gitops_deploy_phases[phase_num]
         assert "log_step" in phase_text, (
             f"Phase {phase_num} is missing a log_step pre-message"
         )
@@ -45,17 +45,17 @@ class TestProperty1PhaseMessaging:
     @given(phase_num=st.integers(min_value=1, max_value=15))
     @settings(max_examples=100)
     def test_phase_has_post_message(
-        self, scenario3_deploy_phases: dict[int, str], phase_num: int
+        self, gitops_deploy_phases: dict[int, str], phase_num: int
     ):
         """Every phase has a log_success call (post-message)."""
-        assume(phase_num in scenario3_deploy_phases)
-        phase_text = scenario3_deploy_phases[phase_num]
+        assume(phase_num in gitops_deploy_phases)
+        phase_text = gitops_deploy_phases[phase_num]
         assert "log_success" in phase_text, (
             f"Phase {phase_num} is missing a log_success post-message"
         )
 
 
-# Feature: scenario3-self-contained-deploy, Property 2: Distinct Exit Codes
+# Feature: deploy-gitops-self-contained-deploy, Property 2: Distinct Exit Codes
 # No two different failure categories share the same exit code
 # Validates: Requirements 10.2, 17.4
 
@@ -94,26 +94,26 @@ class TestProperty2DistinctExitCodes:
         """Extract all exit code integers from ``exit N`` statements."""
         return [int(m.group(1)) for m in re.finditer(r"\bexit\s+(\d+)", script_text)]
 
-    def test_all_failure_exit_codes_present(self, scenario3_deploy_text: str):
+    def test_all_failure_exit_codes_present(self, gitops_deploy_text: str):
         """Exit codes 1 through 14 must all appear in the script."""
-        codes = set(self._extract_exit_codes(scenario3_deploy_text))
+        codes = set(self._extract_exit_codes(gitops_deploy_text))
         for code in range(1, 15):
             assert code in codes, (
                 f"Exit code {code} ({self.EXPECTED_EXIT_CODES[code]}) "
                 f"not found in the script"
             )
 
-    def test_exit_zero_appears_once(self, scenario3_deploy_text: str):
+    def test_exit_zero_appears_once(self, gitops_deploy_text: str):
         """``exit 0`` should appear exactly once (the success path)."""
-        codes = self._extract_exit_codes(scenario3_deploy_text)
+        codes = self._extract_exit_codes(gitops_deploy_text)
         zero_count = codes.count(0)
         assert zero_count == 1, (
             f"Expected exactly 1 'exit 0' (success path), found {zero_count}"
         )
 
-    def test_non_zero_exit_codes_are_all_distinct(self, scenario3_deploy_text: str):
+    def test_non_zero_exit_codes_are_all_distinct(self, gitops_deploy_text: str):
         """All 14 non-zero exit codes (1-14) are distinct failure categories."""
-        codes = self._extract_exit_codes(scenario3_deploy_text)
+        codes = self._extract_exit_codes(gitops_deploy_text)
         non_zero = [c for c in codes if c != 0]
         unique_non_zero = set(non_zero)
         assert len(unique_non_zero) == 14, (
@@ -124,15 +124,15 @@ class TestProperty2DistinctExitCodes:
     @given(data=st.data())
     @settings(max_examples=100)
     def test_random_exit_code_pairs_are_distinct(
-        self, scenario3_deploy_text: str, data: st.DataObject
+        self, gitops_deploy_text: str, data: st.DataObject
     ):
         """Randomly pick two failure categories and verify distinct codes."""
         code_to_contexts: dict[int, set[str]] = {}
-        for m in re.finditer(r"\bexit\s+(\d+)", scenario3_deploy_text):
+        for m in re.finditer(r"\bexit\s+(\d+)", gitops_deploy_text):
             code = int(m.group(1))
             start = max(0, m.start() - 200)
-            end = min(len(scenario3_deploy_text), m.end() + 50)
-            context = scenario3_deploy_text[start:end]
+            end = min(len(gitops_deploy_text), m.end() + 50)
+            context = gitops_deploy_text[start:end]
             code_to_contexts.setdefault(code, set()).add(context)
 
         non_zero_codes = [c for c in code_to_contexts if c != 0]
@@ -157,7 +157,7 @@ class TestProperty2DistinctExitCodes:
         )
 
 
-# Feature: scenario3-self-contained-deploy, Property 3: Wait Loop Progress Reporting
+# Feature: deploy-gitops-self-contained-deploy, Property 3: Wait Loop Progress Reporting
 # The wait_for_condition function contains progress echo with elapsed time,
 # and all expected wait calls exist in the script.
 # Validates: Requirements 17.5
@@ -204,10 +204,10 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_wait_for_condition_function_has_progress_echo(
-        self, scenario3_deploy_text: str
+        self, gitops_deploy_text: str
     ):
         """The wait_for_condition function body contains an echo/printf."""
-        body = self._extract_wait_for_condition_body(scenario3_deploy_text)
+        body = self._extract_wait_for_condition_body(gitops_deploy_text)
         assert body is not None, (
             "wait_for_condition function not found in the script"
         )
@@ -218,10 +218,10 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_wait_for_condition_progress_includes_elapsed_time(
-        self, scenario3_deploy_text: str
+        self, gitops_deploy_text: str
     ):
         """The progress message in wait_for_condition includes elapsed time."""
-        body = self._extract_wait_for_condition_body(scenario3_deploy_text)
+        body = self._extract_wait_for_condition_body(gitops_deploy_text)
         assert body is not None, (
             "wait_for_condition function not found in the script"
         )
@@ -230,10 +230,10 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
     def test_at_least_nine_wait_for_condition_calls_exist(
-        self, scenario3_deploy_text: str
+        self, gitops_deploy_text: str
     ):
         """The script contains at least 8 wait_for_condition invocations."""
-        calls = self._extract_wait_for_condition_calls(scenario3_deploy_text)
+        calls = self._extract_wait_for_condition_calls(gitops_deploy_text)
         invocations = [
             c for c in calls
             if "wait_for_condition()" not in c  # exclude function def
@@ -246,11 +246,11 @@ class TestProperty3WaitLoopProgressReporting:
     @given(idx=st.integers(min_value=0, max_value=7))
     @settings(max_examples=100)
     def test_each_wait_call_passes_description_parameter(
-        self, scenario3_deploy_text: str, idx: int
+        self, gitops_deploy_text: str, idx: int
     ):
         """Every wait_for_condition call passes a description string."""
         desc_keyword = self.EXPECTED_WAIT_DESCRIPTIONS[idx]
-        calls = self._extract_wait_for_condition_calls(scenario3_deploy_text)
+        calls = self._extract_wait_for_condition_calls(gitops_deploy_text)
         invocations = [
             c for c in calls if "wait_for_condition()" not in c
         ]
@@ -261,7 +261,7 @@ class TestProperty3WaitLoopProgressReporting:
         )
 
 
-# Feature: scenario3-self-contained-deploy, Property 4: Supporting YAML Round-Trip
+# Feature: deploy-gitops-self-contained-deploy, Property 4: Supporting YAML Round-Trip
 # Parse each YAML file, serialize, parse again, assert deep equality
 # Validates: Requirements 11.1, 11.2, 11.3, 11.5
 
@@ -399,7 +399,7 @@ class TestProperty4SupportingYAMLRoundTrip:
         )
 
 
-# Feature: scenario3-self-contained-deploy, Property 5: Default Variable Pattern
+# Feature: deploy-gitops-self-contained-deploy, Property 5: Default Variable Pattern
 # For any variable with a default, verify ${VAR:-default} pattern with non-empty default
 # Validates: Requirements 1.1, 2.1–2.12
 
@@ -454,10 +454,10 @@ class TestProperty5DefaultVariablePattern:
         return {m.group(1): m.group(2) for m in pattern.finditer(script_text)}
 
     def test_all_expected_variables_have_defaults(
-        self, scenario3_deploy_text: str
+        self, gitops_deploy_text: str
     ):
         """All expected variables with defaults are present in the script."""
-        defaults = self._extract_default_assignments(scenario3_deploy_text)
+        defaults = self._extract_default_assignments(gitops_deploy_text)
         for var_name in self.VARIABLES_WITH_DEFAULTS:
             assert var_name in defaults, (
                 f"Variable '{var_name}' not found with a ${{VAR:-default}} "
@@ -467,11 +467,11 @@ class TestProperty5DefaultVariablePattern:
     @given(idx=st.integers(min_value=0, max_value=25))
     @settings(max_examples=100)
     def test_variable_default_is_non_empty(
-        self, scenario3_deploy_text: str, idx: int
+        self, gitops_deploy_text: str, idx: int
     ):
         """For any variable with a default, the default value is non-empty."""
         var_name = self.VARIABLES_WITH_DEFAULTS[idx]
-        defaults = self._extract_default_assignments(scenario3_deploy_text)
+        defaults = self._extract_default_assignments(gitops_deploy_text)
         assume(var_name in defaults)
         default_value = defaults[var_name]
         assert len(default_value.strip()) > 0, (
@@ -479,7 +479,7 @@ class TestProperty5DefaultVariablePattern:
         )
 
 
-# Feature: scenario3-self-contained-deploy, Property 6: Teardown Reverse Dependency Order
+# Feature: deploy-gitops-self-contained-deploy, Property 6: Teardown Reverse Dependency Order
 # Verify deletion commands appear in correct order
 # Validates: Requirements 12.5, 18.1
 
@@ -510,14 +510,14 @@ class TestProperty6TeardownReverseDependencyOrder:
     @given(idx=st.integers(min_value=0, max_value=5))
     @settings(max_examples=100)
     def test_adjacent_deletion_order(
-        self, scenario3_teardown_text: str, idx: int
+        self, gitops_teardown_text: str, idx: int
     ):
         """For any adjacent pair in the deletion order, the first appears before the second."""
         name_a, pattern_a = self.DELETION_ORDER[idx]
         name_b, pattern_b = self.DELETION_ORDER[idx + 1]
 
-        pos_a = scenario3_teardown_text.find(pattern_a)
-        pos_b = scenario3_teardown_text.find(pattern_b)
+        pos_a = gitops_teardown_text.find(pattern_a)
+        pos_b = gitops_teardown_text.find(pattern_b)
 
         assert pos_a != -1, (
             f"Deletion pattern for '{name_a}' not found in teardown script: "
@@ -533,16 +533,16 @@ class TestProperty6TeardownReverseDependencyOrder:
         )
 
     def test_all_deletion_patterns_present(
-        self, scenario3_teardown_text: str
+        self, gitops_teardown_text: str
     ):
         """All 7 deletion patterns must be present in the teardown script."""
         for name, pattern in self.DELETION_ORDER:
-            assert pattern in scenario3_teardown_text, (
+            assert pattern in gitops_teardown_text, (
                 f"Deletion pattern for '{name}' not found: '{pattern}'"
             )
 
 
-# Feature: scenario3-self-contained-deploy, Property 7: Teardown Idempotency
+# Feature: deploy-gitops-self-contained-deploy, Property 7: Teardown Idempotency
 # For any deletion step, verify existence check or error suppression
 # Validates: Requirements 12.9, 18.11, 18.12
 
@@ -586,11 +586,11 @@ class TestProperty7TeardownIdempotency:
     @given(idx=st.integers(min_value=0, max_value=10))
     @settings(max_examples=100)
     def test_deletion_step_has_idempotency_guard(
-        self, scenario3_teardown_text: str, idx: int
+        self, gitops_teardown_text: str, idx: int
     ):
         """Every deletion step has an existence check or error suppression."""
         name, pattern = self.DELETION_STEPS[idx]
-        context = self._get_deletion_context(scenario3_teardown_text, pattern)
+        context = self._get_deletion_context(gitops_teardown_text, pattern)
 
         assert len(context) > 0, (
             f"Deletion pattern for '{name}' not found in teardown script"

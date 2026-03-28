@@ -1,8 +1,8 @@
-# Feature: vcf9-scenario1-example, Property 1: Self-Containment
+# Feature: vcf9-deploy-cluster-example, Property 1: Self-Containment
 # All kubectl create/apply commands use stdin (-f -), never external files
 # Validates: Requirements 1.4
 
-"""Property-based tests for the VCF 9 Scenario 1 script."""
+"""Property-based tests for the VCF 9 Deploy Cluster script."""
 
 import re
 
@@ -59,7 +59,7 @@ class TestProperty1SelfContainment:
             )
 
 
-# Feature: vcf9-scenario1-example, Property 2: Phase Messaging
+# Feature: vcf9-deploy-cluster-example, Property 2: Phase Messaging
 # Every phase has pre (log_step) and post (log_success) messages
 # Validates: Requirements 9.1, 9.2
 
@@ -112,7 +112,7 @@ class TestProperty2PhaseMessaging:
         )
 
 
-# Feature: vcf9-scenario1-example, Property 3: Distinct Exit Codes
+# Feature: vcf9-deploy-cluster-example, Property 3: Distinct Exit Codes
 # No two different failure categories share the same exit code
 # Validates: Requirements 9.4
 
@@ -218,7 +218,7 @@ class TestProperty3DistinctExitCodes:
         )
 
 
-# Feature: vcf9-scenario1-example, Property 4: Wait Loop Progress Reporting
+# Feature: vcf9-deploy-cluster-example, Property 4: Wait Loop Progress Reporting
 # The wait_for_condition function body contains an echo/printf for progress,
 # and all 4 expected wait_for_condition calls exist in the script.
 # Validates: Requirements 9.5
@@ -333,7 +333,7 @@ class TestProperty4WaitLoopProgressReporting:
         )
 
 
-# Feature: vcf9-scenario1-example, Property 5: Heredoc YAML Validity
+# Feature: vcf9-deploy-cluster-example, Property 5: Heredoc YAML Validity
 # Substituting all bash variables with valid test values and parsing with
 # a YAML parser shall produce valid YAML documents without parse errors.
 # Validates: Requirements 10.1
@@ -452,7 +452,7 @@ class TestProperty5HeredocYAMLValidity:
         )
 
 
-# Feature: vcf9-scenario1-example, Property 6: Multi-Document YAML Separators
+# Feature: vcf9-deploy-cluster-example, Property 6: Multi-Document YAML Separators
 # For any heredoc containing multiple resources, splitting on '---' and parsing
 # each segment shall produce exactly one valid resource object per segment with
 # apiVersion and kind fields present.
@@ -547,7 +547,7 @@ class TestProperty6MultiDocumentYAMLSeparators:
                 f"'kind'. Keys: {list(doc.keys())}"
             )
 
-# Feature: vcf9-scenario1-example, Property 7: API Version Consistency With Onboarding Guide
+# Feature: vcf9-deploy-cluster-example, Property 7: API Version Consistency With Onboarding Guide
 # For any Kubernetes resource manifest in the script, the apiVersion and kind
 # pair shall match the corresponding resource definition in the VCF 9 IaC
 # Onboarding Guide. The script shall not introduce API version or kind values

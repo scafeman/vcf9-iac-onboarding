@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 1 — Full Stack Teardown Script
+# VCF 9 Deploy Cluster — Full Stack Teardown Script
 #
 # This script reverses the full-stack deploy, deleting all resources in the
 # correct dependency order:
@@ -286,7 +286,7 @@ fi
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 1 — Teardown Complete"
+echo "  VCF 9 Deploy Cluster — Teardown Complete"
 echo "============================================="
 echo "  Cluster:    ${CLUSTER_NAME} (deleted)"
 echo "  Project:    ${PROJECT_NAME} (deleted)"

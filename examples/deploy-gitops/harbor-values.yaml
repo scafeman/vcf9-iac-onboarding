@@ -1,4 +1,4 @@
-# Harbor Helm values for Scenario 3 — Self-Contained ArgoCD Consumption Model
+# Harbor Helm values for Deploy GitOps — Self-Contained ArgoCD Consumption Model
 # Chart: harbor/harbor
 # Installs Harbor as an in-cluster container registry exposed via Contour Ingress.
 

@@ -1,14 +1,14 @@
 # =============================================================================
-# Deploy VKS Metrics Stack — GitHub Actions Workflow (Scenario 2)
+# Deploy VKS Metrics Stack — GitHub Actions Workflow (Deploy Metrics)
 # =============================================================================
 #
 # This workflow deploys the VKS Metrics Observability stack (Telegraf,
-# Prometheus, Grafana) on an existing VKS cluster provisioned by Scenario 1.
+# Prometheus, Grafana) on an existing VKS cluster provisioned by Deploy Cluster.
 # Each provisioning phase is implemented as individual named workflow steps
 # with inline bash commands.
 #
 # Prerequisites:
-#   - Scenario 1 must have completed successfully — a running VKS cluster
+#   - Deploy Cluster must have completed successfully — a running VKS cluster
 #     with a valid admin kubeconfig file is required.
 #   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
 #     network access to the VKS cluster API. All required tools (VCF CLI,
@@ -110,7 +110,7 @@ jobs:
             echo "NAMESPACE_CONTEXT='$NAMESPACE_CONTEXT'"
 
             if [ -z "$NAMESPACE_CONTEXT" ]; then
-              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Scenario 1 has completed."
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Deploy Cluster has completed."
               exit 1
             fi
             echo "Found namespace context: $NAMESPACE_CONTEXT"
@@ -132,7 +132,7 @@ jobs:
           fi
 
           if [ ! -f "$KUBECONFIG_PATH" ]; then
-            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
             exit 1
           fi
           echo "Kubeconfig set to '$KUBECONFIG_PATH'"

@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 2 — VKS Metrics Observability Teardown Script
+# VCF 9 Deploy Metrics — VKS Metrics Observability Teardown Script
 #
 # This script removes the metrics observability stack installed by the
-# Scenario 2 deploy script, deleting resources in reverse dependency order:
+# Deploy Metrics deploy script, deleting resources in reverse dependency order:
 #   Phase 1: Kubeconfig Setup & Connectivity Check
 #   Phase 2: Delete Grafana (Operator, instance, namespace)
 #   Phase 3: Delete Packages (strip finalizers, delete PackageInstalls & Apps)
@@ -385,7 +385,7 @@ log_success "Cluster-scoped resources cleaned up"
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 2 — Teardown Complete"
+echo "  VCF 9 Deploy Metrics — Teardown Complete"
 echo "============================================="
 echo "  Cluster:    ${CLUSTER_NAME}"
 echo "  Namespace:  ${PACKAGE_NAMESPACE} (deleted)"

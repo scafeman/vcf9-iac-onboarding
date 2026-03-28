@@ -1,10 +1,10 @@
-# Scenario 2: VKS Metrics Observability Deploy Script
+# Deploy Metrics: VKS Metrics Observability Deploy Script
 
 ## Overview
 
-`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Scenario 1. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Deploy Cluster. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
 
-Grafana is exposed externally via a Contour Ingress with TLS termination using a self-signed wildcard certificate (same pattern as Scenario 3). Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
+Grafana is exposed externally via a Contour Ingress with TLS termination using a self-signed wildcard certificate (same pattern as Deploy GitOps). Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
@@ -14,7 +14,7 @@ The script is fully non-interactive. All configuration is driven by environment 
 
 ### Phase 1: Kubeconfig Setup & Connectivity Check
 
-Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced by Scenario 1. Verifies the file exists and that the VKS cluster is reachable by running `kubectl get namespaces`. Exits with code 2 if the kubeconfig is missing or the cluster is unreachable.
+Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced by Deploy Cluster. Verifies the file exists and that the VKS cluster is reachable by running `kubectl get namespaces`. Exits with code 2 if the kubeconfig is missing or the cluster is unreachable.
 
 ### Phase 2: Node Sizing Advisory
 
@@ -56,7 +56,7 @@ Installs Contour (`contour.kubernetes.vmware.com`) as a prerequisite for Prometh
 
 ### Phase 7b: Self-Signed Certificate Generation
 
-Generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DOMAIN>`). If certificates already exist in the `./certs` directory (e.g., from a previous Scenario 3 deployment), this phase is skipped. The wildcard certificate is used for TLS termination on the Grafana Ingress.
+Generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DOMAIN>`). If certificates already exist in the `./certs` directory (e.g., from a previous Deploy GitOps deployment), this phase is skipped. The wildcard certificate is used for TLS termination on the Grafana Ingress.
 
 ### Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
 
@@ -98,8 +98,8 @@ Lists all installed packages via `vcf package installed list`, checks that Teleg
 
 ## Prerequisites
 
-- **Scenario 1 completed successfully** — a VKS cluster must be running and accessible. The deploy script does not create a cluster; it installs observability packages on an existing one.
-- **Valid admin kubeconfig file** for the target VKS cluster (produced by Scenario 1's Phase 5). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
+- **Deploy Cluster completed successfully** — a VKS cluster must be running and accessible. The deploy script does not create a cluster; it installs observability packages on an existing one.
+- **Valid admin kubeconfig file** for the target VKS cluster (produced by Deploy Cluster's Phase 5). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
 - **Docker and Docker Compose installed** — the script runs inside the `vcf9-dev` container.
 - **Helm v3** — required for the Grafana Operator installation (Phase 9). Helm is pre-installed in the `vcf9-dev` container via the Dockerfile.
 - **openssl** — required for self-signed certificate generation (Phase 7b). Pre-installed in the `vcf9-dev` container.
@@ -112,7 +112,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
-| `CLUSTER_NAME` | Yes | VKS cluster name (from Scenario 1) | `my-cluster-01` |
+| `CLUSTER_NAME` | Yes | VKS cluster name (from Deploy Cluster) | `my-cluster-01` |
 | `TELEGRAF_VERSION` | Yes | Telegraf package version | `1.37.1+vmware.1-vks.1` |
 
 ### Optional Variables (with defaults)
@@ -186,7 +186,7 @@ echo "<CONTOUR_LB_IP> grafana.lab.local" | sudo tee -a /etc/hosts
 
 ### 2. Import the CA certificate (optional, removes browser warnings)
 
-If you haven't already imported the self-signed CA certificate from Scenario 3:
+If you haven't already imported the self-signed CA certificate from Deploy GitOps:
 
 **Windows (PowerShell as Administrator):**
 ```powershell

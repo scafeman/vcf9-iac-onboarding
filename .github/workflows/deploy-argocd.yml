@@ -1,14 +1,14 @@
 # =============================================================================
-# Deploy ArgoCD Stack — GitHub Actions Workflow (Scenario 3)
+# Deploy ArgoCD Stack — GitHub Actions Workflow (Deploy GitOps)
 # =============================================================================
 #
 # This workflow deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD,
 # GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS
-# cluster provisioned by Scenario 1. Each provisioning phase is implemented
+# cluster provisioned by Deploy Cluster. Each provisioning phase is implemented
 # as individual named workflow steps with inline bash commands.
 #
 # Prerequisites:
-#   - Scenario 1 must have completed successfully — a running VKS cluster
+#   - Deploy Cluster must have completed successfully — a running VKS cluster
 #     with a valid admin kubeconfig file is required.
 #   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
 #     network access to the VKS cluster API. All required tools (VCF CLI,
@@ -98,7 +98,7 @@ jobs:
             PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
             NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
             if [ -z "$NAMESPACE_CONTEXT" ]; then
-              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Scenario 1 has completed."
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Deploy Cluster has completed."
               exit 1
             fi
             echo "Found namespace context: $NAMESPACE_CONTEXT"
@@ -120,7 +120,7 @@ jobs:
           fi
 
           if [ ! -f "$KUBECONFIG_PATH" ]; then
-            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
             exit 1
           fi
           echo "Kubeconfig set to '$KUBECONFIG_PATH'"
@@ -1124,7 +1124,7 @@ jobs:
 
           **Troubleshooting steps:**
           1. Review the failed step in the workflow run logs
-          2. Verify the VKS cluster from Scenario 1 is running and accessible
+          2. Verify the VKS cluster from Deploy Cluster is running and accessible
           3. Check that the kubeconfig file exists and is valid
           4. Re-run the workflow — most steps are idempotent and will skip already-completed work
           EOF

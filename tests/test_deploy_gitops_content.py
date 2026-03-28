@@ -1,4 +1,4 @@
-"""Content-presence unit tests for VCF 9 Scenario 3 — ArgoCD Consumption Model."""
+"""Content-presence unit tests for VCF 9 Deploy GitOps — ArgoCD Consumption Model."""
 
 import os
 import re
@@ -72,25 +72,25 @@ class TestScriptFileExists:
 class TestShebangAndStrictMode:
     """Scripts start with bash shebang and enable strict mode."""
 
-    def test_deploy_first_line_is_bash_shebang(self, scenario3_deploy_text):
-        first_line = scenario3_deploy_text.splitlines()[0]
+    def test_deploy_first_line_is_bash_shebang(self, gitops_deploy_text):
+        first_line = gitops_deploy_text.splitlines()[0]
         assert first_line == "#!/bin/bash", (
             f"Expected '#!/bin/bash' as first line, got '{first_line}'"
         )
 
-    def test_deploy_set_euo_pipefail(self, scenario3_deploy_text):
-        assert "set -euo pipefail" in scenario3_deploy_text, (
+    def test_deploy_set_euo_pipefail(self, gitops_deploy_text):
+        assert "set -euo pipefail" in gitops_deploy_text, (
             "Deploy script does not contain 'set -euo pipefail'"
         )
 
-    def test_teardown_first_line_is_bash_shebang(self, scenario3_teardown_text):
-        first_line = scenario3_teardown_text.splitlines()[0]
+    def test_teardown_first_line_is_bash_shebang(self, gitops_teardown_text):
+        first_line = gitops_teardown_text.splitlines()[0]
         assert first_line == "#!/bin/bash", (
             f"Expected '#!/bin/bash' as first line, got '{first_line}'"
         )
 
-    def test_teardown_set_euo_pipefail(self, scenario3_teardown_text):
-        assert "set -euo pipefail" in scenario3_teardown_text, (
+    def test_teardown_set_euo_pipefail(self, gitops_teardown_text):
+        assert "set -euo pipefail" in gitops_teardown_text, (
             "Teardown script does not contain 'set -euo pipefail'"
         )
 
@@ -111,14 +111,14 @@ class TestVariableBlockCompleteness:
         "HELM_CHARTS_REPO_URL",
     ]
 
-    def test_all_required_variables_defined(self, scenario3_deploy_text):
+    def test_all_required_variables_defined(self, gitops_deploy_text):
         for var in self.REQUIRED_VARIABLES:
             pattern = rf'^{var}='
-            assert re.search(pattern, scenario3_deploy_text, re.MULTILINE), (
+            assert re.search(pattern, gitops_deploy_text, re.MULTILINE), (
                 f"Required variable '{var}' not defined in deploy script"
             )
 
-    def test_old_required_variables_removed(self, scenario3_deploy_text):
+    def test_old_required_variables_removed(self, gitops_deploy_text):
         """Old variables that are no longer needed should not appear as assignments."""
         old_vars = [
             "HARBOR_CA_CERT",
@@ -129,7 +129,7 @@ class TestVariableBlockCompleteness:
         ]
         for var in old_vars:
             pattern = rf'^{var}='
-            assert not re.search(pattern, scenario3_deploy_text, re.MULTILINE), (
+            assert not re.search(pattern, gitops_deploy_text, re.MULTILINE), (
                 f"Old variable '{var}' should be removed from deploy script"
             )
 
@@ -173,10 +173,10 @@ class TestVariableDefaults:
         "PACKAGE_REPO_URL",
     ]
 
-    def test_default_variables_use_default_pattern(self, scenario3_deploy_text):
+    def test_default_variables_use_default_pattern(self, gitops_deploy_text):
         for var in self.VARIABLES_WITH_DEFAULTS:
             pattern = rf'^{var}="\$\{{{var}:-.+\}}"'
-            assert re.search(pattern, scenario3_deploy_text, re.MULTILINE), (
+            assert re.search(pattern, gitops_deploy_text, re.MULTILINE), (
                 f"Variable '{var}' does not use the ${{VAR:-default}} pattern with a non-empty default"
             )
 
@@ -191,44 +191,44 @@ class TestValidateVariablesAndPrerequisites:
     """validate_variables and check_prerequisites exist and are called.
     Validates: Requirements 2.3, 3.3, 3.4"""
 
-    def test_validate_variables_function_exists(self, scenario3_deploy_text):
-        assert re.search(r"^validate_variables\s*\(\)", scenario3_deploy_text, re.MULTILINE), (
+    def test_validate_variables_function_exists(self, gitops_deploy_text):
+        assert re.search(r"^validate_variables\s*\(\)", gitops_deploy_text, re.MULTILINE), (
             "validate_variables function not found in deploy script"
         )
 
-    def test_check_prerequisites_function_exists(self, scenario3_deploy_text):
-        assert re.search(r"^check_prerequisites\s*\(\)", scenario3_deploy_text, re.MULTILINE), (
+    def test_check_prerequisites_function_exists(self, gitops_deploy_text):
+        assert re.search(r"^check_prerequisites\s*\(\)", gitops_deploy_text, re.MULTILINE), (
             "check_prerequisites function not found in deploy script"
         )
 
-    def test_validate_variables_called_before_provisioning(self, scenario3_deploy_text):
-        call_match = re.search(r"^validate_variables\s*$", scenario3_deploy_text, re.MULTILINE)
+    def test_validate_variables_called_before_provisioning(self, gitops_deploy_text):
+        call_match = re.search(r"^validate_variables\s*$", gitops_deploy_text, re.MULTILINE)
         assert call_match, "validate_variables is never called as a standalone command"
         call_pos = call_match.start()
-        prov_match = re.search(r"kubectl\s+get\s+namespaces", scenario3_deploy_text)
+        prov_match = re.search(r"kubectl\s+get\s+namespaces", gitops_deploy_text)
         assert prov_match, "No kubectl get namespaces found"
         assert call_pos < prov_match.start(), (
             "validate_variables is called after the first provisioning command"
         )
 
-    def test_check_prerequisites_called_before_provisioning(self, scenario3_deploy_text):
-        call_match = re.search(r"^check_prerequisites\s*$", scenario3_deploy_text, re.MULTILINE)
+    def test_check_prerequisites_called_before_provisioning(self, gitops_deploy_text):
+        call_match = re.search(r"^check_prerequisites\s*$", gitops_deploy_text, re.MULTILINE)
         assert call_match, "check_prerequisites is never called as a standalone command"
         call_pos = call_match.start()
-        prov_match = re.search(r"kubectl\s+get\s+namespaces", scenario3_deploy_text)
+        prov_match = re.search(r"kubectl\s+get\s+namespaces", gitops_deploy_text)
         assert prov_match, "No kubectl get namespaces found"
         assert call_pos < prov_match.start(), (
             "check_prerequisites is called after the first provisioning command"
         )
 
-    def test_check_prerequisites_verifies_kubectl(self, scenario3_deploy_text):
-        assert "kubectl" in scenario3_deploy_text, "check_prerequisites missing kubectl check"
+    def test_check_prerequisites_verifies_kubectl(self, gitops_deploy_text):
+        assert "kubectl" in gitops_deploy_text, "check_prerequisites missing kubectl check"
 
-    def test_check_prerequisites_verifies_helm(self, scenario3_deploy_text):
-        assert "helm" in scenario3_deploy_text, "check_prerequisites missing helm check"
+    def test_check_prerequisites_verifies_helm(self, gitops_deploy_text):
+        assert "helm" in gitops_deploy_text, "check_prerequisites missing helm check"
 
-    def test_check_prerequisites_verifies_openssl(self, scenario3_deploy_text):
-        assert "openssl" in scenario3_deploy_text, "check_prerequisites missing openssl check"
+    def test_check_prerequisites_verifies_openssl(self, gitops_deploy_text):
+        assert "openssl" in gitops_deploy_text, "check_prerequisites missing openssl check"
 
 
 # ===================================================================
@@ -241,23 +241,23 @@ class TestKubeconfigSetup:
     """Phase 1 contains kubeconfig setup and connectivity check.
     Validates: Requirements 10.1"""
 
-    def test_export_kubeconfig_present(self, scenario3_deploy_text):
-        assert re.search(r"export\s+KUBECONFIG=", scenario3_deploy_text), (
+    def test_export_kubeconfig_present(self, gitops_deploy_text):
+        assert re.search(r"export\s+KUBECONFIG=", gitops_deploy_text), (
             "Deploy script missing 'export KUBECONFIG' command"
         )
 
-    def test_kubectl_get_namespaces_connectivity_check(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+get\s+namespaces", scenario3_deploy_text), (
+    def test_kubectl_get_namespaces_connectivity_check(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+get\s+namespaces", gitops_deploy_text), (
             "Deploy script missing 'kubectl get namespaces' connectivity check"
         )
 
-    def test_exit_code_2_for_kubeconfig_failures(self, scenario3_deploy_text):
-        assert "exit 2" in scenario3_deploy_text, (
+    def test_exit_code_2_for_kubeconfig_failures(self, gitops_deploy_text):
+        assert "exit 2" in gitops_deploy_text, (
             "Deploy script missing 'exit 2' for kubeconfig failures"
         )
 
-    def test_kubeconfig_file_existence_check(self, scenario3_deploy_text):
-        assert re.search(r'-f.*KUBECONFIG_FILE', scenario3_deploy_text), (
+    def test_kubeconfig_file_existence_check(self, gitops_deploy_text):
+        assert re.search(r'-f.*KUBECONFIG_FILE', gitops_deploy_text), (
             "Deploy script missing kubeconfig file existence check"
         )
 
@@ -272,24 +272,24 @@ class TestDomainAndDerivedHostnames:
     """DOMAIN variable and derived hostname assignments.
     Validates: Requirements 1.1, 1.2, 1.3, 1.4, 14.1"""
 
-    def test_domain_variable_defined(self, scenario3_deploy_text):
+    def test_domain_variable_defined(self, gitops_deploy_text):
         pattern = r'^DOMAIN="\$\{DOMAIN:-'
-        assert re.search(pattern, scenario3_deploy_text, re.MULTILINE), (
+        assert re.search(pattern, gitops_deploy_text, re.MULTILINE), (
             "Deploy script missing DOMAIN variable with default"
         )
 
-    def test_harbor_hostname_derived_from_domain(self, scenario3_deploy_text):
-        assert 'HARBOR_HOSTNAME="harbor.${DOMAIN}"' in scenario3_deploy_text, (
+    def test_harbor_hostname_derived_from_domain(self, gitops_deploy_text):
+        assert 'HARBOR_HOSTNAME="harbor.${DOMAIN}"' in gitops_deploy_text, (
             "Deploy script missing HARBOR_HOSTNAME derived from DOMAIN"
         )
 
-    def test_gitlab_hostname_derived_from_domain(self, scenario3_deploy_text):
-        assert 'GITLAB_HOSTNAME="gitlab.${DOMAIN}"' in scenario3_deploy_text, (
+    def test_gitlab_hostname_derived_from_domain(self, gitops_deploy_text):
+        assert 'GITLAB_HOSTNAME="gitlab.${DOMAIN}"' in gitops_deploy_text, (
             "Deploy script missing GITLAB_HOSTNAME derived from DOMAIN"
         )
 
-    def test_argocd_hostname_derived_from_domain(self, scenario3_deploy_text):
-        assert 'ARGOCD_HOSTNAME="argocd.${DOMAIN}"' in scenario3_deploy_text, (
+    def test_argocd_hostname_derived_from_domain(self, gitops_deploy_text):
+        assert 'ARGOCD_HOSTNAME="argocd.${DOMAIN}"' in gitops_deploy_text, (
             "Deploy script missing ARGOCD_HOSTNAME derived from DOMAIN"
         )
 
@@ -304,38 +304,38 @@ class TestCertificateGeneration:
     """Phase 2 generates self-signed certificates via openssl.
     Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 14.3"""
 
-    def test_openssl_req_command(self, scenario3_deploy_text):
-        assert re.search(r"openssl\s+req", scenario3_deploy_text), (
+    def test_openssl_req_command(self, gitops_deploy_text):
+        assert re.search(r"openssl\s+req", gitops_deploy_text), (
             "Deploy script missing 'openssl req' command for certificate generation"
         )
 
-    def test_openssl_x509_command(self, scenario3_deploy_text):
-        assert re.search(r"openssl\s+x509", scenario3_deploy_text), (
+    def test_openssl_x509_command(self, gitops_deploy_text):
+        assert re.search(r"openssl\s+x509", gitops_deploy_text), (
             "Deploy script missing 'openssl x509' command for certificate signing"
         )
 
-    def test_cert_dir_referenced(self, scenario3_deploy_text):
-        assert "CERT_DIR" in scenario3_deploy_text, (
+    def test_cert_dir_referenced(self, gitops_deploy_text):
+        assert "CERT_DIR" in gitops_deploy_text, (
             "Deploy script missing CERT_DIR reference"
         )
 
-    def test_fullchain_cert_created(self, scenario3_deploy_text):
-        assert "fullchain.crt" in scenario3_deploy_text, (
+    def test_fullchain_cert_created(self, gitops_deploy_text):
+        assert "fullchain.crt" in gitops_deploy_text, (
             "Deploy script missing fullchain.crt creation"
         )
 
-    def test_wildcard_cnf_referenced(self, scenario3_deploy_text):
-        assert "wildcard.cnf" in scenario3_deploy_text, (
+    def test_wildcard_cnf_referenced(self, gitops_deploy_text):
+        assert "wildcard.cnf" in gitops_deploy_text, (
             "Deploy script missing wildcard.cnf reference"
         )
 
-    def test_exit_code_3_for_cert_failures(self, scenario3_deploy_text):
-        assert "exit 3" in scenario3_deploy_text, (
+    def test_exit_code_3_for_cert_failures(self, gitops_deploy_text):
+        assert "exit 3" in gitops_deploy_text, (
             "Deploy script missing 'exit 3' for certificate generation failures"
         )
 
-    def test_ca_cert_existence_check(self, scenario3_deploy_text):
-        assert re.search(r'ca\.crt', scenario3_deploy_text), (
+    def test_ca_cert_existence_check(self, gitops_deploy_text):
+        assert re.search(r'ca\.crt', gitops_deploy_text), (
             "Deploy script missing CA cert existence check"
         )
 
@@ -347,46 +347,46 @@ class TestCertificateGeneration:
 
 
 class TestContourInstallation:
-    """Phase 3 installs Contour via VKS package (shared with Scenario 2).
+    """Phase 3 installs Contour via VKS package (shared with Deploy Metrics).
     Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 14.4"""
 
-    def test_vcf_package_install_contour(self, scenario3_deploy_text):
-        assert re.search(r"vcf\s+package\s+install\s+contour", scenario3_deploy_text), (
+    def test_vcf_package_install_contour(self, gitops_deploy_text):
+        assert re.search(r"vcf\s+package\s+install\s+contour", gitops_deploy_text), (
             "Deploy script missing 'vcf package install contour'"
         )
 
-    def test_vcf_package_install_cert_manager(self, scenario3_deploy_text):
-        assert re.search(r"vcf\s+package\s+install\s+cert-manager", scenario3_deploy_text), (
+    def test_vcf_package_install_cert_manager(self, gitops_deploy_text):
+        assert re.search(r"vcf\s+package\s+install\s+cert-manager", gitops_deploy_text), (
             "Deploy script missing 'vcf package install cert-manager'"
         )
 
-    def test_envoy_lb_service_creation(self, scenario3_deploy_text):
-        assert re.search(r"envoy-lb", scenario3_deploy_text), (
+    def test_envoy_lb_service_creation(self, gitops_deploy_text):
+        assert re.search(r"envoy-lb", gitops_deploy_text), (
             "Deploy script missing envoy-lb LoadBalancer service"
         )
 
-    def test_contour_lb_ip_auto_detection(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+get\s+svc.*envoy-lb", scenario3_deploy_text), (
+    def test_contour_lb_ip_auto_detection(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+get\s+svc.*envoy-lb", gitops_deploy_text), (
             "Deploy script missing envoy-lb LB IP auto-detection"
         )
 
-    def test_contour_lb_ip_variable(self, scenario3_deploy_text):
-        assert "CONTOUR_LB_IP" in scenario3_deploy_text, (
+    def test_contour_lb_ip_variable(self, gitops_deploy_text):
+        assert "CONTOUR_LB_IP" in gitops_deploy_text, (
             "Deploy script missing CONTOUR_LB_IP variable"
         )
 
-    def test_exit_code_4_for_contour_failures(self, scenario3_deploy_text):
-        assert "exit 4" in scenario3_deploy_text, (
+    def test_exit_code_4_for_contour_failures(self, gitops_deploy_text):
+        assert "exit 4" in gitops_deploy_text, (
             "Deploy script missing 'exit 4' for Contour installation failures"
         )
 
-    def test_package_namespace_setup(self, scenario3_deploy_text):
-        assert "PACKAGE_NAMESPACE" in scenario3_deploy_text, (
+    def test_package_namespace_setup(self, gitops_deploy_text):
+        assert "PACKAGE_NAMESPACE" in gitops_deploy_text, (
             "Deploy script missing PACKAGE_NAMESPACE for VKS package repository"
         )
 
-    def test_package_repo_setup(self, scenario3_deploy_text):
-        assert re.search(r"vcf\s+package\s+repository\s+add", scenario3_deploy_text), (
+    def test_package_repo_setup(self, gitops_deploy_text):
+        assert re.search(r"vcf\s+package\s+repository\s+add", gitops_deploy_text), (
             "Deploy script missing 'vcf package repository add' for VKS package repository"
         )
 
@@ -401,28 +401,28 @@ class TestHarborInstallation:
     """Phase 4 installs Harbor via Helm.
     Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 14.4"""
 
-    def test_helm_upgrade_install_harbor(self, scenario3_deploy_text):
-        assert re.search(r"helm\s+upgrade\s+--install\s+harbor\s+harbor/harbor", scenario3_deploy_text), (
+    def test_helm_upgrade_install_harbor(self, gitops_deploy_text):
+        assert re.search(r"helm\s+upgrade\s+--install\s+harbor\s+harbor/harbor", gitops_deploy_text), (
             "Deploy script missing 'helm upgrade --install harbor harbor/harbor'"
         )
 
-    def test_harbor_version_flag(self, scenario3_deploy_text):
-        assert re.search(r"--version.*HARBOR_VERSION", scenario3_deploy_text), (
+    def test_harbor_version_flag(self, gitops_deploy_text):
+        assert re.search(r"--version.*HARBOR_VERSION", gitops_deploy_text), (
             "Deploy script missing --version flag for Harbor"
         )
 
-    def test_harbor_values_file_flag(self, scenario3_deploy_text):
-        assert re.search(r"--values.*harbor-values\.yaml", scenario3_deploy_text), (
+    def test_harbor_values_file_flag(self, gitops_deploy_text):
+        assert re.search(r"--values.*harbor-values\.yaml", gitops_deploy_text), (
             "Deploy script missing --values flag for Harbor"
         )
 
-    def test_harbor_tls_secret_creation(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+create\s+secret\s+tls\s+harbor-tls", scenario3_deploy_text), (
+    def test_harbor_tls_secret_creation(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+create\s+secret\s+tls\s+harbor-tls", gitops_deploy_text), (
             "Deploy script missing Harbor TLS secret creation"
         )
 
-    def test_exit_code_5_for_harbor_failures(self, scenario3_deploy_text):
-        assert "exit 5" in scenario3_deploy_text, (
+    def test_exit_code_5_for_harbor_failures(self, gitops_deploy_text):
+        assert "exit 5" in gitops_deploy_text, (
             "Deploy script missing 'exit 5' for Harbor installation failures"
         )
 
@@ -437,23 +437,23 @@ class TestCoreDNSConfiguration:
     """Phase 5 configures CoreDNS with static host entries.
     Validates: Requirements 9.1, 9.2, 9.3"""
 
-    def test_coredns_configmap_patch(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+patch\s+configmap\s+coredns", scenario3_deploy_text), (
+    def test_coredns_configmap_patch(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+patch\s+configmap\s+coredns", gitops_deploy_text), (
             "Deploy script missing CoreDNS ConfigMap patch"
         )
 
-    def test_coredns_rollout_restart(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+rollout\s+restart\s+deployment/coredns", scenario3_deploy_text), (
+    def test_coredns_rollout_restart(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+rollout\s+restart\s+deployment/coredns", gitops_deploy_text), (
             "Deploy script missing CoreDNS rollout restart"
         )
 
-    def test_exit_code_6_for_coredns_failures(self, scenario3_deploy_text):
-        assert "exit 6" in scenario3_deploy_text, (
+    def test_exit_code_6_for_coredns_failures(self, gitops_deploy_text):
+        assert "exit 6" in gitops_deploy_text, (
             "Deploy script missing 'exit 6' for CoreDNS failures"
         )
 
-    def test_coredns_wait_loop(self, scenario3_deploy_text):
-        assert re.search(r"wait_for_condition.*CoreDNS", scenario3_deploy_text, re.IGNORECASE), (
+    def test_coredns_wait_loop(self, gitops_deploy_text):
+        assert re.search(r"wait_for_condition.*CoreDNS", gitops_deploy_text, re.IGNORECASE), (
             "Deploy script missing wait_for_condition call for CoreDNS"
         )
 
@@ -468,33 +468,33 @@ class TestArgoCDInstallation:
     """Phase 6 installs ArgoCD via Helm.
     Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 14.4, 14.6"""
 
-    def test_helm_upgrade_install_argocd(self, scenario3_deploy_text):
-        assert re.search(r"helm\s+upgrade\s+--install\s+argocd\s+argo/argo-cd", scenario3_deploy_text), (
+    def test_helm_upgrade_install_argocd(self, gitops_deploy_text):
+        assert re.search(r"helm\s+upgrade\s+--install\s+argocd\s+argo/argo-cd", gitops_deploy_text), (
             "Deploy script missing 'helm upgrade --install argocd argo/argo-cd'"
         )
 
-    def test_argocd_version_flag(self, scenario3_deploy_text):
-        assert re.search(r"--version.*ARGOCD_VERSION", scenario3_deploy_text), (
+    def test_argocd_version_flag(self, gitops_deploy_text):
+        assert re.search(r"--version.*ARGOCD_VERSION", gitops_deploy_text), (
             "Deploy script missing --version flag for ArgoCD"
         )
 
-    def test_argocd_values_file_flag(self, scenario3_deploy_text):
-        assert re.search(r"--values.*argocd-values\.yaml", scenario3_deploy_text), (
+    def test_argocd_values_file_flag(self, gitops_deploy_text):
+        assert re.search(r"--values.*argocd-values\.yaml", gitops_deploy_text), (
             "Deploy script missing --values flag for ArgoCD"
         )
 
-    def test_argocd_password_from_k8s_secret(self, scenario3_deploy_text):
-        assert "argocd-initial-admin-secret" in scenario3_deploy_text, (
+    def test_argocd_password_from_k8s_secret(self, gitops_deploy_text):
+        assert "argocd-initial-admin-secret" in gitops_deploy_text, (
             "Deploy script missing ArgoCD initial admin secret retrieval"
         )
 
-    def test_argocd_password_base64_decode(self, scenario3_deploy_text):
-        assert re.search(r"base64\s+-d", scenario3_deploy_text), (
+    def test_argocd_password_base64_decode(self, gitops_deploy_text):
+        assert re.search(r"base64\s+-d", gitops_deploy_text), (
             "Deploy script missing base64 decode for ArgoCD password"
         )
 
-    def test_exit_code_7_for_argocd_failures(self, scenario3_deploy_text):
-        assert "exit 7" in scenario3_deploy_text, (
+    def test_exit_code_7_for_argocd_failures(self, gitops_deploy_text):
+        assert "exit 7" in gitops_deploy_text, (
             "Deploy script missing 'exit 7' for ArgoCD installation failures"
         )
 
@@ -509,23 +509,23 @@ class TestArgoCDCLIInstallation:
     """Phase 7 auto-downloads ArgoCD CLI.
     Validates: Requirements 8.1, 8.2, 8.3, 8.4, 14.7"""
 
-    def test_argocd_cli_download(self, scenario3_deploy_text):
-        assert re.search(r"curl.*argocd-linux-amd64", scenario3_deploy_text), (
+    def test_argocd_cli_download(self, gitops_deploy_text):
+        assert re.search(r"curl.*argocd-linux-amd64", gitops_deploy_text), (
             "Deploy script missing ArgoCD CLI download via curl"
         )
 
-    def test_argocd_cli_install_path(self, scenario3_deploy_text):
-        assert "/tmp/argocd" in scenario3_deploy_text, (
+    def test_argocd_cli_install_path(self, gitops_deploy_text):
+        assert "/tmp/argocd" in gitops_deploy_text, (
             "Deploy script missing /tmp/argocd install path"
         )
 
-    def test_exit_code_8_for_cli_failures(self, scenario3_deploy_text):
-        assert "exit 8" in scenario3_deploy_text, (
+    def test_exit_code_8_for_cli_failures(self, gitops_deploy_text):
+        assert "exit 8" in gitops_deploy_text, (
             "Deploy script missing 'exit 8' for ArgoCD CLI download failures"
         )
 
-    def test_argocd_cli_path_check(self, scenario3_deploy_text):
-        assert re.search(r"command\s+-v\s+argocd", scenario3_deploy_text), (
+    def test_argocd_cli_path_check(self, gitops_deploy_text):
+        assert re.search(r"command\s+-v\s+argocd", gitops_deploy_text), (
             "Deploy script missing 'command -v argocd' check"
         )
 
@@ -540,28 +540,28 @@ class TestCertificateDistribution:
     """Phase 8 distributes certificates to application namespaces.
     Validates: Requirements 10.1"""
 
-    def test_harbor_ca_secret_creation(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+create\s+secret\s+generic\s+harbor-ca-cert", scenario3_deploy_text), (
+    def test_harbor_ca_secret_creation(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+create\s+secret\s+generic\s+harbor-ca-cert", gitops_deploy_text), (
             "Deploy script missing Harbor CA secret creation"
         )
 
-    def test_gitlab_wildcard_tls_secret_creation(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+create\s+secret\s+tls\s+gitlab-wildcard-tls", scenario3_deploy_text), (
+    def test_gitlab_wildcard_tls_secret_creation(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+create\s+secret\s+tls\s+gitlab-wildcard-tls", gitops_deploy_text), (
             "Deploy script missing GitLab wildcard TLS secret creation"
         )
 
-    def test_exit_code_9_for_cert_distribution_failures(self, scenario3_deploy_text):
-        assert "exit 9" in scenario3_deploy_text, (
+    def test_exit_code_9_for_cert_distribution_failures(self, gitops_deploy_text):
+        assert "exit 9" in gitops_deploy_text, (
             "Deploy script missing 'exit 9' for certificate distribution failures"
         )
 
-    def test_idempotent_secret_creation(self, scenario3_deploy_text):
-        assert "--dry-run=client" in scenario3_deploy_text, (
+    def test_idempotent_secret_creation(self, gitops_deploy_text):
+        assert "--dry-run=client" in gitops_deploy_text, (
             "Deploy script missing --dry-run=client for idempotent secret creation"
         )
 
-    def test_podsecurity_labels(self, scenario3_deploy_text):
-        assert "pod-security.kubernetes.io/enforce=privileged" in scenario3_deploy_text, (
+    def test_podsecurity_labels(self, gitops_deploy_text):
+        assert "pod-security.kubernetes.io/enforce=privileged" in gitops_deploy_text, (
             "Deploy script missing PodSecurity labels"
         )
 
@@ -576,28 +576,28 @@ class TestGitLabOperatorInstallation:
     """Phase 9 installs GitLab via Helm.
     Validates: Requirements 10.1"""
 
-    def test_helm_upgrade_install_gitlab_operator(self, scenario3_deploy_text):
-        assert re.search(r"helm\s+upgrade\s+--install\s+gitlab\s+gitlab/gitlab", scenario3_deploy_text), (
+    def test_helm_upgrade_install_gitlab_operator(self, gitops_deploy_text):
+        assert re.search(r"helm\s+upgrade\s+--install\s+gitlab\s+gitlab/gitlab", gitops_deploy_text), (
             "Deploy script missing 'helm upgrade --install gitlab gitlab/gitlab'"
         )
 
-    def test_gitlab_operator_version_flag(self, scenario3_deploy_text):
-        assert re.search(r"--version.*GITLAB_OPERATOR_VERSION", scenario3_deploy_text), (
+    def test_gitlab_operator_version_flag(self, gitops_deploy_text):
+        assert re.search(r"--version.*GITLAB_OPERATOR_VERSION", gitops_deploy_text), (
             "Deploy script missing --version flag for GitLab"
         )
 
-    def test_gitlab_operator_values_file_flag(self, scenario3_deploy_text):
-        assert re.search(r"--values.*gitlab-operator-values\.yaml", scenario3_deploy_text), (
+    def test_gitlab_operator_values_file_flag(self, gitops_deploy_text):
+        assert re.search(r"--values.*gitlab-operator-values\.yaml", gitops_deploy_text), (
             "Deploy script missing --values flag for GitLab"
         )
 
-    def test_wait_for_gitlab_webservice_pod(self, scenario3_deploy_text):
-        assert re.search(r"wait_for_condition.*webservice", scenario3_deploy_text, re.IGNORECASE), (
+    def test_wait_for_gitlab_webservice_pod(self, gitops_deploy_text):
+        assert re.search(r"wait_for_condition.*webservice", gitops_deploy_text, re.IGNORECASE), (
             "Deploy script missing wait_for_condition for GitLab webservice pod"
         )
 
-    def test_exit_code_10_for_gitlab_operator_failures(self, scenario3_deploy_text):
-        assert "exit 10" in scenario3_deploy_text, (
+    def test_exit_code_10_for_gitlab_operator_failures(self, gitops_deploy_text):
+        assert "exit 10" in gitops_deploy_text, (
             "Deploy script missing 'exit 10' for GitLab failures"
         )
 
@@ -612,18 +612,18 @@ class TestHarborProxyPatching:
     """Phase 10 verifies Harbor proxy configuration.
     Validates: Requirements 10.1"""
 
-    def test_harbor_proxy_check(self, scenario3_deploy_text):
-        assert re.search(r'grep.*proxy/', scenario3_deploy_text), (
+    def test_harbor_proxy_check(self, gitops_deploy_text):
+        assert re.search(r'grep.*proxy/', gitops_deploy_text), (
             "Deploy script missing Harbor proxy configuration check"
         )
 
-    def test_exit_code_11_for_harbor_proxy_failures(self, scenario3_deploy_text):
-        assert "exit 11" in scenario3_deploy_text, (
+    def test_exit_code_11_for_harbor_proxy_failures(self, gitops_deploy_text):
+        assert "exit 11" in gitops_deploy_text, (
             "Deploy script missing 'exit 11' for Harbor proxy failures"
         )
 
-    def test_dockerhub_rate_limit_warning(self, scenario3_deploy_text):
-        assert re.search(r"DockerHub.*rate.limit", scenario3_deploy_text, re.IGNORECASE), (
+    def test_dockerhub_rate_limit_warning(self, gitops_deploy_text):
+        assert re.search(r"DockerHub.*rate.limit", gitops_deploy_text, re.IGNORECASE), (
             "Deploy script missing DockerHub rate limit warning"
         )
 
@@ -638,28 +638,28 @@ class TestGitLabRunnerInstallation:
     """Phase 11 installs GitLab Runner via Helm.
     Validates: Requirements 10.1"""
 
-    def test_helm_upgrade_install_gitlab_runner(self, scenario3_deploy_text):
-        assert re.search(r"helm\s+upgrade\s+--install\s+gitlab-runner", scenario3_deploy_text), (
+    def test_helm_upgrade_install_gitlab_runner(self, gitops_deploy_text):
+        assert re.search(r"helm\s+upgrade\s+--install\s+gitlab-runner", gitops_deploy_text), (
             "Deploy script missing 'helm upgrade --install gitlab-runner'"
         )
 
-    def test_gitlab_runner_version_flag(self, scenario3_deploy_text):
-        assert re.search(r"--version.*GITLAB_RUNNER_VERSION", scenario3_deploy_text), (
+    def test_gitlab_runner_version_flag(self, gitops_deploy_text):
+        assert re.search(r"--version.*GITLAB_RUNNER_VERSION", gitops_deploy_text), (
             "Deploy script missing --version flag for GitLab Runner"
         )
 
-    def test_gitlab_runner_values_file_flag(self, scenario3_deploy_text):
-        assert re.search(r"--values.*gitlab-runner-values\.yaml", scenario3_deploy_text), (
+    def test_gitlab_runner_values_file_flag(self, gitops_deploy_text):
+        assert re.search(r"--values.*gitlab-runner-values\.yaml", gitops_deploy_text), (
             "Deploy script missing --values flag for GitLab Runner"
         )
 
-    def test_wait_for_gitlab_runner_pod(self, scenario3_deploy_text):
-        assert re.search(r"wait_for_condition.*GitLab Runner", scenario3_deploy_text), (
+    def test_wait_for_gitlab_runner_pod(self, gitops_deploy_text):
+        assert re.search(r"wait_for_condition.*GitLab Runner", gitops_deploy_text), (
             "Deploy script missing wait_for_condition for GitLab Runner pod"
         )
 
-    def test_exit_code_12_for_gitlab_runner_failures(self, scenario3_deploy_text):
-        assert "exit 12" in scenario3_deploy_text, (
+    def test_exit_code_12_for_gitlab_runner_failures(self, gitops_deploy_text):
+        assert "exit 12" in gitops_deploy_text, (
             "Deploy script missing 'exit 12' for GitLab Runner failures"
         )
 
@@ -674,23 +674,23 @@ class TestArgoCDClusterRegistration:
     """Phase 12 registers the VKS cluster with ArgoCD.
     Validates: Requirements 10.1"""
 
-    def test_argocd_login(self, scenario3_deploy_text):
-        assert re.search(r"argocd\s+login", scenario3_deploy_text), (
+    def test_argocd_login(self, gitops_deploy_text):
+        assert re.search(r"argocd\s+login", gitops_deploy_text), (
             "Deploy script missing 'argocd login'"
         )
 
-    def test_argocd_cluster_add(self, scenario3_deploy_text):
-        assert re.search(r"argocd\s+cluster\s+add", scenario3_deploy_text), (
+    def test_argocd_cluster_add(self, gitops_deploy_text):
+        assert re.search(r"argocd\s+cluster\s+add", gitops_deploy_text), (
             "Deploy script missing 'argocd cluster add'"
         )
 
-    def test_argocd_cluster_already_registered_check(self, scenario3_deploy_text):
-        assert re.search(r"argocd\s+cluster\s+list", scenario3_deploy_text), (
+    def test_argocd_cluster_already_registered_check(self, gitops_deploy_text):
+        assert re.search(r"argocd\s+cluster\s+list", gitops_deploy_text), (
             "Deploy script missing ArgoCD cluster list check for existing registration"
         )
 
-    def test_exit_code_13_for_argocd_registration_failures(self, scenario3_deploy_text):
-        assert "exit 13" in scenario3_deploy_text, (
+    def test_exit_code_13_for_argocd_registration_failures(self, gitops_deploy_text):
+        assert "exit 13" in gitops_deploy_text, (
             "Deploy script missing 'exit 13' for ArgoCD registration failures"
         )
 
@@ -705,23 +705,23 @@ class TestArgoCDApplicationBootstrap:
     """Phase 13 bootstraps the ArgoCD application.
     Validates: Requirements 10.1"""
 
-    def test_kubectl_apply_argocd_manifest(self, scenario3_deploy_text):
-        assert re.search(r"kubectl\s+apply\s+-f.*argocd-microservices-demo\.yaml", scenario3_deploy_text), (
+    def test_kubectl_apply_argocd_manifest(self, gitops_deploy_text):
+        assert re.search(r"kubectl\s+apply\s+-f.*argocd-microservices-demo\.yaml", gitops_deploy_text), (
             "Deploy script missing 'kubectl apply -f' for ArgoCD Application manifest"
         )
 
-    def test_argocd_app_already_exists_check(self, scenario3_deploy_text):
-        assert re.search(r"argocd\s+app\s+get\s+microservices-demo", scenario3_deploy_text), (
+    def test_argocd_app_already_exists_check(self, gitops_deploy_text):
+        assert re.search(r"argocd\s+app\s+get\s+microservices-demo", gitops_deploy_text), (
             "Deploy script missing ArgoCD app existence check"
         )
 
-    def test_wait_for_argocd_app_sync(self, scenario3_deploy_text):
-        assert re.search(r"wait_for_condition.*microservices-demo.*Synced", scenario3_deploy_text, re.IGNORECASE), (
+    def test_wait_for_argocd_app_sync(self, gitops_deploy_text):
+        assert re.search(r"wait_for_condition.*microservices-demo.*Synced", gitops_deploy_text, re.IGNORECASE), (
             "Deploy script missing wait_for_condition for ArgoCD app sync"
         )
 
-    def test_exit_code_14_for_argocd_app_failures(self, scenario3_deploy_text):
-        assert "exit 14" in scenario3_deploy_text, (
+    def test_exit_code_14_for_argocd_app_failures(self, gitops_deploy_text):
+        assert "exit 14" in gitops_deploy_text, (
             "Deploy script missing 'exit 14' for ArgoCD application failures"
         )
 
@@ -750,14 +750,14 @@ class TestMicroservicesDemoVerification:
         "shippingservice",
     ]
 
-    def test_all_11_services_checked(self, scenario3_deploy_text):
+    def test_all_11_services_checked(self, gitops_deploy_text):
         for service in self.EXPECTED_SERVICES:
-            assert service in scenario3_deploy_text, (
+            assert service in gitops_deploy_text, (
                 f"Deploy script missing check for microservice '{service}'"
             )
 
-    def test_frontend_endpoint_display(self, scenario3_deploy_text):
-        assert "port-forward" in scenario3_deploy_text or "ClusterIP" in scenario3_deploy_text, (
+    def test_frontend_endpoint_display(self, gitops_deploy_text):
+        assert "port-forward" in gitops_deploy_text or "ClusterIP" in gitops_deploy_text, (
             "Deploy script missing frontend endpoint display"
         )
 
@@ -772,13 +772,13 @@ class TestSummaryBanner:
     """Deploy script contains summary banner.
     Validates: Requirement 10.1"""
 
-    def test_scenario_3_in_deploy(self, scenario3_deploy_text):
-        assert "Scenario 3" in scenario3_deploy_text, (
-            "Deploy script missing 'Scenario 3' in summary banner"
+    def test_deploy_gitops_in_deploy(self, gitops_deploy_text):
+        assert "Deploy GitOps" in gitops_deploy_text, (
+            "Deploy script missing 'Deploy GitOps' in summary banner"
         )
 
-    def test_deployment_complete_in_deploy(self, scenario3_deploy_text):
-        assert "Deployment Complete" in scenario3_deploy_text, (
+    def test_deployment_complete_in_deploy(self, gitops_deploy_text):
+        assert "Deployment Complete" in gitops_deploy_text, (
             "Deploy script missing 'Deployment Complete' in summary banner"
         )
 
@@ -793,14 +793,14 @@ class TestExitCodes:
     """Deploy script contains all required exit codes.
     Validates: Requirements 10.2, 14.10"""
 
-    def test_exit_codes_1_through_14_present(self, scenario3_deploy_text):
+    def test_exit_codes_1_through_14_present(self, gitops_deploy_text):
         for code in range(1, 15):
-            assert f"exit {code}" in scenario3_deploy_text, (
+            assert f"exit {code}" in gitops_deploy_text, (
                 f"Deploy script missing 'exit {code}'"
             )
 
-    def test_exit_0_present(self, scenario3_deploy_text):
-        assert "exit 0" in scenario3_deploy_text, (
+    def test_exit_0_present(self, gitops_deploy_text):
+        assert "exit 0" in gitops_deploy_text, (
             "Deploy script missing 'exit 0' (success)"
         )
 
@@ -815,40 +815,40 @@ class TestPhaseOrdering:
     """Deploy script phases appear in correct order.
     Validates: Requirement 10.1, 14.10"""
 
-    def test_all_fifteen_phases_present(self, scenario3_deploy_phases):
+    def test_all_fifteen_phases_present(self, gitops_deploy_phases):
         for phase_num in range(1, 16):
-            assert phase_num in scenario3_deploy_phases, (
+            assert phase_num in gitops_deploy_phases, (
                 f"Phase {phase_num} not found in the script. "
-                f"Found phases: {sorted(scenario3_deploy_phases.keys())}"
+                f"Found phases: {sorted(gitops_deploy_phases.keys())}"
             )
 
-    def test_phase_1_before_phase_2(self, scenario3_deploy_text):
-        p1 = scenario3_deploy_text.find("Phase 1:")
-        p2 = scenario3_deploy_text.find("Phase 2:")
+    def test_phase_1_before_phase_2(self, gitops_deploy_text):
+        p1 = gitops_deploy_text.find("Phase 1:")
+        p2 = gitops_deploy_text.find("Phase 2:")
         assert p1 < p2, "Phase 1 should appear before Phase 2"
 
-    def test_phase_3_before_phase_4(self, scenario3_deploy_text):
+    def test_phase_3_before_phase_4(self, gitops_deploy_text):
         """Contour (Phase 3) must be installed before Harbor (Phase 4)."""
-        p3 = scenario3_deploy_text.find("Phase 3:")
-        p4 = scenario3_deploy_text.find("Phase 4:")
+        p3 = gitops_deploy_text.find("Phase 3:")
+        p4 = gitops_deploy_text.find("Phase 4:")
         assert p3 < p4, "Phase 3 (Contour) should appear before Phase 4 (Harbor)"
 
-    def test_phase_6_before_phase_7(self, scenario3_deploy_text):
+    def test_phase_6_before_phase_7(self, gitops_deploy_text):
         """ArgoCD (Phase 6) must be installed before CLI (Phase 7)."""
-        p6 = scenario3_deploy_text.find("Phase 6:")
-        p7 = scenario3_deploy_text.find("Phase 7:")
+        p6 = gitops_deploy_text.find("Phase 6:")
+        p7 = gitops_deploy_text.find("Phase 7:")
         assert p6 < p7, "Phase 6 (ArgoCD) should appear before Phase 7 (ArgoCD CLI)"
 
-    def test_phase_9_before_phase_11(self, scenario3_deploy_text):
+    def test_phase_9_before_phase_11(self, gitops_deploy_text):
         """GitLab (Phase 9) must be installed before Runner (Phase 11)."""
-        p9 = scenario3_deploy_text.find("Phase 9:")
-        p11 = scenario3_deploy_text.find("Phase 11:")
+        p9 = gitops_deploy_text.find("Phase 9:")
+        p11 = gitops_deploy_text.find("Phase 11:")
         assert p9 < p11, "Phase 9 (GitLab) should appear before Phase 11 (GitLab Runner)"
 
-    def test_phase_12_before_phase_13(self, scenario3_deploy_text):
+    def test_phase_12_before_phase_13(self, gitops_deploy_text):
         """ArgoCD registration (Phase 12) must happen before app bootstrap (Phase 13)."""
-        p12 = scenario3_deploy_text.find("Phase 12:")
-        p13 = scenario3_deploy_text.find("Phase 13:")
+        p12 = gitops_deploy_text.find("Phase 12:")
+        p13 = gitops_deploy_text.find("Phase 13:")
         assert p12 < p13, "Phase 12 (ArgoCD Registration) should appear before Phase 13 (App Bootstrap)"
 
 
@@ -880,15 +880,15 @@ class TestHelperFunctionPresence:
         "validate_variables",
     ]
 
-    def test_deploy_has_all_helper_functions(self, scenario3_deploy_text):
+    def test_deploy_has_all_helper_functions(self, gitops_deploy_text):
         for func in self.DEPLOY_HELPERS:
-            assert re.search(rf"^{func}\s*\(\)", scenario3_deploy_text, re.MULTILINE), (
+            assert re.search(rf"^{func}\s*\(\)", gitops_deploy_text, re.MULTILINE), (
                 f"Deploy script missing helper function '{func}'"
             )
 
-    def test_teardown_has_all_helper_functions(self, scenario3_teardown_text):
+    def test_teardown_has_all_helper_functions(self, gitops_teardown_text):
         for func in self.TEARDOWN_HELPERS:
-            assert re.search(rf"^{func}\s*\(\)", scenario3_teardown_text, re.MULTILINE), (
+            assert re.search(rf"^{func}\s*\(\)", gitops_teardown_text, re.MULTILINE), (
                 f"Teardown script missing helper function '{func}'"
             )
 
@@ -904,50 +904,50 @@ class TestTeardownOrdering:
     Order: ArgoCD App → Runner → Operator → ArgoCD → CoreDNS → Harbor → Contour → Cert Secrets
     Validates: Requirement 12.5, 14.11"""
 
-    def test_argocd_app_before_runner(self, scenario3_teardown_text):
-        app_match = re.search(r"kubectl\s+delete\s+application\s+microservices-demo", scenario3_teardown_text)
-        runner_match = re.search(r"helm\s+uninstall\s+gitlab-runner", scenario3_teardown_text)
+    def test_argocd_app_before_runner(self, gitops_teardown_text):
+        app_match = re.search(r"kubectl\s+delete\s+application\s+microservices-demo", gitops_teardown_text)
+        runner_match = re.search(r"helm\s+uninstall\s+gitlab-runner", gitops_teardown_text)
         assert app_match and runner_match, "Missing ArgoCD app delete or GitLab Runner uninstall"
         assert app_match.start() < runner_match.start(), (
             "ArgoCD Application delete should appear before GitLab Runner uninstall"
         )
 
-    def test_runner_before_operator(self, scenario3_teardown_text):
-        runner_match = re.search(r"helm\s+uninstall\s+gitlab-runner", scenario3_teardown_text)
-        gitlab_match = re.search(r"helm\s+uninstall\s+gitlab\s", scenario3_teardown_text)
+    def test_runner_before_operator(self, gitops_teardown_text):
+        runner_match = re.search(r"helm\s+uninstall\s+gitlab-runner", gitops_teardown_text)
+        gitlab_match = re.search(r"helm\s+uninstall\s+gitlab\s", gitops_teardown_text)
         assert runner_match and gitlab_match, "Missing GitLab Runner or GitLab uninstall"
         assert runner_match.start() < gitlab_match.start(), (
             "GitLab Runner uninstall should appear before GitLab uninstall"
         )
 
-    def test_operator_before_argocd(self, scenario3_teardown_text):
-        gitlab_match = re.search(r"helm\s+uninstall\s+gitlab\s", scenario3_teardown_text)
-        argocd_match = re.search(r"helm\s+uninstall\s+argocd", scenario3_teardown_text)
+    def test_operator_before_argocd(self, gitops_teardown_text):
+        gitlab_match = re.search(r"helm\s+uninstall\s+gitlab\s", gitops_teardown_text)
+        argocd_match = re.search(r"helm\s+uninstall\s+argocd", gitops_teardown_text)
         assert gitlab_match and argocd_match, "Missing GitLab or ArgoCD uninstall"
         assert gitlab_match.start() < argocd_match.start(), (
             "GitLab uninstall should appear before ArgoCD uninstall"
         )
 
-    def test_argocd_before_coredns_restore(self, scenario3_teardown_text):
-        argocd_match = re.search(r"helm\s+uninstall\s+argocd", scenario3_teardown_text)
-        coredns_match = re.search(r"^#{3,}\n# Phase 6: Restore CoreDNS", scenario3_teardown_text, re.MULTILINE)
+    def test_argocd_before_coredns_restore(self, gitops_teardown_text):
+        argocd_match = re.search(r"helm\s+uninstall\s+argocd", gitops_teardown_text)
+        coredns_match = re.search(r"^#{3,}\n# Phase 6: Restore CoreDNS", gitops_teardown_text, re.MULTILINE)
         assert argocd_match and coredns_match, "Missing ArgoCD uninstall or CoreDNS restore phase"
         assert argocd_match.start() < coredns_match.start(), (
             "ArgoCD uninstall should appear before CoreDNS restore"
         )
 
-    def test_coredns_before_harbor(self, scenario3_teardown_text):
-        coredns_match = re.search(r"Restore CoreDNS", scenario3_teardown_text, re.IGNORECASE)
-        harbor_match = re.search(r"helm\s+uninstall\s+harbor", scenario3_teardown_text)
+    def test_coredns_before_harbor(self, gitops_teardown_text):
+        coredns_match = re.search(r"Restore CoreDNS", gitops_teardown_text, re.IGNORECASE)
+        harbor_match = re.search(r"helm\s+uninstall\s+harbor", gitops_teardown_text)
         assert coredns_match and harbor_match, "Missing CoreDNS restore or Harbor uninstall"
         assert coredns_match.start() < harbor_match.start(), (
             "CoreDNS restore should appear before Harbor uninstall"
         )
 
-    def test_harbor_before_cert_secrets(self, scenario3_teardown_text):
-        harbor_match = re.search(r"helm\s+uninstall\s+harbor", scenario3_teardown_text)
+    def test_harbor_before_cert_secrets(self, gitops_teardown_text):
+        harbor_match = re.search(r"helm\s+uninstall\s+harbor", gitops_teardown_text)
         # Match the actual phase section divider, not the top-of-file comment listing
-        cert_match = re.search(r"^#{3,}\n# Phase 8: Delete Certificate Secrets", scenario3_teardown_text, re.MULTILINE)
+        cert_match = re.search(r"^#{3,}\n# Phase 8: Delete Certificate Secrets", gitops_teardown_text, re.MULTILINE)
         assert harbor_match and cert_match, "Missing Harbor uninstall or certificate secrets delete phase"
         assert harbor_match.start() < cert_match.start(), (
             "Harbor uninstall should appear before certificate secrets deletion"
@@ -964,24 +964,24 @@ class TestTeardownIdempotency:
     """Teardown script handles already-deleted resources gracefully.
     Validates: Requirements 12.8, 12.9"""
 
-    def test_ignore_not_found_present(self, scenario3_teardown_text):
-        assert "--ignore-not-found" in scenario3_teardown_text, (
+    def test_ignore_not_found_present(self, gitops_teardown_text):
+        assert "--ignore-not-found" in gitops_teardown_text, (
             "Teardown script missing '--ignore-not-found' for idempotent deletion"
         )
 
-    def test_or_true_present(self, scenario3_teardown_text):
-        assert "|| true" in scenario3_teardown_text, (
+    def test_or_true_present(self, gitops_teardown_text):
+        assert "|| true" in gitops_teardown_text, (
             "Teardown script missing '|| true' for error suppression"
         )
 
-    def test_finalizer_stripping_present(self, scenario3_teardown_text):
-        assert re.search(r'kubectl\s+patch.*finalizers.*null', scenario3_teardown_text, re.DOTALL), (
+    def test_finalizer_stripping_present(self, gitops_teardown_text):
+        assert re.search(r'kubectl\s+patch.*finalizers.*null', gitops_teardown_text, re.DOTALL), (
             "Teardown script missing finalizer stripping"
         )
 
-    def test_helm_uninstall_with_error_suppression(self, scenario3_teardown_text):
+    def test_helm_uninstall_with_error_suppression(self, gitops_teardown_text):
         helm_lines = [
-            line.strip() for line in scenario3_teardown_text.splitlines()
+            line.strip() for line in gitops_teardown_text.splitlines()
             if re.search(r"^\s*helm\s+uninstall\s+", line)
         ]
         assert len(helm_lines) >= 4, "Expected at least 4 helm uninstall commands"
@@ -999,37 +999,37 @@ class TestTeardownIdempotency:
 
 class TestTeardownNewPhases:
     """Teardown script includes Harbor, ArgoCD uninstall commands.
-    Contour is a shared VKS package (scenario2 teardown handles it).
+    Contour is a shared VKS package (deploy-metrics teardown handles it).
     Validates: Requirements 12.1, 12.2, 12.3, 14.11"""
 
-    def test_teardown_harbor_uninstall(self, scenario3_teardown_text):
-        assert re.search(r"helm\s+uninstall\s+harbor", scenario3_teardown_text), (
+    def test_teardown_harbor_uninstall(self, gitops_teardown_text):
+        assert re.search(r"helm\s+uninstall\s+harbor", gitops_teardown_text), (
             "Teardown script missing 'helm uninstall harbor'"
         )
 
-    def test_teardown_argocd_uninstall(self, scenario3_teardown_text):
-        assert re.search(r"helm\s+uninstall\s+argocd", scenario3_teardown_text), (
+    def test_teardown_argocd_uninstall(self, gitops_teardown_text):
+        assert re.search(r"helm\s+uninstall\s+argocd", gitops_teardown_text), (
             "Teardown script missing 'helm uninstall argocd'"
         )
 
-    def test_teardown_contour_ingress_namespace_reference(self, scenario3_teardown_text):
-        assert "CONTOUR_INGRESS_NAMESPACE" in scenario3_teardown_text, (
+    def test_teardown_contour_ingress_namespace_reference(self, gitops_teardown_text):
+        assert "CONTOUR_INGRESS_NAMESPACE" in gitops_teardown_text, (
             "Teardown script missing CONTOUR_INGRESS_NAMESPACE reference"
         )
 
-    def test_teardown_harbor_namespace_deletion(self, scenario3_teardown_text):
-        assert "HARBOR_NAMESPACE" in scenario3_teardown_text, (
+    def test_teardown_harbor_namespace_deletion(self, gitops_teardown_text):
+        assert "HARBOR_NAMESPACE" in gitops_teardown_text, (
             "Teardown script missing HARBOR_NAMESPACE reference"
         )
 
-    def test_teardown_cert_cleanup(self, scenario3_teardown_text):
-        assert "CERT_DIR" in scenario3_teardown_text, (
+    def test_teardown_cert_cleanup(self, gitops_teardown_text):
+        assert "CERT_DIR" in gitops_teardown_text, (
             "Teardown script missing CERT_DIR reference for certificate cleanup"
         )
 
-    def test_teardown_does_not_uninstall_contour(self, scenario3_teardown_text):
-        """Contour is a shared VKS package — scenario3 teardown should NOT uninstall it."""
-        assert not re.search(r"helm\s+uninstall\s+contour", scenario3_teardown_text), (
+    def test_teardown_does_not_uninstall_contour(self, gitops_teardown_text):
+        """Contour is a shared VKS package — deploy-gitops teardown should NOT uninstall it."""
+        assert not re.search(r"helm\s+uninstall\s+contour", gitops_teardown_text), (
             "Teardown script should NOT uninstall Contour (shared VKS package)"
         )
 
@@ -1054,11 +1054,11 @@ class TestREADMEFiles:
             "Teardown README not found at examples/deploy-gitops/README-teardown.md"
         )
 
-    def test_deploy_readme_contains_scenario1_prerequisite(self):
+    def test_deploy_readme_contains_deploy_cluster_prerequisite(self):
         with open(DEPLOY_README_PATH, encoding="utf-8") as f:
             text = f.read()
-        assert "Scenario 1" in text, (
-            "Deploy README missing Scenario 1 prerequisite reference"
+        assert "Deploy Cluster" in text, (
+            "Deploy README missing Deploy Cluster prerequisite reference"
         )
 
     def test_deploy_readme_contains_infrastructure_services(self):

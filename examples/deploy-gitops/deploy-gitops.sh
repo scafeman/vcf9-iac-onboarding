@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Scenario 3 — Self-Contained ArgoCD Consumption Model Deploy Script
+# VCF 9 Deploy GitOps — Self-Contained ArgoCD Consumption Model Deploy Script
 #
 # This script installs the full ArgoCD Consumption Model stack on an existing
-# VKS cluster provisioned by Scenario 1. Infrastructure services (cert-manager,
-# Contour) are installed as VKS standard packages (shared with Scenario 2).
+# VKS cluster provisioned by Deploy Cluster. Infrastructure services (cert-manager,
+# Contour) are installed as VKS standard packages (shared with Deploy Metrics).
 # Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 #
 #   Phase 1:  Kubeconfig Setup & Connectivity Check
@@ -27,7 +27,7 @@ set -euo pipefail
 #   Phase 15: Summary
 #
 # Prerequisites:
-#   - Scenario 1 completed successfully (VKS cluster running with LB support)
+#   - Deploy Cluster completed successfully (VKS cluster running with LB support)
 #   - Valid admin kubeconfig file for the target cluster
 #   - Helm v3 installed
 #   - kubectl installed
@@ -87,7 +87,7 @@ APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
 # Defaults to the Google Cloud Platform microservices-demo public repo.
 HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
 
-# --- Package Repository (shared with Scenario 2) ---
+# --- Package Repository (shared with Deploy Metrics) ---
 PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
 PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
 PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
@@ -330,7 +330,7 @@ log_step 1 "Setting up kubeconfig"
 export KUBECONFIG="${KUBECONFIG_FILE}"
 
 if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
-  log_error "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Ensure Scenario 1 has completed and the kubeconfig file exists."
+  log_error "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
   exit 2
 fi
 
@@ -394,7 +394,7 @@ log_success "Certificates ready in '${CERT_DIR}'"
 # Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 #
 # Contour and cert-manager are installed as VKS standard packages (the same
-# packages used by Scenario 2). If Scenario 2 has already been deployed,
+# packages used by Deploy Metrics). If Deploy Metrics has already been deployed,
 # these packages will already exist and this phase skips installation.
 # A separate envoy-lb LoadBalancer service is created to provide external
 # access (the VKS Contour package creates Envoy as NodePort by default).
@@ -594,7 +594,7 @@ if echo "${CURRENT_COREFILE}" | grep -q "${GITLAB_HOSTNAME}"; then
   log_success "CoreDNS already contains entry for '${GITLAB_HOSTNAME}', skipping patch"
 else
   # First, remove any stale hosts blocks left by previous teardowns or
-  # other scenarios. Without this, repeated teardown/deploy cycles accumulate
+  # other deployments. Without this, repeated teardown/deploy cycles accumulate
   # empty hosts { fallthrough } blocks, causing CoreDNS to crash with
   # "this plugin can only be used once per Server Block".
   CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
@@ -1170,7 +1170,7 @@ fi
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Scenario 3 — Deployment Complete"
+echo "  VCF 9 Deploy GitOps — Deployment Complete"
 echo "============================================="
 echo "  Cluster:              ${CLUSTER_NAME}"
 echo "  Domain:               ${DOMAIN}"
@@ -1184,7 +1184,7 @@ echo "  Helm Charts Repo:     ${HELM_CHARTS_REPO_URL}"
 echo "============================================="
 echo ""
 echo "  Infrastructure deployed (self-contained):"
-echo "    - Contour ingress controller (VKS package, shared with Scenario 2)"
+echo "    - Contour ingress controller (VKS package, shared with Deploy Metrics)"
 echo "    - Harbor container registry (Helm chart v${HARBOR_VERSION})"
 echo "    - ArgoCD GitOps controller (Helm chart v${ARGOCD_VERSION})"
 echo "    - Self-signed CA and wildcard certificates (${CERT_DIR})"
@@ -1223,6 +1223,6 @@ echo "    Harbor:    admin / ${HARBOR_ADMIN_PASSWORD}"
 echo "    ArgoCD:    admin / ${ARGOCD_PASSWORD}"
 echo ""
 
-log_success "Scenario 3 deployment complete"
+log_success "Deploy GitOps deployment complete"
 
 exit 0
