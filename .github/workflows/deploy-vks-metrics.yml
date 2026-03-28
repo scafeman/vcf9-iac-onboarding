@@ -116,6 +116,10 @@ jobs:
             echo "Found namespace context: $NAMESPACE_CONTEXT"
             vcf context use "$NAMESPACE_CONTEXT"
 
+            # Extract the namespace ID from the context (format: context:namespace:project)
+            DYNAMIC_NS_NAME=$(echo "$NAMESPACE_CONTEXT" | cut -d: -f2)
+            echo "DYNAMIC_NS_NAME=$DYNAMIC_NS_NAME" >> "$GITHUB_ENV"
+
             # Retrieve the admin kubeconfig
             vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
             echo "Kubeconfig retrieved via VCF CLI"
@@ -710,6 +714,7 @@ jobs:
           | Field | Value |
           |---|---|
           | Cluster | ${CLUSTER_NAME} |
+          | Namespace | ${DYNAMIC_NS_NAME} |
           | Domain | ${DOMAIN} |
           | Contour LB IP | ${CONTOUR_LB_IP} |
           | Grafana URL | https://${GRAFANA_HOSTNAME} |
