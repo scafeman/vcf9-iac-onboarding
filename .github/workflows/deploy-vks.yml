@@ -65,6 +65,11 @@ on:
         required: false
         type: string
         default: "10"
+      containerd_volume_size:
+        description: "Containerd data volume size per node (default: 50Gi)"
+        required: false
+        type: string
+        default: "50Gi"
 
   repository_dispatch:
     types: [deploy-vks]
@@ -103,6 +108,7 @@ jobs:
       STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
       MIN_NODES: ${{ github.event.inputs.min_nodes || github.event.client_payload.min_nodes || secrets.MIN_NODES || '2' }}
       MAX_NODES: ${{ github.event.inputs.max_nodes || github.event.client_payload.max_nodes || secrets.MAX_NODES || '10' }}
+      CONTAINERD_VOLUME_SIZE: ${{ github.event.inputs.containerd_volume_size || github.event.client_payload.containerd_volume_size || '50Gi' }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: gh-actions-deploy
@@ -322,7 +328,7 @@ jobs:
               - name: volumes
                 value:
                 - name: containerd-data
-                  capacity: 100Gi
+                  capacity: $CONTAINERD_VOLUME_SIZE
                   mountPath: /var/lib/containerd
                   storageClass: $STORAGE_CLASS
           EOF
