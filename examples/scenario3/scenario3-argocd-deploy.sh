@@ -53,8 +53,8 @@ KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME}.yaml}"
 DOMAIN="${DOMAIN:-lab.local}"
 
 # --- Infrastructure Versions ---
-HARBOR_VERSION="${HARBOR_VERSION:-1.16.2}"
-ARGOCD_VERSION="${ARGOCD_VERSION:-7.8.13}"
+HARBOR_VERSION="${HARBOR_VERSION:-1.18.3}"
+ARGOCD_VERSION="${ARGOCD_VERSION:-9.4.17}"
 
 # --- Harbor Credentials ---
 # If HARBOR_ADMIN_PASSWORD is not set, a random 24-character password is
@@ -68,7 +68,7 @@ HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-changeit}"
 CERT_DIR="${CERT_DIR:-./certs}"
 
 # --- GitLab Versions ---
-GITLAB_OPERATOR_VERSION="${GITLAB_OPERATOR_VERSION:-9.10.0}"
+GITLAB_OPERATOR_VERSION="${GITLAB_OPERATOR_VERSION:-9.10.1}"
 GITLAB_RUNNER_VERSION="${GITLAB_RUNNER_VERSION:-0.75.0}"
 # GITLAB_RUNNER_TOKEN is auto-retrieved from the GitLab instance after Phase 9.
 # Set it here only if you already have a token from a previous deployment.

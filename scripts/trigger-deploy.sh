@@ -36,6 +36,7 @@ Optional (override workflow defaults):
   --storage-class     Storage class for PVCs
   --min-nodes         Autoscaler minimum worker nodes
   --max-nodes         Autoscaler maximum worker nodes
+  --containerd-volume-size  Containerd data volume size per node
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -69,6 +70,7 @@ VM_CLASS=""
 STORAGE_CLASS=""
 MIN_NODES=""
 MAX_NODES=""
+CONTAINERD_VOLUME_SIZE=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -92,6 +94,7 @@ while [[ $# -gt 0 ]]; do
     --storage-class)      STORAGE_CLASS="$2"; shift 2 ;;
     --min-nodes)          MIN_NODES="$2"; shift 2 ;;
     --max-nodes)          MAX_NODES="$2"; shift 2 ;;
+    --containerd-volume-size) CONTAINERD_VOLUME_SIZE="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -147,6 +150,7 @@ add_field "vm_class"           "$VM_CLASS"
 add_field "storage_class"      "$STORAGE_CLASS"
 add_field "min_nodes"          "$MIN_NODES"
 add_field "max_nodes"          "$MAX_NODES"
+add_field "containerd_volume_size" "$CONTAINERD_VOLUME_SIZE"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 

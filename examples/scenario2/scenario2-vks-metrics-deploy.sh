@@ -49,7 +49,7 @@ PACKAGE_REPO_NAME="${PACKAGE_REPO_NAME:-tkg-packages}"
 PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
 
 # --- Package Versions ---
-TELEGRAF_VERSION="${TELEGRAF_VERSION:-}"
+TELEGRAF_VERSION="${TELEGRAF_VERSION:-1.37.1+vmware.1-vks.1}"
 
 # --- Configuration ---
 TELEGRAF_VALUES_FILE="${TELEGRAF_VALUES_FILE:-examples/scenario2/telegraf-values.yaml}"
