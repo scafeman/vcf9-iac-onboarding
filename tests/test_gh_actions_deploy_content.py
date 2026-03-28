@@ -15,12 +15,12 @@ class TestWorkflowStructure:
     def test_workflow_yaml_parses(self, workflow_yaml):
         assert isinstance(workflow_yaml, dict), "Workflow YAML did not parse as a dict"
 
-    def test_workflow_dispatch_has_eleven_inputs(self, workflow_yaml):
+    def test_workflow_dispatch_has_twelve_inputs(self, workflow_yaml):
         # PyYAML parses the YAML key `on` as boolean True
         triggers = workflow_yaml.get("on") or workflow_yaml.get(True)
         inputs = triggers["workflow_dispatch"]["inputs"]
-        assert len(inputs) == 11, (
-            f"Expected 11 workflow_dispatch inputs, got {len(inputs)}"
+        assert len(inputs) == 12, (
+            f"Expected 12 workflow_dispatch inputs, got {len(inputs)}"
         )
 
     def test_workflow_dispatch_input_names(self, workflow_yaml):
@@ -28,7 +28,8 @@ class TestWorkflowStructure:
         inputs = triggers["workflow_dispatch"]["inputs"]
         expected = {"project_name", "cluster_name", "namespace_prefix", "environment",
                     "resource_class", "vm_class", "min_nodes", "max_nodes",
-                    "containerd_volume_size", "os_name", "os_version"}
+                    "containerd_volume_size", "os_name", "os_version",
+                    "control_plane_replicas"}
         assert set(inputs.keys()) == expected
 
     def test_repository_dispatch_has_deploy_vks(self, workflow_yaml):

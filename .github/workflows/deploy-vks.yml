@@ -79,6 +79,11 @@ on:
         description: "Node OS version (required for ubuntu, e.g., 24.04)"
         required: false
         type: string
+      control_plane_replicas:
+        description: "Control plane node count: 1 (default) or 3 (HA)"
+        required: false
+        type: string
+        default: "1"
 
   repository_dispatch:
     types: [deploy-vks]
@@ -120,6 +125,7 @@ jobs:
       CONTAINERD_VOLUME_SIZE: ${{ github.event.inputs.containerd_volume_size || github.event.client_payload.containerd_volume_size || '50Gi' }}
       OS_NAME: ${{ github.event.inputs.os_name || github.event.client_payload.os_name || 'photon' }}
       OS_VERSION: ${{ github.event.inputs.os_version || github.event.client_payload.os_version || '' }}
+      CONTROL_PLANE_REPLICAS: ${{ github.event.inputs.control_plane_replicas || github.event.client_payload.control_plane_replicas || '1' }}
 
       # --- Package Configuration (for Cluster Autoscaler) ---
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -333,7 +339,7 @@ jobs:
                 metadata:
                   annotations:
                     run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
-                replicas: 1
+                replicas: $CONTROL_PLANE_REPLICAS
               workers:
                 machineDeployments:
                 - class: node-pool

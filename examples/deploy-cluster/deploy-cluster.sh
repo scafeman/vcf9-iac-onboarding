@@ -61,6 +61,7 @@ STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
 MIN_NODES="${MIN_NODES:-2}"
 MAX_NODES="${MAX_NODES:-10}"
 NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
+CONTROL_PLANE_REPLICAS="${CONTROL_PLANE_REPLICAS:-1}"
 
 # --- OS Image ---
 OS_NAME="${OS_NAME:-photon}"
@@ -328,7 +329,7 @@ spec:
       metadata:
         annotations:
           run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"
-      replicas: 1
+      replicas: ${CONTROL_PLANE_REPLICAS}
     workers:
       machineDeployments:
       - class: node-pool

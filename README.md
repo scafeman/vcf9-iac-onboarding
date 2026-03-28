@@ -266,6 +266,7 @@ pytest tests/ -v
 | `CONTAINERD_VOLUME_SIZE` | No | Containerd data volume per node (default: `50Gi`) |
 | `OS_NAME` | No | Node OS image: `photon` or `ubuntu` (default: `photon`) |
 | `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
+| `CONTROL_PLANE_REPLICAS` | No | Control plane node count: `1` (default) or `3` (HA) |
 | `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
 | `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
 | `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |

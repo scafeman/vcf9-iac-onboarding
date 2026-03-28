@@ -54,7 +54,7 @@ If the namespace context isn't available yet, it retries every 10 seconds for up
 
 Applies a Cluster API manifest (`cluster.x-k8s.io/v1beta1`) that deploys a VKS cluster with:
 
-- 1 control plane node (Photon OS by default, Ubuntu available via `OS_NAME`)
+- 1 control plane node by default (set `CONTROL_PLANE_REPLICAS=3` for HA)
 - 1 worker node pool with autoscaling (min 2, max 10 nodes)
 - Cluster class: `builtin-generic-v3.4.0`
 - Kubernetes version: `v1.33.6+vmware.1-fips`
@@ -130,7 +130,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
 | `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
 
-Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
+Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `CONTROL_PLANE_REPLICAS` (`1` — set to `3` for HA), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
 
 ---
 

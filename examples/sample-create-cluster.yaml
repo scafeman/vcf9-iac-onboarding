@@ -64,6 +64,7 @@ spec:
           #     metadata.name field contains the Content Library ID.
           # CHANGE: Replace content-library ID and os-name for your environment
           run.tanzu.vmware.com/resolve-os-image: "os-name=photon, content-library=cl-32ee3681364c701d0"
+      # CHANGE: Set to 1 for single control plane (default) or 3 for HA
       replicas: 1
     workers:
       machineDeployments:
