@@ -54,10 +54,10 @@ If the namespace context isn't available yet, it retries every 10 seconds for up
 
 Applies a Cluster API manifest (`cluster.x-k8s.io/v1beta1`) that deploys a VKS cluster with:
 
-- 1 control plane node (Photon OS)
+- 1 control plane node (Photon OS by default, Ubuntu available via `OS_NAME`)
 - 1 worker node pool with autoscaling (min 2, max 10 nodes)
 - Cluster class: `builtin-generic-v3.4.0`
-- Kubernetes version: `v1.33.6+vmware.1-fips-vkr.2`
+- Kubernetes version: `v1.33.6+vmware.1-fips`
 
 The script polls every 15 seconds until the cluster reaches `Provisioned` phase (timeout: 30 minutes). This phase includes an idempotency check — if the cluster already exists, creation is skipped.
 
@@ -73,7 +73,7 @@ Then waits up to 300 seconds for the guest cluster API server to become reachabl
 
 ### Phase 5b: Worker Node Readiness Wait
 
-After the API server is reachable, the script waits for at least `MIN_NODES` (default: 3) worker nodes to reach `Ready` status before proceeding. This prevents workload deployment failures caused by unschedulable pods. Timeout: 600 seconds.
+After the API server is reachable, the script waits for at least `MIN_NODES` (default: 2) worker nodes to reach `Ready` status before proceeding. This prevents workload deployment failures caused by unschedulable pods. Timeout: 600 seconds.
 
 ```
 kubectl get nodes --no-headers | grep -c ' Ready'
@@ -119,7 +119,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
 | `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
 
-Optional variables with defaults: `REGION_NAME`, `VPC_NAME`, `RESOURCE_CLASS`, `CPU_LIMIT`, `MEMORY_LIMIT`, `K8S_VERSION`, `SERVICES_CIDR`, `PODS_CIDR`, `VM_CLASS`, `STORAGE_CLASS`, `MIN_NODES`, `MAX_NODES`, and all timeout values.
+Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), and all timeout values.
 
 ---
 
