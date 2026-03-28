@@ -333,7 +333,55 @@ jobs:
           fi
           echo "Context bridge complete — targeting namespace '$DYNAMIC_NS_NAME' in project '$PROJECT_NAME'"
 
-      # Phase 4b: Create Trusted CA Secret (conditional)
+      # Phase 4b: Generate Self-Signed CA Certificate (conditional)
+      - name: Generate Self-Signed CA Certificate
+        if: env.TRUSTED_CA_PATH != ''
+        run: |
+          set -euo pipefail
+          CERT_DIR=$(dirname "$TRUSTED_CA_PATH")
+          if [ -f "$TRUSTED_CA_PATH" ]; then
+            echo "CA certificate already exists at '$TRUSTED_CA_PATH', skipping generation"
+          else
+            mkdir -p "$CERT_DIR"
+            if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
+              -keyout "${CERT_DIR}/ca.key" -out "$TRUSTED_CA_PATH" \
+              -days 3650 -subj "/CN=Self-Signed CA"; then
+              echo "::error::Failed to generate self-signed CA certificate"
+              exit 1
+            fi
+            echo "Self-signed CA certificate generated at '$TRUSTED_CA_PATH'"
+
+            # Generate wildcard certificate for later use by Deploy Metrics/GitOps
+            cat > /tmp/wildcard-deploy.cnf <<CNFEOF
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          distinguished_name = dn
+          req_extensions     = v3_req
+
+          [dn]
+          CN = *.${DOMAIN:-lab.local}
+
+          [v3_req]
+          subjectAltName = DNS:*.${DOMAIN:-lab.local},DNS:${DOMAIN:-lab.local}
+          CNFEOF
+
+            openssl req -new -nodes -newkey rsa:2048 \
+              -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+              -config /tmp/wildcard-deploy.cnf 2>/dev/null || true
+
+            openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+              -CA "$TRUSTED_CA_PATH" -CAkey "${CERT_DIR}/ca.key" \
+              -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+              -days 3650 -extensions v3_req -extfile /tmp/wildcard-deploy.cnf 2>/dev/null || true
+
+            if [ -f "${CERT_DIR}/wildcard.crt" ]; then
+              cat "${CERT_DIR}/wildcard.crt" "$TRUSTED_CA_PATH" > "${CERT_DIR}/fullchain.crt"
+              echo "Wildcard certificate and fullchain generated"
+            fi
+          fi
+
+      # Phase 4c: Create Trusted CA Secret (conditional)
       - name: Create Trusted CA Secret
         if: env.TRUSTED_CA_PATH != ''
         run: |
