@@ -84,6 +84,11 @@ on:
         required: false
         type: string
         default: "1"
+      node_pool_name:
+        description: "Worker node pool name (default: node-pool-01)"
+        required: false
+        type: string
+        default: "node-pool-01"
 
   repository_dispatch:
     types: [deploy-vks]
@@ -126,6 +131,7 @@ jobs:
       OS_NAME: ${{ github.event.inputs.os_name || github.event.client_payload.os_name || 'photon' }}
       OS_VERSION: ${{ github.event.inputs.os_version || github.event.client_payload.os_version || '' }}
       CONTROL_PLANE_REPLICAS: ${{ github.event.inputs.control_plane_replicas || github.event.client_payload.control_plane_replicas || '1' }}
+      NODE_POOL_NAME: ${{ github.event.inputs.node_pool_name || github.event.client_payload.node_pool_name || 'node-pool-01' }}
 
       # --- Package Configuration (for Cluster Autoscaler) ---
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -343,7 +349,7 @@ jobs:
               workers:
                 machineDeployments:
                 - class: node-pool
-                  name: node-pool-01
+                  name: $NODE_POOL_NAME
                   metadata:
                     annotations:
                       run.tanzu.vmware.com/resolve-os-image: "${OS_IMAGE_ANNOTATION}"

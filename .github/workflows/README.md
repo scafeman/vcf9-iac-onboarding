@@ -201,6 +201,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 | `OS_NAME` | `os_name` | `photon` | Node OS image name (`photon` or `ubuntu`) |
 | `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
 | `CONTROL_PLANE_REPLICAS` | `control_plane_replicas` | `1` | Control plane node count: `1` (default) or `3` (HA) |
+| `NODE_POOL_NAME` | `node_pool_name` | `node-pool-01` | Worker node pool name |
 | `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages and Cluster Autoscaler |
 | `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages 3.6.0 | Package repository URL |
 | `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Timeout (seconds) for package reconciliation |
@@ -210,7 +211,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy VKS Cluster"** → **"Run workflow"**
-2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**
+2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**, **control_plane_replicas**, **node_pool_name**
 
 ### Trigger Script (repository_dispatch)
 
@@ -227,7 +228,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 
 **Required:** `--repo`, `--token`, `--project-name`, `--cluster-name`, `--namespace-prefix`
 
-**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--containerd-volume-size`, `--os-name`, `--os-version`, `--control-plane-replicas`, `--vcfa-endpoint`, `--tenant-name`
+**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--containerd-volume-size`, `--os-name`, `--os-version`, `--control-plane-replicas`, `--node-pool-name`, `--vcfa-endpoint`, `--tenant-name`
 
 ### Direct API Call (curl)
 

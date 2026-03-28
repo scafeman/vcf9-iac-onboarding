@@ -40,6 +40,7 @@ Optional (override workflow defaults):
   --os-name           Node OS image name (photon or ubuntu, default: photon)
   --os-version        Node OS version (required for ubuntu, e.g., 24.04)
   --control-plane-replicas  Control plane node count: 1 (default) or 3 (HA)
+  --node-pool-name    Worker node pool name (default: node-pool-01)
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -77,6 +78,7 @@ CONTAINERD_VOLUME_SIZE=""
 OS_NAME=""
 OS_VERSION=""
 CONTROL_PLANE_REPLICAS=""
+NODE_POOL_NAME=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -104,6 +106,7 @@ while [[ $# -gt 0 ]]; do
     --os-name)            OS_NAME="$2"; shift 2 ;;
     --os-version)         OS_VERSION="$2"; shift 2 ;;
     --control-plane-replicas) CONTROL_PLANE_REPLICAS="$2"; shift 2 ;;
+    --node-pool-name)     NODE_POOL_NAME="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -163,6 +166,7 @@ add_field "containerd_volume_size" "$CONTAINERD_VOLUME_SIZE"
 add_field "os_name"            "$OS_NAME"
 add_field "os_version"         "$OS_VERSION"
 add_field "control_plane_replicas" "$CONTROL_PLANE_REPLICAS"
+add_field "node_pool_name"     "$NODE_POOL_NAME"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 
