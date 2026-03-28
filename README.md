@@ -221,6 +221,8 @@ pytest tests/ -v
 
 ## Environment Variables Reference
 
+### Scenario 1 — VKS Cluster Deployment
+
 | Variable | Required | Description |
 |---|---|---|
 | `VCF_API_TOKEN` | Yes | API token from the VCFA portal |
@@ -233,8 +235,41 @@ pytest tests/ -v
 | `ZONE_NAME` | Yes | Availability zone for namespace placement |
 | `CLUSTER_NAME` | Yes | VKS cluster name |
 | `CONTENT_LIBRARY_ID` | Yes | vSphere content library ID for OS images |
+| `REGION_NAME` | No | Region name (default: `region-us1-a`) |
+| `VPC_NAME` | No | VPC name (default: `region-us1-a-default-vpc`) |
+| `RESOURCE_CLASS` | No | Namespace resource class (default: `xxlarge`) |
+| `K8S_VERSION` | No | Kubernetes version (default: `v1.33.6+vmware.1-fips`) |
+| `VM_CLASS` | No | VM class for worker nodes (default: `best-effort-large`) |
+| `STORAGE_CLASS` | No | Storage class for PVCs (default: `nfs`) |
+| `MIN_NODES` | No | Autoscaler minimum nodes (default: `2`) |
+| `MAX_NODES` | No | Autoscaler maximum nodes (default: `10`) |
+| `CONTAINERD_VOLUME_SIZE` | No | Containerd data volume per node (default: `50Gi`) |
+| `OS_NAME` | No | Node OS image: `photon` or `ubuntu` (default: `photon`) |
+| `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
 
-Optional variables with sensible defaults: `REGION_NAME`, `VPC_NAME`, `RESOURCE_CLASS`, `CPU_LIMIT`, `MEMORY_LIMIT`, `K8S_VERSION`, `SERVICES_CIDR`, `PODS_CIDR`, `VM_CLASS`, `STORAGE_CLASS`, `MIN_NODES`, `MAX_NODES`, and all timeout values.
+### Scenario 2 — VKS Metrics Observability
+
+| Variable | Required | Description |
+|---|---|---|
+| `PACKAGE_NAMESPACE` | No | Namespace for VKS packages (default: `tkg-packages`) |
+| `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
+| `TELEGRAF_VERSION` | No | Telegraf package version (default: `1.37.1+vmware.1-vks.1`) |
+
+### Scenario 3 — ArgoCD Consumption Model
+
+| Variable | Required | Description |
+|---|---|---|
+| `HARBOR_VERSION` | No | Harbor Helm chart version (default: `1.18.3`) |
+| `ARGOCD_VERSION` | No | ArgoCD Helm chart version (default: `9.4.17`) |
+| `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.1`) |
+| `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.75.0`) |
+
+### GitHub Actions Runner
+
+| Variable | Required | Description |
+|---|---|---|
+| `RUNNER_TOKEN` | Yes | GitHub Actions runner registration token |
+| `REPO_URL` | Yes | GitHub repository URL (e.g., `https://github.com/OWNER/REPO`) |
 
 ## License
 
