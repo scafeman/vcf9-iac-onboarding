@@ -33,6 +33,11 @@ certsSecretName: harbor-ca-cert
 # Kubernetes executor configuration
 # ---------------------------------------------------------------------------
 runners:
+  # Enable privileged mode for Docker-in-Docker CI/CD builds.
+  # This is required for the Kubernetes executor to run containers
+  # with elevated privileges (e.g., docker build inside CI jobs).
+  privileged: true
+
   # TOML config fragment merged into the runner configuration.
   # The Kubernetes executor runs CI jobs as pods in the cluster.
   # Privileged mode is required for Docker-in-Docker image builds.
