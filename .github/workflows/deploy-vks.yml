@@ -45,6 +45,11 @@ on:
         required: false
         type: string
         default: "demo"
+      vpc_name:
+        description: "NSX VPC name (default: region-us1-a-default-vpc)"
+        required: false
+        type: string
+        default: "region-us1-a-default-vpc"
       resource_class:
         description: "Namespace resource class (default: xxlarge)"
         required: false
@@ -89,11 +94,6 @@ on:
         required: false
         type: string
         default: "node-pool-01"
-      vpc_name:
-        description: "NSX VPC name (default: region-us1-a-default-vpc)"
-        required: false
-        type: string
-        default: "region-us1-a-default-vpc"
 
   repository_dispatch:
     types: [deploy-vks]
