@@ -1,0 +1,720 @@
+# =============================================================================
+# Teardown Workflow — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow selectively tears down the three VCF 9 deployment stacks
+# (GitOps, Metrics, Cluster) in reverse dependency order. It consolidates
+# the logic from the three existing teardown shell scripts into inline
+# workflow steps, following the same patterns as the deploy workflows.
+#
+# Teardown order (reverse dependency):
+#   Phase Group A: GitOps Stack Teardown (ArgoCD, GitLab, Harbor, etc.)
+#   Phase Group B: Metrics Stack Teardown (Grafana, packages, etc.)
+#   Phase Group C: Cluster Stack Teardown (workloads, VKS cluster, project)
+#
+# Prerequisites:
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the VCFA endpoint and VKS clusters. All required
+#     tools (VCF CLI, kubectl, Helm, jq, python3) are baked into the runner
+#     via Dockerfile.runner.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "teardown"
+#
+# =============================================================================
+
+name: Teardown VCF Stacks
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      teardown_gitops:
+        description: "Tear down the GitOps stack (ArgoCD, GitLab, Harbor)"
+        required: false
+        type: boolean
+        default: true
+      teardown_metrics:
+        description: "Tear down the Metrics stack (Grafana, packages)"
+        required: false
+        type: boolean
+        default: true
+      teardown_cluster:
+        description: "Tear down the VKS cluster and project"
+        required: false
+        type: boolean
+        default: true
+
+  repository_dispatch:
+    types: [teardown]
+
+jobs:
+  teardown:
+    name: Teardown VCF Stacks
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > default
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      TEARDOWN_GITOPS: ${{ github.event.inputs.teardown_gitops || github.event.client_payload.teardown_gitops || 'true' }}
+      TEARDOWN_METRICS: ${{ github.event.inputs.teardown_metrics || github.event.client_payload.teardown_metrics || 'true' }}
+      TEARDOWN_CLUSTER: ${{ github.event.inputs.teardown_cluster || github.event.client_payload.teardown_cluster || 'true' }}
+      DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
+      KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
+      PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # =====================================================================
+      # Setup: Kubeconfig Retrieval
+      # =====================================================================
+
+      - name: Setup Kubeconfig
+        run: |
+          set -euo pipefail
+          if [ -z "$KUBECONFIG_PATH" ]; then
+            KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
+          fi
+
+          # If the kubeconfig file doesn't exist, retrieve it via VCF CLI
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
+            CONTEXT_NAME="teardown-deploy"
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+            vcf context create "$CONTEXT_NAME" \
+              --endpoint "https://$VCFA_ENDPOINT" \
+              --type cci \
+              --tenant-name "$TENANT_NAME" \
+              --api-token "$VCF_API_TOKEN" \
+              --set-current
+
+            # Find and switch to the namespace context that contains this cluster
+            # Convention: cluster name is <project>-clus-<id>, project name is <project>
+            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            echo "Derived project pattern: '$PROJECT_PATTERN'"
+
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+            echo "NAMESPACE_CONTEXT='$NAMESPACE_CONTEXT'"
+
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Deploy Cluster has completed."
+              exit 1
+            fi
+            echo "Found namespace context: $NAMESPACE_CONTEXT"
+            vcf context use "$NAMESPACE_CONTEXT"
+
+            # Extract the namespace ID from the context (format: context:namespace:project)
+            DYNAMIC_NS_NAME=$(echo "$NAMESPACE_CONTEXT" | cut -d: -f2)
+            echo "DYNAMIC_NS_NAME=$DYNAMIC_NS_NAME" >> "$GITHUB_ENV"
+
+            # Retrieve the admin kubeconfig
+            vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
+            echo "Kubeconfig retrieved via VCF CLI"
+          fi
+
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+
+          # Switch to the admin context (the file may contain multiple contexts)
+          ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+          if kubectl config get-contexts "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1; then
+            kubectl config use-context "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH"
+            echo "Switched to admin context '$ADMIN_CONTEXT'"
+          fi
+
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
+            exit 1
+          fi
+          echo "Kubeconfig set to '$KUBECONFIG_PATH'"
+
+      # =====================================================================
+      # Orphan Warning
+      # =====================================================================
+
+      - name: Warn Orphaned Stacks
+        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true')
+        run: |
+          set -euo pipefail
+          if [ "$TEARDOWN_GITOPS" != "true" ]; then
+            echo "::warning::GitOps stack teardown is skipped but cluster teardown is enabled. GitOps resources will be orphaned when the cluster is deleted."
+          fi
+          if [ "$TEARDOWN_METRICS" != "true" ]; then
+            echo "::warning::Metrics stack teardown is skipped but cluster teardown is enabled. Metrics resources will be orphaned when the cluster is deleted."
+          fi
+
+      # =====================================================================
+      # Phase Group A: GitOps Stack Teardown
+      # =====================================================================
+
+      - name: Delete ArgoCD Application
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          ARGOCD_NAMESPACE="argocd"
+          APP_NAMESPACE="microservices-demo"
+
+          # Delete the ArgoCD Application custom resource
+          kubectl delete application microservices-demo -n "$ARGOCD_NAMESPACE" --ignore-not-found 2>/dev/null || true
+
+          # Wait for Microservices Demo pods to terminate
+          echo "Waiting for pods in '$APP_NAMESPACE' to terminate..."
+          TIMEOUT=120
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            POD_COUNT=$(kubectl get pods -n "$APP_NAMESPACE" --no-headers 2>/dev/null | wc -l || echo "0")
+            if [ "$POD_COUNT" -eq 0 ]; then
+              break
+            fi
+            echo "  ${POD_COUNT} pod(s) still terminating... (${ELAPSED}s/${TIMEOUT}s elapsed)"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+
+          # Delete the application namespace
+          kubectl delete ns "$APP_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "ArgoCD Application 'microservices-demo' deleted"
+
+      - name: Delete GitLab Runner
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          GITLAB_RUNNER_NAMESPACE="gitlab-runners"
+
+          # Uninstall the GitLab Runner Helm release
+          helm uninstall gitlab-runner -n "$GITLAB_RUNNER_NAMESPACE" --no-hooks 2>/dev/null || true
+
+          # Strip finalizers from stuck resources
+          for resource in pods services deployments statefulsets replicasets jobs \
+                          persistentvolumeclaims secrets configmaps serviceaccounts ingresses; do
+            for item in $(kubectl get "$resource" -n "$GITLAB_RUNNER_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$item" -n "$GITLAB_RUNNER_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+          done
+
+          # Delete the namespace
+          kubectl delete ns "$GITLAB_RUNNER_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "GitLab Runner removed"
+
+      - name: Delete GitLab
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          GITLAB_NAMESPACE="gitlab-system"
+
+          # Uninstall the GitLab Helm release
+          helm uninstall gitlab -n "$GITLAB_NAMESPACE" --no-hooks 2>/dev/null || true
+
+          # Delete GitLab custom resources
+          kubectl delete gitlab --all -n "$GITLAB_NAMESPACE" 2>/dev/null || true
+
+          # Strip finalizers from stuck resources (targeted types + GitLab CRs)
+          for resource in pods services deployments statefulsets replicasets jobs \
+                          persistentvolumeclaims secrets configmaps serviceaccounts ingresses \
+                          gitlabs runners; do
+            for item in $(kubectl get "$resource" -n "$GITLAB_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$item" -n "$GITLAB_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+          done
+
+          # Delete the namespace
+          kubectl delete ns "$GITLAB_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "GitLab removed"
+
+      - name: Delete ArgoCD
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          ARGOCD_NAMESPACE="argocd"
+
+          # Uninstall the ArgoCD Helm release
+          helm uninstall argocd -n "$ARGOCD_NAMESPACE" --no-hooks 2>/dev/null || true
+
+          # Strip finalizers from stuck resources (targeted types + ArgoCD CRs)
+          for resource in pods services deployments statefulsets replicasets jobs \
+                          persistentvolumeclaims secrets configmaps serviceaccounts ingresses \
+                          applications applicationsets appprojects; do
+            for item in $(kubectl get "$resource" -n "$ARGOCD_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$item" -n "$ARGOCD_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+          done
+
+          # Delete the namespace
+          kubectl delete ns "$ARGOCD_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "ArgoCD removed"
+
+      - name: Restore CoreDNS (GitOps)
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+
+          CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
+
+          if echo "$CURRENT_COREFILE" | grep -q "hosts"; then
+            PATCHED_COREFILE=$(echo "$CURRENT_COREFILE" | python3 -c '
+          import re, json, sys
+          corefile = sys.stdin.read()
+          cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+          cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+          print(json.dumps(cleaned))
+          ')
+
+            kubectl patch configmap coredns -n kube-system --type merge -p "{
+              \"data\": {
+                \"Corefile\": ${PATCHED_COREFILE}
+              }
+            }" 2>/dev/null || true
+
+            kubectl rollout restart deployment/coredns -n kube-system 2>/dev/null || true
+            echo "CoreDNS hosts block removed and CoreDNS restarted"
+          else
+            echo "CoreDNS hosts block not found, skipping"
+          fi
+
+      - name: Delete Harbor
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          HARBOR_NAMESPACE="harbor"
+
+          # Uninstall the Harbor Helm release
+          helm uninstall harbor -n "$HARBOR_NAMESPACE" --no-hooks 2>/dev/null || true
+
+          # Strip finalizers from stuck resources
+          for resource in pods services deployments statefulsets replicasets jobs \
+                          persistentvolumeclaims secrets configmaps serviceaccounts ingresses; do
+            for item in $(kubectl get "$resource" -n "$HARBOR_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$item" -n "$HARBOR_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+          done
+
+          # Delete the namespace
+          kubectl delete ns "$HARBOR_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "Harbor removed"
+
+      - name: Delete Certificate Secrets and Files
+        if: env.TEARDOWN_GITOPS == 'true'
+        run: |
+          set -euo pipefail
+          GITLAB_NAMESPACE="gitlab-system"
+          GITLAB_RUNNER_NAMESPACE="gitlab-runners"
+          CERT_DIR="./certs"
+
+          # Delete Harbor CA certificate secret from relevant namespaces
+          for ns in "$GITLAB_NAMESPACE" "$GITLAB_RUNNER_NAMESPACE"; do
+            kubectl delete secret harbor-ca-cert -n "$ns" --ignore-not-found 2>/dev/null || true
+          done
+
+          # Delete GitLab wildcard TLS secret
+          kubectl delete secret gitlab-wildcard-tls -n "$GITLAB_NAMESPACE" --ignore-not-found 2>/dev/null || true
+
+          # Remove certificate directory
+          if [ -d "$CERT_DIR" ]; then
+            rm -rf "$CERT_DIR"
+            echo "Certificate directory '$CERT_DIR' removed"
+          else
+            echo "Certificate directory '$CERT_DIR' does not exist, skipping"
+          fi
+          echo "Certificate secrets and files cleaned up"
+
+      # =====================================================================
+      # Phase Group B: Metrics Stack Teardown
+      # =====================================================================
+
+      - name: Delete Grafana
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+          GRAFANA_NAMESPACE="grafana"
+
+          # Remove Grafana Ingress and TLS secret
+          kubectl delete ingress grafana-ingress -n "$GRAFANA_NAMESPACE" --ignore-not-found 2>/dev/null || true
+          kubectl delete secret grafana-tls -n "$GRAFANA_NAMESPACE" --ignore-not-found 2>/dev/null || true
+
+          # Remove Grafana CRs (dashboards, datasource, instance)
+          kubectl delete grafanadashboard --all -n "$GRAFANA_NAMESPACE" 2>/dev/null || true
+          kubectl delete grafanadatasource --all -n "$GRAFANA_NAMESPACE" 2>/dev/null || true
+          kubectl delete grafana --all -n "$GRAFANA_NAMESPACE" 2>/dev/null || true
+
+          # Uninstall the Grafana Operator Helm release
+          helm uninstall grafana-operator --namespace "$GRAFANA_NAMESPACE" 2>/dev/null || true
+
+          # Clean up Grafana CRDs
+          kubectl get crd -o name 2>/dev/null | grep grafana | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
+
+          # Delete the Grafana namespace
+          kubectl delete ns "$GRAFANA_NAMESPACE" --ignore-not-found --wait=false 2>/dev/null || true
+          echo "Grafana removed"
+
+      - name: Remove Metrics CoreDNS Entry
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+
+          # Remove the Envoy LoadBalancer service
+          kubectl delete svc envoy-lb -n tanzu-system-ingress --ignore-not-found 2>/dev/null || true
+          echo "Envoy LoadBalancer service removed"
+
+          # Remove the Grafana CoreDNS entry
+          CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
+
+          if echo "$CURRENT_COREFILE" | grep -q "hosts"; then
+            PATCHED_COREFILE=$(echo "$CURRENT_COREFILE" | python3 -c '
+          import re, json, sys
+          corefile = sys.stdin.read()
+          cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
+          cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
+          print(json.dumps(cleaned))
+          ')
+
+            kubectl patch configmap coredns -n kube-system --type merge -p "{
+              \"data\": {
+                \"Corefile\": ${PATCHED_COREFILE}
+              }
+            }" 2>/dev/null || true
+
+            kubectl rollout restart deployment/coredns -n kube-system 2>/dev/null || true
+            echo "CoreDNS hosts block removed and CoreDNS restarted"
+          else
+            echo "CoreDNS hosts block not found, skipping"
+          fi
+
+      - name: Delete VKS Packages
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+
+          # Delete packages in reverse dependency order by stripping finalizers first
+          for pkg_name in prometheus contour cert-manager telegraf; do
+            if kubectl get packageinstall -n "$PACKAGE_NAMESPACE" --no-headers 2>/dev/null | grep -qi "$pkg_name"; then
+              # Strip finalizers so kapp-controller releases without reconcile-delete
+              kubectl patch packageinstall "$pkg_name" -n "$PACKAGE_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl patch app "$pkg_name" -n "$PACKAGE_NAMESPACE" \
+                --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+
+              # Delete the resources
+              kubectl delete packageinstall "$pkg_name" -n "$PACKAGE_NAMESPACE" --ignore-not-found 2>/dev/null || true
+              kubectl delete app "$pkg_name" -n "$PACKAGE_NAMESPACE" --ignore-not-found 2>/dev/null || true
+              echo "$pkg_name package deleted"
+            else
+              echo "$pkg_name package not found, skipping"
+            fi
+          done
+          echo "All packages deleted"
+
+      - name: Delete Package Repository
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+          PACKAGE_REPO_NAME="tkg-packages"
+
+          if kubectl get packagerepository -n "$PACKAGE_NAMESPACE" --no-headers 2>/dev/null | grep -qi "$PACKAGE_REPO_NAME"; then
+            # Strip finalizers first, then delete
+            kubectl patch packagerepository "$PACKAGE_REPO_NAME" -n "$PACKAGE_NAMESPACE" \
+              --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            kubectl delete packagerepository "$PACKAGE_REPO_NAME" -n "$PACKAGE_NAMESPACE" --ignore-not-found 2>/dev/null || true
+            echo "Package repository '$PACKAGE_REPO_NAME' deleted"
+          else
+            echo "Package repository '$PACKAGE_REPO_NAME' not found, skipping"
+          fi
+
+      - name: Delete Package Namespace
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+
+          if kubectl get ns "$PACKAGE_NAMESPACE" >/dev/null 2>&1; then
+            # Safety net: strip finalizers from any remaining Carvel resources
+            for pkg in $(kubectl get packageinstall -n "$PACKAGE_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$pkg" -n "$PACKAGE_NAMESPACE" --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+            for app in $(kubectl get app -n "$PACKAGE_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$app" -n "$PACKAGE_NAMESPACE" --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+            for repo in $(kubectl get packagerepository -n "$PACKAGE_NAMESPACE" -o name 2>/dev/null); do
+              kubectl patch "$repo" -n "$PACKAGE_NAMESPACE" --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            done
+
+            # Attempt namespace deletion with timeout; force-remove finalizer as fallback
+            if ! kubectl delete ns "$PACKAGE_NAMESPACE" --ignore-not-found --timeout=60s 2>/dev/null; then
+              echo "Namespace deletion timed out, force-removing namespace finalizer"
+              kubectl get ns "$PACKAGE_NAMESPACE" -o json 2>/dev/null \
+                | jq '.spec.finalizers = []' \
+                | kubectl replace --raw "/api/v1/namespaces/${PACKAGE_NAMESPACE}/finalize" -f - 2>/dev/null || true
+              sleep 5
+            fi
+            echo "Namespace '$PACKAGE_NAMESPACE' deleted"
+          else
+            echo "Namespace '$PACKAGE_NAMESPACE' does not exist, skipping"
+          fi
+
+      - name: Clean Up Cluster-Scoped Resources
+        if: env.TEARDOWN_METRICS == 'true'
+        run: |
+          set -euo pipefail
+
+          # --- Telegraf ---
+          for cr in telegraf telegraf-kubelet-metric-access telegraf-stats-viewer "telegraf:user" \
+                    telegraf-tkg-packages-cluster-role; do
+            kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
+          done
+          for crb in telegraf telegraf-tkg-packages-cluster-rolebinding; do
+            kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
+          done
+
+          # --- cert-manager ---
+          for cr in cert-manager-cainjector cert-manager-cluster-view \
+                    cert-manager-controller-approve:cert-manager-io \
+                    cert-manager-controller-certificates \
+                    cert-manager-controller-certificatesigningrequests \
+                    cert-manager-controller-challenges \
+                    cert-manager-controller-clusterissuers \
+                    cert-manager-controller-ingress-shim \
+                    cert-manager-controller-issuers \
+                    cert-manager-controller-orders \
+                    cert-manager-edit cert-manager-view \
+                    cert-manager-webhook:subjectaccessreviews \
+                    cert-manager-tkg-packages-cluster-role; do
+            kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
+          done
+          for crb in cert-manager-cainjector \
+                     cert-manager-controller-approve:cert-manager-io \
+                     cert-manager-controller-certificates \
+                     cert-manager-controller-certificatesigningrequests \
+                     cert-manager-controller-challenges \
+                     cert-manager-controller-clusterissuers \
+                     cert-manager-controller-ingress-shim \
+                     cert-manager-controller-issuers \
+                     cert-manager-controller-orders \
+                     cert-manager-webhook:subjectaccessreviews \
+                     cert-manager-tkg-packages-cluster-rolebinding; do
+            kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
+          done
+          # cert-manager webhooks
+          kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
+          kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
+          # cert-manager CRDs
+          for crd in certificaterequests.cert-manager.io certificates.cert-manager.io \
+                     challenges.acme.cert-manager.io clusterissuers.cert-manager.io \
+                     issuers.cert-manager.io orders.acme.cert-manager.io; do
+            kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+          done
+          # cert-manager roles in kube-system
+          kubectl delete role cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
+          kubectl delete role cert-manager:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
+          kubectl delete rolebinding cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
+          kubectl delete rolebinding cert-manager:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
+          # cert-manager namespace
+          kubectl delete ns cert-manager --ignore-not-found --wait=false 2>/dev/null || true
+
+          # --- Contour ---
+          for cr in contour envoy contour-tkg-packages-cluster-role; do
+            kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
+          done
+          for crb in contour envoy contour-tkg-packages-cluster-rolebinding; do
+            kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
+          done
+          # Contour CRDs
+          for crd in contourconfigurations.projectcontour.io contourdeployments.projectcontour.io \
+                     extensionservices.projectcontour.io httpproxies.projectcontour.io \
+                     tlscertificatedelegations.projectcontour.io; do
+            kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+          done
+          # Contour namespace
+          kubectl delete ns tanzu-system-ingress --ignore-not-found --wait=false 2>/dev/null || true
+
+          # --- Prometheus ---
+          for cr in alertmanager prometheus-server prometheus-kube-state-metrics \
+                    prometheus-node-exporter prometheus-pushgateway \
+                    prometheus-tkg-packages-cluster-role; do
+            kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
+          done
+          for crb in alertmanager prometheus-server prometheus-kube-state-metrics \
+                     prometheus-node-exporter prometheus-pushgateway \
+                     prometheus-tkg-packages-cluster-rolebinding; do
+            kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
+          done
+
+          echo "Cluster-scoped resources cleaned up"
+
+      # =====================================================================
+      # Phase Group C: Cluster Stack Teardown
+      # =====================================================================
+
+      - name: Delete Guest Cluster Workloads
+        if: env.TEARDOWN_CLUSTER == 'true'
+        run: |
+          set -euo pipefail
+
+          kubectl delete svc vks-test-lb --ignore-not-found 2>/dev/null || true
+          kubectl delete deployment vks-test-app --ignore-not-found 2>/dev/null || true
+          kubectl delete pvc vks-test-pvc --ignore-not-found 2>/dev/null || true
+          echo "Guest cluster workloads deleted"
+
+      - name: Delete VKS Cluster
+        if: env.TEARDOWN_CLUSTER == 'true'
+        run: |
+          set -euo pipefail
+          CONTEXT_NAME="teardown-deploy"
+          CLUSTER_DELETE_TIMEOUT="${CLUSTER_DELETE_TIMEOUT:-1800}"
+          POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+          # Switch to the VCF CLI context for cluster operations
+          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
+            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}" 2>/dev/null || true
+          fi
+
+          # Check if the cluster exists
+          if kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
+            kubectl delete cluster "$CLUSTER_NAME"
+
+            # Wait for cluster deletion
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$CLUSTER_DELETE_TIMEOUT" ]; do
+              if ! kubectl get cluster "$CLUSTER_NAME" 2>/dev/null; then
+                echo "VKS cluster '$CLUSTER_NAME' deleted"
+                break
+              fi
+              echo "Waiting for cluster deletion... (${ELAPSED}s/${CLUSTER_DELETE_TIMEOUT}s)"
+              sleep "$POLL_INTERVAL"
+              ELAPSED=$((ELAPSED + POLL_INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$CLUSTER_DELETE_TIMEOUT" ]; then
+              echo "::error::Cluster '$CLUSTER_NAME' was not fully deleted within ${CLUSTER_DELETE_TIMEOUT}s"
+              exit 1
+            fi
+          else
+            echo "Cluster '$CLUSTER_NAME' does not exist, nothing to delete"
+          fi
+
+      - name: Delete Supervisor Namespace and Project
+        if: env.TEARDOWN_CLUSTER == 'true'
+        run: |
+          set -euo pipefail
+          CONTEXT_NAME="teardown-deploy"
+          NS_DELETE_TIMEOUT="${NS_DELETE_TIMEOUT:-600}"
+          POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+          # Switch back to project-level context
+          vcf context use "$CONTEXT_NAME" 2>/dev/null || true
+
+          # Derive project name from cluster name
+          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+
+          # Delete SupervisorNamespace (if it exists)
+          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
+            if kubectl get supervisornamespace "$DYNAMIC_NS_NAME" -n "$PROJECT_NAME" 2>/dev/null; then
+              kubectl delete supervisornamespace "$DYNAMIC_NS_NAME" -n "$PROJECT_NAME"
+
+              ELAPSED=0
+              while [ "$ELAPSED" -lt "$NS_DELETE_TIMEOUT" ]; do
+                if ! kubectl get supervisornamespace "$DYNAMIC_NS_NAME" -n "$PROJECT_NAME" 2>/dev/null; then
+                  echo "SupervisorNamespace '$DYNAMIC_NS_NAME' deleted"
+                  break
+                fi
+                echo "Waiting for SupervisorNamespace deletion... (${ELAPSED}s/${NS_DELETE_TIMEOUT}s)"
+                sleep "$POLL_INTERVAL"
+                ELAPSED=$((ELAPSED + POLL_INTERVAL))
+              done
+
+              if [ "$ELAPSED" -ge "$NS_DELETE_TIMEOUT" ]; then
+                echo "::warning::SupervisorNamespace '$DYNAMIC_NS_NAME' was not fully deleted within ${NS_DELETE_TIMEOUT}s — continuing anyway"
+              fi
+            else
+              echo "SupervisorNamespace '$DYNAMIC_NS_NAME' does not exist, nothing to delete"
+            fi
+          fi
+
+          # Delete ProjectRoleBinding
+          USER_IDENTITY="${USER_IDENTITY:-}"
+          if [ -n "$USER_IDENTITY" ]; then
+            kubectl delete projectrolebinding "cci:user:${USER_IDENTITY}" -n "$PROJECT_NAME" --ignore-not-found 2>/dev/null || true
+            echo "ProjectRoleBinding deleted"
+          fi
+
+          # Delete Project
+          kubectl delete project "$PROJECT_NAME" --ignore-not-found 2>/dev/null || true
+          echo "Project '$PROJECT_NAME' deleted"
+
+      - name: Context and Kubeconfig Cleanup
+        if: env.TEARDOWN_CLUSTER == 'true'
+        run: |
+          set -euo pipefail
+          CONTEXT_NAME="teardown-deploy"
+
+          # Delete VCF CLI context
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          echo "VCF CLI context '$CONTEXT_NAME' deleted"
+
+          # Remove local kubeconfig file
+          KUBECONFIG_FILE="${KUBECONFIG:-./kubeconfig-${CLUSTER_NAME}.yaml}"
+          if [ -f "$KUBECONFIG_FILE" ]; then
+            rm -f "$KUBECONFIG_FILE"
+            echo "Local kubeconfig '$KUBECONFIG_FILE' removed"
+          fi
+          echo "Context and kubeconfig cleanup complete"
+
+      # =====================================================================
+      # Job Summary
+      # =====================================================================
+
+      - name: Write Job Summary
+        run: |
+          set -euo pipefail
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ Teardown Complete
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${CLUSTER_NAME} |
+          | GitOps Stack | $([ "$TEARDOWN_GITOPS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          EOF
+
+          if [ "$TEARDOWN_CLUSTER" = "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ]; then
+              cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+
+          > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.
+          EOF
+            fi
+          fi
+
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          set -euo pipefail
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ Teardown Failed
+
+          | Field | Value |
+          |---|---|
+          | Cluster | ${CLUSTER_NAME} |
+          | Error | Check the failed step above for details |
+          EOF

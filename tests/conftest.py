@@ -453,3 +453,36 @@ def trigger_argocd_script_text() -> str:
     """Return the raw text of scripts/trigger-deploy-argocd.sh."""
     with open(TRIGGER_ARGOCD_SCRIPT_PATH, encoding="utf-8") as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Teardown Workflow Fixtures
+# ---------------------------------------------------------------------------
+
+TEARDOWN_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "teardown.yml"
+)
+
+TRIGGER_TEARDOWN_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-teardown.sh"
+)
+
+
+@pytest.fixture(scope="session")
+def teardown_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/teardown.yml."""
+    with open(TEARDOWN_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def teardown_workflow_yaml(teardown_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the teardown workflow file."""
+    return yaml.safe_load(teardown_workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def trigger_teardown_script_text() -> str:
+    """Return the raw text of scripts/trigger-teardown.sh."""
+    with open(TRIGGER_TEARDOWN_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()

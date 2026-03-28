@@ -2,22 +2,28 @@
 
 ## Overview
 
-This repository contains three GitHub Actions workflows that automate the end-to-end deployment of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains four GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
 | Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
+| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
 
-Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps can run. Deploy Metrics and Deploy GitOps can run in any order after Deploy Cluster.
+Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps can run. Deploy Metrics and Deploy GitOps can run in any order after Deploy Cluster. The Teardown workflow reverses this order — it tears down GitOps first, then Metrics, then the Cluster.
 
 ```
 Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Metrics (deploy-vks-metrics.yml)
     └── Deploy GitOps (deploy-argocd.yml)
+
+Teardown (teardown.yml)  ← reverses the deploy order
+    ├── Phase A: GitOps Stack Teardown
+    ├── Phase B: Metrics Stack Teardown
+    └── Phase C: Cluster Stack Teardown
 ```
 
 Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
@@ -586,3 +592,136 @@ Deploy Metrics and Deploy GitOps share these components, all handled idempotentl
 - If the workflow times out, increase `PACKAGE_TIMEOUT` (default `900s`)
 - Check pod events: `kubectl describe pod <pod-name> -n gitlab-system`
 - Common causes: insufficient memory (GitLab requires ~8 GB RAM), PVC binding delays, image pull throttling
+
+---
+
+# Teardown — Teardown VCF Stacks (`teardown.yml`)
+
+## Overview
+
+Selectively tears down the three VCF 9 deployment stacks (GitOps, Metrics, Cluster) in reverse dependency order. The workflow consolidates the logic from the three existing teardown shell scripts into inline workflow steps, following the same patterns as the deploy workflows. Boolean inputs control which stacks are torn down, enabling selective teardown (e.g., tear down only GitOps while keeping Metrics and the Cluster).
+
+## Parameters
+
+| Parameter | `client_payload` key | Type | Default | Description |
+|---|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | string | (required) | VKS cluster name to tear down |
+| `TEARDOWN_GITOPS` | `teardown_gitops` | boolean | `true` | Tear down the GitOps stack (ArgoCD, GitLab, Harbor) |
+| `TEARDOWN_METRICS` | `teardown_metrics` | boolean | `true` | Tear down the Metrics stack (Grafana, packages) |
+| `TEARDOWN_CLUSTER` | `teardown_cluster` | boolean | `true` | Tear down the VKS cluster and project |
+| `DOMAIN` | `domain` | string | `lab.local` | Domain suffix for service hostnames |
+| `KUBECONFIG_PATH` | `kubeconfig_path` | string | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
+| `PACKAGE_NAMESPACE` | `package_namespace` | string | `tkg-packages` | Namespace for VKS standard packages |
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Teardown VCF Stacks"** → **"Run workflow"**
+2. Fill in: **cluster_name** (required), optionally uncheck **teardown_gitops**, **teardown_metrics**, or **teardown_cluster** to skip specific stacks
+
+### Trigger Script (repository_dispatch)
+
+```bash
+./scripts/trigger-teardown.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01
+```
+
+**Required:** `--repo`, `--token`, `--cluster-name`
+
+**Optional:** `--teardown-gitops`, `--teardown-metrics`, `--teardown-cluster` (default `true`), `--domain`, `--kubeconfig-path`, `--vcfa-endpoint`, `--tenant-name`
+
+Selective teardown example (skip GitOps and Cluster, tear down only Metrics):
+
+```bash
+./scripts/trigger-teardown.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01 \
+  --teardown-gitops false \
+  --teardown-cluster false
+```
+
+### Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "teardown",
+    "client_payload": {
+      "cluster_name": "my-dev-project-01-clus-01",
+      "teardown_gitops": "true",
+      "teardown_metrics": "true",
+      "teardown_cluster": "true"
+    }
+  }'
+```
+
+## Workflow Steps
+
+| Phase | Step Name | Description |
+|---|---|---|
+| Setup | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| Setup | **Setup Kubeconfig** | Retrieves or locates the admin kubeconfig; creates VCF CLI context if needed |
+| — | **Warn Orphaned Stacks** | Emits `::warning::` when cluster teardown is enabled but application stacks are skipped |
+| A | **Delete ArgoCD Application** | Deletes the ArgoCD Application CR, waits for Microservices Demo pods to terminate, deletes application namespace |
+| A | **Delete GitLab Runner** | Uninstalls GitLab Runner Helm release, strips finalizers, deletes namespace |
+| A | **Delete GitLab** | Uninstalls GitLab Helm release, deletes GitLab CRs, strips finalizers, deletes namespace |
+| A | **Delete ArgoCD** | Uninstalls ArgoCD Helm release, strips finalizers from ArgoCD CRs, deletes namespace |
+| A | **Restore CoreDNS (GitOps)** | Removes custom hosts block from CoreDNS ConfigMap, restarts CoreDNS |
+| A | **Delete Harbor** | Uninstalls Harbor Helm release, strips finalizers, deletes namespace |
+| A | **Delete Certificate Secrets and Files** | Deletes certificate secrets from namespaces, removes certificate directory |
+| B | **Delete Grafana** | Deletes Grafana resources (Ingress, TLS, CRs, Operator, CRDs) and namespace |
+| B | **Remove Metrics CoreDNS Entry** | Strips hosts block from CoreDNS, removes Envoy LB service |
+| B | **Delete VKS Packages** | Deletes packages in reverse order (Prometheus, Contour, cert-manager, Telegraf) |
+| B | **Delete Package Repository** | Strips finalizers and deletes the package repository |
+| B | **Delete Package Namespace** | Strips finalizers, deletes namespace with timeout, force-removes finalizer as fallback |
+| B | **Clean Up Cluster-Scoped Resources** | Deletes ClusterRoles, ClusterRoleBindings, CRDs, webhooks left by packages |
+| C | **Delete Guest Cluster Workloads** | Deletes vks-test-lb Service, vks-test-app Deployment, vks-test-pvc PVC |
+| C | **Delete VKS Cluster** | Deletes the VKS cluster resource and waits for deletion |
+| C | **Delete Supervisor Namespace and Project** | Deletes SupervisorNamespace, ProjectRoleBinding, and Project |
+| C | **Context and Kubeconfig Cleanup** | Deletes VCF CLI context, removes local kubeconfig file |
+| — | **Write Job Summary** | Writes Markdown summary listing which stacks were torn down or skipped |
+| — | **Write Failure Summary** | On failure, writes failure summary with cluster name and error context |
+
+## Troubleshooting
+
+### Kubeconfig not found
+
+- Verify Deploy Cluster has completed and the kubeconfig file exists on the runner
+- If stored at a non-default path, pass `--kubeconfig-path` via the trigger script or set the `KUBECONFIG_PATH` secret
+
+### Cluster unreachable during teardown
+
+- Verify the VKS cluster is still running — if it was already deleted, skip to Cluster Stack teardown
+- Check network connectivity from the runner host to the cluster API endpoint
+- If the kubeconfig contains an expired token, re-run Deploy Cluster to regenerate it
+
+### Namespace stuck in Terminating state
+
+- The workflow strips finalizers before deletion to prevent this, but if it still occurs:
+  - Check for remaining resources: `kubectl get all -n <namespace>`
+  - Force-remove the namespace finalizer: `kubectl get ns <namespace> -o json | jq '.spec.finalizers = []' | kubectl replace --raw "/api/v1/namespaces/<namespace>/finalize" -f -`
+
+### Helm uninstall failures
+
+- All `helm uninstall` commands are guarded with `|| true` — failures on already-deleted releases are expected and non-fatal
+- If a release is stuck, manually delete it: `helm uninstall <release> -n <namespace> --no-hooks`
+
+### Orphaned resources after selective teardown
+
+- If you tear down the cluster without tearing down GitOps or Metrics first, application-level resources are orphaned
+- The workflow emits a `::warning::` annotation in this case
+- To clean up, re-deploy the cluster and run a full teardown
+
+### VKS cluster deletion timeout
+
+- Default timeout is 1800 seconds (30 minutes) — large clusters may need more time
+- Check vSphere for the cluster deletion status
+- If the cluster is stuck, contact your vSphere administrator
