@@ -414,14 +414,15 @@ jobs:
             # Build optional osConfiguration fragment for trusted CA
             OS_CONFIG_FRAGMENT=""
             if [ -n "${TRUSTED_CA_PATH}" ]; then
-              OS_CONFIG_FRAGMENT="    - name: osConfiguration
-              value:
-                trust:
-                  additionalTrustedCAs:
-                  - caCert:
-                      secretRef:
-                        name: ${TRUSTED_CA_SECRET_NAME}
-                        key: ca-cert"
+              OS_CONFIG_FRAGMENT="
+              - name: osConfiguration
+                value:
+                  trust:
+                    additionalTrustedCAs:
+                    - caCert:
+                        secretRef:
+                          name: ${TRUSTED_CA_SECRET_NAME}
+                          key: ca-cert"
             fi
 
             cat <<EOF | kubectl apply -f - --validate=false --insecure-skip-tls-verify
