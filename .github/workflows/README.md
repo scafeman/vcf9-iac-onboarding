@@ -61,7 +61,21 @@ After a successful deployment, credentials are not printed in the job summary. U
 
 ### Kubeconfig
 
-Download the kubeconfig to a standalone file, then set the `KUBECONFIG` environment variable to use it:
+Before retrieving the kubeconfig, you must be in the correct CCI namespace context. If you're not sure which context to use, refresh your contexts and switch to the one containing your cluster's project:
+
+```bash
+# List available contexts
+vcf context list
+
+# If your cluster's project context isn't listed, refresh
+vcf context refresh
+
+# Switch to the namespace context for your cluster's project
+# Format: <org-context>:<namespace-id>:<project-name>
+vcf context use <ORG_CONTEXT>:<NAMESPACE_ID>:<PROJECT_NAME>
+```
+
+Then download the kubeconfig:
 
 **Linux / macOS (Bash):**
 
@@ -81,7 +95,7 @@ kubectl config use-context <CLUSTER_NAME>-admin@<CLUSTER_NAME>
 kubectl get namespaces   # verify connectivity
 ```
 
-> **Note:** The `--export-file` flag saves the kubeconfig as a standalone file — it does not merge into your default `~/.kube/config`. The file may contain multiple contexts (including CCI contexts). You must switch to the admin context using `kubectl config use-context` before running kubectl commands against the guest cluster.
+> **Note:** The `vcf cluster kubeconfig get` command must be run from a namespace-level context (not the org-level context). If you get a "client to provide credentials" error, switch to the correct namespace context first. The `--export-file` flag saves the kubeconfig as a standalone file that may contain multiple contexts — use `kubectl config use-context` to switch to the admin context before running kubectl commands.
 
 ### Service Credentials
 
