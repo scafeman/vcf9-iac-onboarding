@@ -100,28 +100,17 @@ jobs:
               --set-current
 
             # Find and switch to the namespace context that contains this cluster
-            # The cluster name follows the pattern <project>-clus-XX, and the context
-            # contains the project name (not the cluster name). Search for the project
-            # portion, or fall back to listing clusters to find the right namespace.
-            echo "--- Available contexts ---"
-            vcf context list || true
-            echo "--- Searching for namespace context for cluster '${CLUSTER_NAME}' ---"
-
-            # Try to find the context by looking for the project name in the context list
             # Convention: cluster name is <project>-clus-<id>, project name is <project>
             PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
             echo "Derived project pattern: '$PROJECT_PATTERN'"
-            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep -E "^${CONTEXT_NAME}:.*:${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+
+            # Search for the namespace context matching our context name and project
+            # Use --wide to avoid truncation, pipe through grep to find the right line
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
             echo "NAMESPACE_CONTEXT='$NAMESPACE_CONTEXT'"
 
             if [ -z "$NAMESPACE_CONTEXT" ]; then
-              # Fallback: try matching any context with the project pattern in it
-              NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${PROJECT_PATTERN}" | grep -v "^NAME" | awk '{print $1}' | grep ":" | head -1 || true)
-              echo "Fallback NAMESPACE_CONTEXT='$NAMESPACE_CONTEXT'"
-            fi
-
-            if [ -z "$NAMESPACE_CONTEXT" ]; then
-              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}'. Ensure Scenario 1 has completed."
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}' (project: '${PROJECT_PATTERN}') under context '${CONTEXT_NAME}'. Ensure Scenario 1 has completed."
               exit 1
             fi
             echo "Found namespace context: $NAMESPACE_CONTEXT"
