@@ -64,6 +64,11 @@ NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
 CONTROL_PLANE_REPLICAS="${CONTROL_PLANE_REPLICAS:-1}"
 NODE_POOL_NAME="${NODE_POOL_NAME:-node-pool-01}"
 
+# --- Autoscaler Tuning ---
+AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME:-5m}"
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD:-5m}"
+AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD:-0.5}"
+
 # --- OS Image ---
 OS_NAME="${OS_NAME:-photon}"
 OS_VERSION="${OS_VERSION:-}"
@@ -497,11 +502,15 @@ if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | g
 fi
 
 if ! vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
-  # Create values file with required cluster config
+  # Create values file with required cluster config and autoscaler tuning
   AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\n' \
-    "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" > "${AUTOSCALER_VALUES}"
+  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\nautoscalerConfig:\n  scaleDownUnneededTime: %s\n  scaleDownDelayAfterAdd: %s\n  scaleDownUtilizationThreshold: %s\n' \
+    "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" \
+    "${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}" \
+    "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}" \
+    "${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}" > "${AUTOSCALER_VALUES}"
   log_success "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
+  log_success "Autoscaler tuning: scaleDownUnneededTime=${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}, scaleDownDelayAfterAdd=${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}, scaleDownUtilizationThreshold=${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}"
 
   vcf package install cluster-autoscaler \
     -p cluster-autoscaler.kubernetes.vmware.com \

@@ -268,6 +268,9 @@ pytest tests/ -v
 | `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
 | `CONTROL_PLANE_REPLICAS` | No | Control plane node count: `1` (default) or `3` (HA) |
 | `NODE_POOL_NAME` | No | Worker node pool name (default: `node-pool-01`) |
+| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | No | Time before underutilized node removal (default: `5m`) |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | No | Cooldown after scale-up before scale-down (default: `5m`) |
+| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | No | Node utilization threshold for scale-down (default: `0.5`) |
 | `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
 | `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
 | `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |

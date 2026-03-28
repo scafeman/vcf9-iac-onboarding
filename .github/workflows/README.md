@@ -202,6 +202,9 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 | `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
 | `CONTROL_PLANE_REPLICAS` | `control_plane_replicas` | `1` | Control plane node count: `1` (default) or `3` (HA) |
 | `NODE_POOL_NAME` | `node_pool_name` | `node-pool-01` | Worker node pool name |
+| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | `autoscaler_scale_down_unneeded_time` | `5m` | Time a node must be underutilized before removal |
+| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | `autoscaler_scale_down_delay_after_add` | `5m` | Cooldown after scale-up before scale-down is considered |
+| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `autoscaler_scale_down_utilization_threshold` | `0.5` | Node utilization threshold below which scale-down is considered (0.0–1.0) |
 | `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages and Cluster Autoscaler |
 | `PACKAGE_REPO_URL` | `package_repo_url` | VKS standard packages 3.6.0 | Package repository URL |
 | `PACKAGE_TIMEOUT` | `package_timeout` | `600` | Timeout (seconds) for package reconciliation |

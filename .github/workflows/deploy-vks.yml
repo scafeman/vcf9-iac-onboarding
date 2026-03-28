@@ -133,6 +133,11 @@ jobs:
       CONTROL_PLANE_REPLICAS: ${{ github.event.inputs.control_plane_replicas || github.event.client_payload.control_plane_replicas || '1' }}
       NODE_POOL_NAME: ${{ github.event.inputs.node_pool_name || github.event.client_payload.node_pool_name || 'node-pool-01' }}
 
+      # --- Autoscaler Tuning ---
+      AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME: ${{ github.event.client_payload.autoscaler_scale_down_unneeded_time || '5m' }}
+      AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD: ${{ github.event.client_payload.autoscaler_scale_down_delay_after_add || '5m' }}
+      AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD: ${{ github.event.client_payload.autoscaler_scale_down_utilization_threshold || '0.5' }}
+
       # --- Package Configuration (for Cluster Autoscaler) ---
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
       PACKAGE_REPO_URL: ${{ github.event.client_payload.package_repo_url || secrets.PACKAGE_REPO_URL || 'projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211' }}
@@ -513,10 +518,13 @@ jobs:
             fi
           fi
 
-          # Create values file with required cluster config
+          # Create values file with required cluster config and autoscaler tuning
           AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-          printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\n' \
-            "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" > "$AUTOSCALER_VALUES"
+          printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\nautoscalerConfig:\n  scaleDownUnneededTime: %s\n  scaleDownDelayAfterAdd: %s\n  scaleDownUtilizationThreshold: %s\n' \
+            "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" \
+            "${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME}" \
+            "${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD}" \
+            "${AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD}" > "$AUTOSCALER_VALUES"
           echo "Autoscaler values file contents:"
           cat "$AUTOSCALER_VALUES"
 

@@ -41,6 +41,9 @@ Optional (override workflow defaults):
   --os-version        Node OS version (required for ubuntu, e.g., 24.04)
   --control-plane-replicas  Control plane node count: 1 (default) or 3 (HA)
   --node-pool-name    Worker node pool name (default: node-pool-01)
+  --autoscaler-scale-down-unneeded-time     Time before underutilized node removal (default: 5m)
+  --autoscaler-scale-down-delay-after-add   Cooldown after scale-up before scale-down (default: 5m)
+  --autoscaler-scale-down-utilization-threshold  Node utilization threshold for scale-down (default: 0.5)
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -79,6 +82,9 @@ OS_NAME=""
 OS_VERSION=""
 CONTROL_PLANE_REPLICAS=""
 NODE_POOL_NAME=""
+AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME=""
+AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD=""
+AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -107,6 +113,9 @@ while [[ $# -gt 0 ]]; do
     --os-version)         OS_VERSION="$2"; shift 2 ;;
     --control-plane-replicas) CONTROL_PLANE_REPLICAS="$2"; shift 2 ;;
     --node-pool-name)     NODE_POOL_NAME="$2"; shift 2 ;;
+    --autoscaler-scale-down-unneeded-time) AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="$2"; shift 2 ;;
+    --autoscaler-scale-down-delay-after-add) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="$2"; shift 2 ;;
+    --autoscaler-scale-down-utilization-threshold) AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -167,6 +176,9 @@ add_field "os_name"            "$OS_NAME"
 add_field "os_version"         "$OS_VERSION"
 add_field "control_plane_replicas" "$CONTROL_PLANE_REPLICAS"
 add_field "node_pool_name"     "$NODE_POOL_NAME"
+add_field "autoscaler_scale_down_unneeded_time" "$AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME"
+add_field "autoscaler_scale_down_delay_after_add" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD"
+add_field "autoscaler_scale_down_utilization_threshold" "$AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 
