@@ -283,8 +283,6 @@ pytest tests/ -v
 | `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
 | `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
 | `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |
-| `TRUSTED_CA_PATH` | No | Path to PEM CA certificate file for private registry trust (empty by default) |
-| `TRUSTED_CA_SECRET_NAME` | No | Kubernetes Secret name for the trusted CA certificate (default: `harbor-trusted-ca`) |
 
 ### Deploy Metrics — VKS Metrics Observability
 

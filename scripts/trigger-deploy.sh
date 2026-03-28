@@ -47,8 +47,6 @@ Optional (override workflow defaults):
   --autoscaler-scale-down-delay-after-delete  Cooldown after node deletion before next scale-down (default: 10s)
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
-  --trusted-ca-path   Path to PEM CA certificate file for private registry trust
-  --trusted-ca-secret-name  Kubernetes Secret name for the trusted CA (default: harbor-trusted-ca)
 
 Example:
   $(basename "$0") \\
@@ -91,8 +89,6 @@ AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD=""
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
-TRUSTED_CA_PATH=""
-TRUSTED_CA_SECRET_NAME=""
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
@@ -125,8 +121,6 @@ while [[ $# -gt 0 ]]; do
     --autoscaler-scale-down-delay-after-delete) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
-    --trusted-ca-path)    TRUSTED_CA_PATH="$2"; shift 2 ;;
-    --trusted-ca-secret-name) TRUSTED_CA_SECRET_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
     *)
       echo "Error: Unknown argument: $1" >&2
@@ -191,8 +185,6 @@ add_field "autoscaler_scale_down_utilization_threshold" "$AUTOSCALER_SCALE_DOWN_
 add_field "autoscaler_scale_down_delay_after_delete" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
-add_field "trusted_ca_path"    "$TRUSTED_CA_PATH"
-add_field "trusted_ca_secret_name" "$TRUSTED_CA_SECRET_NAME"
 
 # --- Send repository_dispatch event ---
 DISPATCH_BODY=$(jq -n --argjson payload "$PAYLOAD" '{

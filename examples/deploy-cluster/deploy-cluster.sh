@@ -64,10 +64,6 @@ NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
 CONTROL_PLANE_REPLICAS="${CONTROL_PLANE_REPLICAS:-1}"
 NODE_POOL_NAME="${NODE_POOL_NAME:-node-pool-01}"
 
-# --- Trusted CA Certificate (optional) ---
-TRUSTED_CA_PATH="${TRUSTED_CA_PATH:-}"
-TRUSTED_CA_SECRET_NAME="${TRUSTED_CA_SECRET_NAME:-harbor-trusted-ca}"
-
 # --- Autoscaler Tuning ---
 AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME:-5m}"
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD:-5m}"
@@ -300,26 +296,6 @@ fi
 log_success "Context bridge complete — now targeting namespace '${DYNAMIC_NS_NAME}' in project '${PROJECT_NAME}'"
 
 ###############################################################################
-# Phase 3b: Create Trusted CA Secret (conditional)
-###############################################################################
-
-if [[ -n "${TRUSTED_CA_PATH}" ]]; then
-  log_step "3b" "Creating Trusted CA Secret in namespace '${DYNAMIC_NS_NAME}'"
-
-  if [[ ! -f "${TRUSTED_CA_PATH}" ]]; then
-    log_error "Trusted CA certificate file not found: ${TRUSTED_CA_PATH}"
-    exit 3
-  fi
-
-  DOUBLE_B64=$(base64 -w 0 < "${TRUSTED_CA_PATH}" | base64 -w 0)
-  kubectl create secret generic "${TRUSTED_CA_SECRET_NAME}" \
-    --from-literal=ca-cert="${DOUBLE_B64}" \
-    --namespace "${DYNAMIC_NS_NAME}" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  log_success "Trusted CA secret '${TRUSTED_CA_SECRET_NAME}' created in namespace '${DYNAMIC_NS_NAME}'"
-fi
-
-###############################################################################
 # Phase 4: VKS Cluster Deployment
 ###############################################################################
 
@@ -336,19 +312,6 @@ else
     OS_IMAGE_ANNOTATION="${OS_IMAGE_ANNOTATION}, os-version=${OS_VERSION}"
   fi
   log_success "OS image annotation: ${OS_IMAGE_ANNOTATION}"
-
-  # Build optional osConfiguration fragment for trusted CA
-  OS_CONFIG_FRAGMENT=""
-  if [[ -n "${TRUSTED_CA_PATH}" ]]; then
-    OS_CONFIG_FRAGMENT="    - name: osConfiguration
-      value:
-        trust:
-          additionalTrustedCAs:
-          - caCert:
-              secretRef:
-                name: ${TRUSTED_CA_SECRET_NAME}
-                key: ca-cert"
-  fi
 
   if ! cat <<EOF | kubectl apply --validate=false --insecure-skip-tls-verify -f -
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -394,7 +357,6 @@ spec:
         capacity: ${NODE_DISK_SIZE}
         mountPath: /var/lib/containerd
         storageClass: ${STORAGE_CLASS}
-${OS_CONFIG_FRAGMENT}
 EOF
   then
     log_error "Failed to apply VKS cluster manifest for '${CLUSTER_NAME}'"

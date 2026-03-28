@@ -94,16 +94,6 @@ on:
         required: false
         type: string
         default: "node-pool-01"
-      trusted_ca_path:
-        description: "Path to PEM CA certificate file for private registry trust (optional)"
-        required: false
-        type: string
-        default: ""
-      trusted_ca_secret_name:
-        description: "Kubernetes Secret name for the trusted CA certificate (default: harbor-trusted-ca)"
-        required: false
-        type: string
-        default: "harbor-trusted-ca"
 
   repository_dispatch:
     types: [deploy-vks]
@@ -147,10 +137,6 @@ jobs:
       OS_VERSION: ${{ github.event.inputs.os_version || github.event.client_payload.os_version || '' }}
       CONTROL_PLANE_REPLICAS: ${{ github.event.inputs.control_plane_replicas || github.event.client_payload.control_plane_replicas || '1' }}
       NODE_POOL_NAME: ${{ github.event.inputs.node_pool_name || github.event.client_payload.node_pool_name || 'node-pool-01' }}
-
-      # --- Trusted CA Certificate (optional) ---
-      TRUSTED_CA_PATH: ${{ github.event.inputs.trusted_ca_path || github.event.client_payload.trusted_ca_path || '' }}
-      TRUSTED_CA_SECRET_NAME: ${{ github.event.inputs.trusted_ca_secret_name || github.event.client_payload.trusted_ca_secret_name || 'harbor-trusted-ca' }}
 
       # --- Autoscaler Tuning ---
       AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME: ${{ github.event.client_payload.autoscaler_scale_down_unneeded_time || '5m' }}
@@ -333,70 +319,6 @@ jobs:
           fi
           echo "Context bridge complete — targeting namespace '$DYNAMIC_NS_NAME' in project '$PROJECT_NAME'"
 
-      # Phase 4b: Generate Self-Signed CA Certificate (conditional)
-      - name: Generate Self-Signed CA Certificate
-        if: env.TRUSTED_CA_PATH != ''
-        run: |
-          set -euo pipefail
-          CERT_DIR=$(dirname "$TRUSTED_CA_PATH")
-          if [ -f "$TRUSTED_CA_PATH" ]; then
-            echo "CA certificate already exists at '$TRUSTED_CA_PATH', skipping generation"
-          else
-            mkdir -p "$CERT_DIR"
-            if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
-              -keyout "${CERT_DIR}/ca.key" -out "$TRUSTED_CA_PATH" \
-              -days 3650 -subj "/CN=Self-Signed CA"; then
-              echo "::error::Failed to generate self-signed CA certificate"
-              exit 1
-            fi
-            echo "Self-signed CA certificate generated at '$TRUSTED_CA_PATH'"
-
-            # Generate wildcard certificate for later use by Deploy Metrics/GitOps
-            cat > /tmp/wildcard-deploy.cnf <<CNFEOF
-          [req]
-          default_bits       = 2048
-          prompt             = no
-          distinguished_name = dn
-          req_extensions     = v3_req
-
-          [dn]
-          CN = *.${DOMAIN:-lab.local}
-
-          [v3_req]
-          subjectAltName = DNS:*.${DOMAIN:-lab.local},DNS:${DOMAIN:-lab.local}
-          CNFEOF
-
-            openssl req -new -nodes -newkey rsa:2048 \
-              -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
-              -config /tmp/wildcard-deploy.cnf 2>/dev/null || true
-
-            openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
-              -CA "$TRUSTED_CA_PATH" -CAkey "${CERT_DIR}/ca.key" \
-              -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
-              -days 3650 -extensions v3_req -extfile /tmp/wildcard-deploy.cnf 2>/dev/null || true
-
-            if [ -f "${CERT_DIR}/wildcard.crt" ]; then
-              cat "${CERT_DIR}/wildcard.crt" "$TRUSTED_CA_PATH" > "${CERT_DIR}/fullchain.crt"
-              echo "Wildcard certificate and fullchain generated"
-            fi
-          fi
-
-      # Phase 4c: Create Trusted CA Secret (conditional)
-      - name: Create Trusted CA Secret
-        if: env.TRUSTED_CA_PATH != ''
-        run: |
-          set -euo pipefail
-          if [ ! -f "$TRUSTED_CA_PATH" ]; then
-            echo "::error::Trusted CA certificate file not found: $TRUSTED_CA_PATH"
-            exit 1
-          fi
-          DOUBLE_B64=$(base64 -w 0 < "$TRUSTED_CA_PATH" | base64 -w 0)
-          kubectl create secret generic "$TRUSTED_CA_SECRET_NAME" \
-            --from-literal=ca-cert="$DOUBLE_B64" \
-            --namespace "$DYNAMIC_NS_NAME" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          echo "Trusted CA secret '$TRUSTED_CA_SECRET_NAME' created in namespace '$DYNAMIC_NS_NAME'"
-
       # Phase 5: Deploy VKS Cluster
       - name: Deploy VKS Cluster
         run: |
@@ -410,20 +332,6 @@ jobs:
               OS_IMAGE_ANNOTATION="${OS_IMAGE_ANNOTATION}, os-version=${OS_VERSION}"
             fi
             echo "OS image annotation: ${OS_IMAGE_ANNOTATION}"
-
-            # Build optional osConfiguration fragment for trusted CA
-            OS_CONFIG_FRAGMENT=""
-            if [ -n "${TRUSTED_CA_PATH}" ]; then
-              OS_CONFIG_FRAGMENT="
-              - name: osConfiguration
-                value:
-                  trust:
-                    additionalTrustedCAs:
-                    - caCert:
-                        secretRef:
-                          name: ${TRUSTED_CA_SECRET_NAME}
-                          key: ca-cert"
-            fi
 
             cat <<EOF | kubectl apply -f - --validate=false --insecure-skip-tls-verify
           apiVersion: cluster.x-k8s.io/v1beta1
@@ -469,7 +377,6 @@ jobs:
                   capacity: $CONTAINERD_VOLUME_SIZE
                   mountPath: /var/lib/containerd
                   storageClass: $STORAGE_CLASS
-          $OS_CONFIG_FRAGMENT
           EOF
             echo "Cluster '$CLUSTER_NAME' manifest applied"
           fi

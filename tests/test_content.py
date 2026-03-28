@@ -479,32 +479,3 @@ class TestProjectNamespaceManifestContent:
         assert "SupervisorNamespace" in kinds, (
             "Project/namespace manifest missing SupervisorNamespace kind"
         )
-
-
-# ===================================================================
-# Task 8.4 — Trusted CA sample manifest content tests
-# Validates: Requirement 8.4
-# ===================================================================
-
-
-class TestSampleManifestTrustedCA:
-    """Sample cluster manifest contains commented-out osConfiguration block.
-    Validates: Requirement 8.4"""
-
-    def test_os_configuration_block_present(self, sample_manifest_content):
-        content = sample_manifest_content["sample-create-cluster.yaml"]
-        assert "osConfiguration" in content, (
-            "Sample manifest missing osConfiguration block"
-        )
-
-    def test_additional_trusted_cas_present(self, sample_manifest_content):
-        content = sample_manifest_content["sample-create-cluster.yaml"]
-        assert "additionalTrustedCAs" in content, (
-            "Sample manifest missing additionalTrustedCAs in osConfiguration block"
-        )
-
-    def test_double_base64_comment_present(self, sample_manifest_content):
-        content = sample_manifest_content["sample-create-cluster.yaml"]
-        assert "base64" in content.lower(), (
-            "Sample manifest missing inline comment about double-base64 encoding"
-        )
