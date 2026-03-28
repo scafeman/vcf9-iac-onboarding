@@ -197,13 +197,16 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 | `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for PVCs and containerd volumes |
 | `MIN_NODES` | `min_nodes` | `2` | Minimum worker nodes (autoscaler min) |
 | `MAX_NODES` | `max_nodes` | `10` | Maximum worker nodes (autoscaler max) |
+| `CONTAINERD_VOLUME_SIZE` | `containerd_volume_size` | `50Gi` | Containerd data volume size per node |
+| `OS_NAME` | `os_name` | `photon` | Node OS image name (`photon` or `ubuntu`) |
+| `OS_VERSION` | `os_version` | (none) | Node OS version (required for ubuntu, e.g., `24.04`) |
 
 ## Triggering the Workflow
 
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy VKS Cluster"** → **"Run workflow"**
-2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**
+2. Fill in: **project_name**, **cluster_name**, **namespace_prefix**, and optionally **environment**, **resource_class**, **vm_class**, **min_nodes**, **max_nodes**, **containerd_volume_size**, **os_name**, **os_version**
 
 ### Trigger Script (repository_dispatch)
 
@@ -220,7 +223,7 @@ Provisions VCF 9 VKS infrastructure end-to-end: context creation, project and na
 
 **Required:** `--repo`, `--token`, `--project-name`, `--cluster-name`, `--namespace-prefix`
 
-**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--vcfa-endpoint`, `--tenant-name`
+**Optional:** `--environment`, `--vpc-name`, `--region-name`, `--zone-name`, `--resource-class`, `--user-identity`, `--content-library-id`, `--k8s-version`, `--vm-class`, `--storage-class`, `--min-nodes`, `--max-nodes`, `--containerd-volume-size`, `--os-name`, `--os-version`, `--vcfa-endpoint`, `--tenant-name`
 
 ### Direct API Call (curl)
 
