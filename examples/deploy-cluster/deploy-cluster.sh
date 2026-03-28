@@ -484,15 +484,21 @@ log_success "Package repository setup complete"
 log_step "5e" "Installing Cluster Autoscaler package"
 
 if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
-  log_success "Cluster Autoscaler already installed, skipping"
-else
+  STATUS=$(vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep "cluster-autoscaler" || true)
+  if echo "$STATUS" | grep -qi "reconcile failed\|error"; then
+    echo "  Found failed cluster-autoscaler install, removing before re-install..."
+    vcf package installed delete cluster-autoscaler -n "${PACKAGE_NAMESPACE}" --yes 2>/dev/null || true
+    sleep 5
+  else
+    log_success "Cluster Autoscaler already installed and healthy, skipping"
+  fi
+fi
+
+if ! vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
   # Create values file with required cluster config
   AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-  cat > "${AUTOSCALER_VALUES}" <<EOF
-clusterConfig:
-  clusterName: ${CLUSTER_NAME}
-  clusterNamespace: ${DYNAMIC_NS_NAME}
-EOF
+  printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\n' \
+    "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" > "${AUTOSCALER_VALUES}"
   log_success "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
 
   vcf package install cluster-autoscaler \
@@ -520,7 +526,7 @@ log_step "5f" "Waiting for Cluster Autoscaler deployment to be ready"
 
 if ! wait_for_condition "Cluster Autoscaler deployment to be ready" \
   "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get deployment -n kube-system cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '[1-9]'"; then
+  "kubectl get deployment -n kube-system cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '[1-9]' || kubectl get deployment -n '${PACKAGE_NAMESPACE}' cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null | grep -q '[1-9]'"; then
   echo "  WARNING: Cluster Autoscaler deployment did not reach Ready within ${PACKAGE_TIMEOUT}s — autoscaling may not be active"
   kubectl get deployment -n kube-system cluster-autoscaler 2>/dev/null || true
 else

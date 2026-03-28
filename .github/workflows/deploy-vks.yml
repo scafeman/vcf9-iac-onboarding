@@ -487,42 +487,57 @@ jobs:
       - name: Install Cluster Autoscaler
         run: |
           set -euo pipefail
+
+          # Delete any failed previous install attempt so we can re-install cleanly
           if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "cluster-autoscaler"; then
-            echo "Cluster Autoscaler already installed, skipping"
-          else
-            # Create values file with required cluster config
-            AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
-            cat > "$AUTOSCALER_VALUES" <<EOF
-          clusterConfig:
-            clusterName: ${CLUSTER_NAME}
-            clusterNamespace: ${DYNAMIC_NS_NAME}
-          EOF
-            echo "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
+            STATUS=$(vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cluster-autoscaler" || true)
+            if echo "$STATUS" | grep -qi "reconcile failed\|error"; then
+              echo "Found failed cluster-autoscaler install, removing before re-install..."
+              vcf package installed delete cluster-autoscaler -n "$PACKAGE_NAMESPACE" --yes 2>/dev/null || true
+              sleep 5
+            else
+              echo "Cluster Autoscaler already installed and healthy, skipping"
+              exit 0
+            fi
+          fi
 
-            vcf package install cluster-autoscaler \
-              -p cluster-autoscaler.kubernetes.vmware.com \
-              --values-file "$AUTOSCALER_VALUES" \
-              -n "$PACKAGE_NAMESPACE"
+          # Create values file with required cluster config
+          AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
+          printf 'clusterConfig:\n  clusterName: %s\n  clusterNamespace: %s\n' \
+            "${CLUSTER_NAME}" "${DYNAMIC_NS_NAME}" > "$AUTOSCALER_VALUES"
+          echo "Autoscaler values file contents:"
+          cat "$AUTOSCALER_VALUES"
 
-            rm -f "$AUTOSCALER_VALUES"
+          vcf package install cluster-autoscaler \
+            -p cluster-autoscaler.kubernetes.vmware.com \
+            --values-file "$AUTOSCALER_VALUES" \
+            -n "$PACKAGE_NAMESPACE"
 
-            TIMEOUT="$PACKAGE_TIMEOUT"
-            INTERVAL=15
-            ELAPSED=0
-            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cluster-autoscaler" | grep -qi "reconcile"; then
-                echo "Cluster Autoscaler package reconciled"
-                break
-              fi
-              echo "Waiting for Cluster Autoscaler package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
-              sleep "$INTERVAL"
-              ELAPSED=$((ELAPSED + INTERVAL))
-            done
+          rm -f "$AUTOSCALER_VALUES"
 
-            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-              echo "::error::Cluster Autoscaler package did not reconcile within ${TIMEOUT}s"
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cluster-autoscaler" | grep -qi "reconcile succeeded"; then
+              echo "Cluster Autoscaler package reconciled"
+              break
+            fi
+            # Check for reconcile failure early
+            FAIL_CHECK=$(vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cluster-autoscaler" || true)
+            if echo "$FAIL_CHECK" | grep -qi "reconcile failed\|error"; then
+              echo "::error::Cluster Autoscaler package reconciliation failed"
+              kubectl get packageinstall cluster-autoscaler -n "$PACKAGE_NAMESPACE" -o jsonpath='{.status.usefulErrorMessage}' 2>/dev/null || true
               exit 1
             fi
+            echo "Waiting for Cluster Autoscaler package to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::Cluster Autoscaler package did not reconcile within ${TIMEOUT}s"
+            exit 1
           fi
           echo "Cluster Autoscaler setup complete"
 
@@ -535,21 +550,24 @@ jobs:
           ELAPSED=0
 
           while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            if kubectl get deployment -n kube-system cluster-autoscaler >/dev/null 2>&1; then
-              READY=$(kubectl get deployment -n kube-system cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-              if [ "${READY:-0}" -ge 1 ]; then
-                echo "Cluster Autoscaler deployment is ready (${READY} replica(s))"
-                echo "Autoscaler configured: min=${MIN_NODES}, max=${MAX_NODES} worker nodes"
-                exit 0
+            # Check kube-system first, then tkg-packages
+            for NS in kube-system "$PACKAGE_NAMESPACE"; do
+              if kubectl get deployment -n "$NS" cluster-autoscaler >/dev/null 2>&1; then
+                READY=$(kubectl get deployment -n "$NS" cluster-autoscaler -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                if [ "${READY:-0}" -ge 1 ]; then
+                  echo "Cluster Autoscaler deployment is ready in namespace '$NS' (${READY} replica(s))"
+                  echo "Autoscaler configured: min=${MIN_NODES}, max=${MAX_NODES} worker nodes"
+                  exit 0
+                fi
               fi
-            fi
+            done
             echo "Waiting for Cluster Autoscaler deployment to be ready... (${ELAPSED}s/${TIMEOUT}s)"
             sleep "$INTERVAL"
             ELAPSED=$((ELAPSED + INTERVAL))
           done
 
           echo "::warning::Cluster Autoscaler deployment did not reach Ready within ${TIMEOUT}s — autoscaling may not be active"
-          kubectl get deployment -n kube-system cluster-autoscaler 2>/dev/null || true
+          kubectl get deployments -A 2>/dev/null | head -20 || true
 
       # Phase 7: Build and Push Web App Image
       - name: Build and Push Web App Image
