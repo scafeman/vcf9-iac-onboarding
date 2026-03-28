@@ -310,6 +310,14 @@ curl -X POST \
 - **No LoadBalancer IP:** Check NSX load balancer capacity and VPC connectivity
 - **HTTP test returns non-200:** The nginx pod may not be ready yet; check pod status with `kubectl get pods`
 
+### Cluster Autoscaler not scaling
+
+- Verify the autoscaler package is installed: `kubectl get packageinstall -n tkg-packages | grep cluster-autoscaler`
+- Check the autoscaler deployment is running: `kubectl get deployment -A | grep autoscaler`
+- Verify the autoscaler annotations are set on the cluster manifest: `cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size` and `max-size`
+- Check autoscaler logs: `kubectl logs -n kube-system -l app=cluster-autoscaler --tail=50`
+- The autoscaler requires `clusterConfig.clusterName` and `clusterConfig.clusterNamespace` values — if the package shows `Reconcile failed`, the values file may not have been passed correctly
+
 ---
 
 # Deploy Metrics — Deploy VKS Metrics Stack (`deploy-vks-metrics.yml`)
@@ -382,7 +390,7 @@ curl -X POST \
 
 | # | Step Name | Description |
 |---|---|---|
-| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v4` |
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
 | 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path (default `./kubeconfig-<CLUSTER_NAME>.yaml`); fails if file not found |
 | 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
 | 4 | **Node Sizing Advisory** | Queries total allocatable CPU across worker nodes; prints `::warning::` if below threshold but does not fail |
@@ -441,9 +449,9 @@ Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runne
 | `ENVIRONMENT` | `environment` | `demo` | Environment label for the deployment |
 | `DOMAIN` | `domain` | `lab.local` | Domain suffix for service hostnames |
 | `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
-| `HARBOR_VERSION` | `harbor_version` | `1.16.2` | Harbor Helm chart version |
-| `ARGOCD_VERSION` | `argocd_version` | `7.8.13` | ArgoCD Helm chart version |
-| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.0` | GitLab Operator Helm chart version |
+| `HARBOR_VERSION` | `harbor_version` | `1.18.3` | Harbor Helm chart version |
+| `ARGOCD_VERSION` | `argocd_version` | `9.4.17` | ArgoCD Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.1` | GitLab Operator Helm chart version |
 | `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.75.0` | GitLab Runner Helm chart version |
 | `HARBOR_ADMIN_PASSWORD` | `harbor_admin_password` | (auto-generated) | Harbor admin password |
 | `PACKAGE_TIMEOUT` | `package_timeout` | `900` | Package reconciliation timeout in seconds |
@@ -494,7 +502,7 @@ curl -X POST \
 
 | # | Step Name | Description |
 |---|---|---|
-| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v4` |
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
 | 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path; fails if file not found |
 | 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
 | 4 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist |

@@ -155,6 +155,8 @@ Contains two **VPCNATRule** examples — one SNAT rule (outbound traffic transla
 
 Creates a **VKS cluster** via the Cluster API. Defines the cluster network CIDRs, Kubernetes version, control plane replica count, worker node pool with autoscaler bounds, VM class, and storage class.
 
+> **Note:** The autoscaler annotations (`cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size` and `max-size`) define the scaling bounds but do not enable autoscaling by themselves. You must also install the Cluster Autoscaler VKS standard package on the guest cluster after provisioning. The `deploy-cluster.sh` script and `deploy-vks.yml` workflow handle this automatically.
+
 | | |
 |---|---|
 | Guide reference | Phase 6 — VKS Cluster Deployment |
@@ -233,7 +235,7 @@ Deploy Metrics and Deploy GitOps both require a running VKS cluster provisioned 
 
 ## Deploy Cluster: Full Stack Deploy
 
-Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, and cluster lifecycle — from zero to a running Kubernetes cluster with LoadBalancer support and `nfs` storageClass.
+Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, cluster lifecycle, and Cluster Autoscaler installation — from zero to a running Kubernetes cluster with LoadBalancer support, `nfs` storageClass, and automatic node scaling.
 
 | | |
 |---|---|
