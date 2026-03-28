@@ -486,9 +486,21 @@ log_step "5e" "Installing Cluster Autoscaler package"
 if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cluster-autoscaler"; then
   log_success "Cluster Autoscaler already installed, skipping"
 else
+  # Create values file with required cluster config
+  AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
+  cat > "${AUTOSCALER_VALUES}" <<EOF
+clusterConfig:
+  clusterName: ${CLUSTER_NAME}
+  clusterNamespace: ${DYNAMIC_NS_NAME}
+EOF
+  log_success "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
+
   vcf package install cluster-autoscaler \
     -p cluster-autoscaler.kubernetes.vmware.com \
+    --values-file "${AUTOSCALER_VALUES}" \
     -n "${PACKAGE_NAMESPACE}"
+
+  rm -f "${AUTOSCALER_VALUES}"
 
   if ! wait_for_condition "Cluster Autoscaler package to reconcile" \
     "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \

@@ -490,9 +490,21 @@ jobs:
           if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "cluster-autoscaler"; then
             echo "Cluster Autoscaler already installed, skipping"
           else
+            # Create values file with required cluster config
+            AUTOSCALER_VALUES=$(mktemp /tmp/autoscaler-values-XXXXXX.yaml)
+            cat > "$AUTOSCALER_VALUES" <<EOF
+          clusterConfig:
+            clusterName: ${CLUSTER_NAME}
+            clusterNamespace: ${DYNAMIC_NS_NAME}
+          EOF
+            echo "Autoscaler values: clusterName=${CLUSTER_NAME}, clusterNamespace=${DYNAMIC_NS_NAME}"
+
             vcf package install cluster-autoscaler \
               -p cluster-autoscaler.kubernetes.vmware.com \
+              --values-file "$AUTOSCALER_VALUES" \
               -n "$PACKAGE_NAMESPACE"
+
+            rm -f "$AUTOSCALER_VALUES"
 
             TIMEOUT="$PACKAGE_TIMEOUT"
             INTERVAL=15
