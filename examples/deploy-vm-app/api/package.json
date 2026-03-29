@@ -1,0 +1,14 @@
+{
+  "name": "vm-app-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "pg": "^8.13.1",
+    "cors": "^2.8.5",
+    "uuid": "^10.0.0"
+  }
+}

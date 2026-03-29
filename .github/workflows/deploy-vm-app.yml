@@ -1,0 +1,94 @@
+# =============================================================================
+# Deploy VM App — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow deploys the VCF VM PostgreSQL Infrastructure Asset Tracker demo
+# on an existing VKS cluster provisioned by Deploy Cluster. It provisions a
+# PostgreSQL VM via VM Service, builds and pushes API and Frontend container
+# images, deploys them to the VKS guest cluster, and verifies end-to-end
+# connectivity.
+#
+# Prerequisites:
+#   - Deploy Cluster must have completed successfully — a running VKS cluster
+#     with a valid admin kubeconfig file is required.
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the VKS cluster API. All required tools (VCF CLI,
+#     kubectl, docker, jq) are baked into the runner via Dockerfile.runner.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-vm-app"
+#
+# =============================================================================
+
+name: Deploy VM App
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      supervisor_namespace:
+        description: "Supervisor namespace where the VKS cluster and VM will be provisioned (e.g., my-project-ns-xxxxx)"
+        required: true
+        type: string
+      environment:
+        description: "Environment label for the deployment"
+        required: false
+        type: string
+        default: "demo"
+
+  repository_dispatch:
+    types: [deploy-vm-app]
+
+jobs:
+  deploy:
+    name: Deploy VM App
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
+      SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
+      PROJECT_NAME: ${{ github.event.client_payload.project_name || secrets.PROJECT_NAME }}
+      VM_CLASS: ${{ github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
+      VM_IMAGE: ${{ github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04.3-live-server-amd64' }}
+      VM_CONTENT_LIBRARY_ID: ${{ github.event.client_payload.vm_content_library_id || secrets.VM_CONTENT_LIBRARY_ID }}
+      POSTGRES_USER: ${{ github.event.client_payload.postgres_user || secrets.POSTGRES_USER || 'assetadmin' }}
+      POSTGRES_PASSWORD: ${{ github.event.client_payload.postgres_password || secrets.POSTGRES_PASSWORD || 'assetpass' }}
+      POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
+      VM_NAME: ${{ github.event.client_payload.vm_name || secrets.VM_NAME || 'postgresql-vm' }}
+      APP_NAMESPACE: ${{ github.event.client_payload.app_namespace || secrets.APP_NAMESPACE || 'vm-app' }}
+      CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
+      IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
+      API_PORT: ${{ github.event.client_payload.api_port || secrets.API_PORT || '3001' }}
+      FRONTEND_PORT: ${{ github.event.client_payload.frontend_port || secrets.FRONTEND_PORT || '3000' }}
+      VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
+      POD_TIMEOUT: ${{ github.event.client_payload.pod_timeout || secrets.POD_TIMEOUT || '300' }}
+      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
+      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '30' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+      CONTEXT_NAME: ${{ github.event.client_payload.context_name || secrets.CONTEXT_NAME }}
+
+      # --- DockerHub credentials for image push ---
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Deploy VM App
+        run: bash examples/deploy-vm-app/deploy-vm-app.sh

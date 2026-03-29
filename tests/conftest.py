@@ -486,3 +486,58 @@ def trigger_teardown_script_text() -> str:
     """Return the raw text of scripts/trigger-teardown.sh."""
     with open(TRIGGER_TEARDOWN_SCRIPT_PATH, encoding="utf-8") as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Deploy VM App Fixtures
+# ---------------------------------------------------------------------------
+
+VM_APP_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-vm-app", "deploy-vm-app.sh"
+)
+
+VM_APP_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-vm-app", "teardown-vm-app.sh"
+)
+
+VM_APP_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-vm-app.yml"
+)
+
+VM_APP_TRIGGER_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy-vm-app.sh"
+)
+
+
+@pytest.fixture(scope="session")
+def vm_app_deploy_text() -> str:
+    """Return the full text of the deploy-vm-app deploy script."""
+    with open(VM_APP_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def vm_app_teardown_text() -> str:
+    """Return the full text of the deploy-vm-app teardown script."""
+    with open(VM_APP_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def vm_app_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-vm-app.yml."""
+    with open(VM_APP_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def vm_app_workflow_yaml(vm_app_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the deploy-vm-app workflow file."""
+    return yaml.safe_load(vm_app_workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def vm_app_trigger_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy-vm-app.sh."""
+    with open(VM_APP_TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()
