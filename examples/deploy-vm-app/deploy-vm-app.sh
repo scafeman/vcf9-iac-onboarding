@@ -213,8 +213,17 @@ CLOUDINIT_INNER
   CLOUD_INIT_USERDATA="${CLOUD_INIT_USERDATA//POSTGRES_DB_PLACEHOLDER/${POSTGRES_DB}}"
 
   # Base64-encode the cloud-init user data
-  CLOUD_INIT_B64=$(echo "${CLOUD_INIT_USERDATA}" | base64 -w 0)
+  # Create a Kubernetes Secret with the cloud-init user data
+  if kubectl get secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+    log_success "Secret '${VM_NAME}-cloud-init' already exists, updating..."
+    kubectl delete secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+  fi
+  kubectl create secret generic "${VM_NAME}-cloud-init" \
+    -n "${SUPERVISOR_NAMESPACE}" \
+    --from-literal=user-data="${CLOUD_INIT_USERDATA}"
+  log_success "Cloud-init Secret '${VM_NAME}-cloud-init' created"
 
+  # Apply VirtualMachine manifest referencing the cloud-init Secret
   if ! cat <<EOF | kubectl apply -f -
 apiVersion: vmoperator.vmware.com/v1alpha3
 kind: VirtualMachine
@@ -228,13 +237,8 @@ spec:
   bootstrap:
     cloudInit:
       rawCloudConfig:
-        key: guestinfo.userdata
         name: ${VM_NAME}-cloud-init
-  volumes:
-  - name: cloud-init-volume
-    cloudInitNoCloud:
-      userData:
-        value: "${CLOUD_INIT_B64}"
+        key: user-data
 EOF
   then
     log_error "Failed to apply VirtualMachine manifest for '${VM_NAME}'"
