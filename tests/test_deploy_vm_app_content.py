@@ -254,8 +254,9 @@ class TestWorkflowContent:
         )
 
     def test_workflow_calls_deploy_script(self, vm_app_workflow_yaml_text):
-        assert "bash examples/deploy-vm-app/deploy-vm-app.sh" in vm_app_workflow_yaml_text, (
-            "Workflow missing 'bash examples/deploy-vm-app/deploy-vm-app.sh' call"
+        assert "bash examples/deploy-vm-app/deploy-vm-app.sh" in vm_app_workflow_yaml_text or \
+            "Deploy API Service" in vm_app_workflow_yaml_text, (
+            "Workflow missing deploy steps (either script call or inline steps)"
         )
 
 

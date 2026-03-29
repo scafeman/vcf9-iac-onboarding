@@ -34,11 +34,29 @@ on:
         description: "Supervisor namespace where the VKS cluster and VM will be provisioned (e.g., my-project-ns-xxxxx)"
         required: true
         type: string
+      project_name:
+        description: "VCF Project name (e.g., my-dev-project-01)"
+        required: true
+        type: string
+      vm_content_library_id:
+        description: "VM Content Library ID for the VM image"
+        required: true
+        type: string
       environment:
         description: "Environment label for the deployment"
         required: false
         type: string
         default: "demo"
+      vm_class:
+        description: "VM class for the PostgreSQL VM (default: best-effort-medium)"
+        required: false
+        type: string
+        default: "best-effort-medium"
+      vm_image:
+        description: "VM image name (default: ubuntu-24.04.3-live-server-amd64)"
+        required: false
+        type: string
+        default: "ubuntu-24.04.3-live-server-amd64"
 
   repository_dispatch:
     types: [deploy-vm-app]
@@ -58,10 +76,10 @@ jobs:
       CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
       ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
       SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
-      PROJECT_NAME: ${{ github.event.client_payload.project_name || secrets.PROJECT_NAME }}
-      VM_CLASS: ${{ github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
-      VM_IMAGE: ${{ github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04.3-live-server-amd64' }}
-      VM_CONTENT_LIBRARY_ID: ${{ github.event.client_payload.vm_content_library_id || secrets.VM_CONTENT_LIBRARY_ID }}
+      PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
+      VM_CLASS: ${{ github.event.inputs.vm_class || github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
+      VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04.3-live-server-amd64' }}
+      VM_CONTENT_LIBRARY_ID: ${{ github.event.inputs.vm_content_library_id || github.event.client_payload.vm_content_library_id || secrets.VM_CONTENT_LIBRARY_ID }}
       POSTGRES_USER: ${{ github.event.client_payload.postgres_user || secrets.POSTGRES_USER || 'assetadmin' }}
       POSTGRES_PASSWORD: ${{ github.event.client_payload.postgres_password || secrets.POSTGRES_PASSWORD || 'assetpass' }}
       POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
@@ -80,15 +98,595 @@ jobs:
       VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
-      CONTEXT_NAME: ${{ github.event.client_payload.context_name || secrets.CONTEXT_NAME }}
 
       # --- DockerHub credentials for image push ---
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
+      # --- Static Configuration ---
+      CONTEXT_NAME: vm-app-deploy
+
     steps:
+      # Step 1: Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v5
 
-      - name: Deploy VM App
-        run: bash examples/deploy-vm-app/deploy-vm-app.sh
+      # Step 2: Validate Inputs
+      - name: Validate Inputs
+        run: |
+          set -euo pipefail
+          # Trim leading/trailing whitespace from input parameters
+          CLUSTER_NAME="$(echo -n "$CLUSTER_NAME" | xargs)"
+          SUPERVISOR_NAMESPACE="$(echo -n "$SUPERVISOR_NAMESPACE" | xargs)"
+          PROJECT_NAME="$(echo -n "$PROJECT_NAME" | xargs)"
+          VM_IMAGE="$(echo -n "$VM_IMAGE" | xargs)"
+          VM_CONTENT_LIBRARY_ID="$(echo -n "$VM_CONTENT_LIBRARY_ID" | xargs)"
+          ENVIRONMENT="$(echo -n "$ENVIRONMENT" | xargs)"
+          # Export trimmed values for subsequent steps
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+          echo "SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
+          echo "VM_IMAGE=$VM_IMAGE" >> "$GITHUB_ENV"
+          echo "VM_CONTENT_LIBRARY_ID=$VM_CONTENT_LIBRARY_ID" >> "$GITHUB_ENV"
+          echo "ENVIRONMENT=$ENVIRONMENT" >> "$GITHUB_ENV"
+          MISSING=""
+          for var in CLUSTER_NAME SUPERVISOR_NAMESPACE PROJECT_NAME VM_IMAGE VM_CONTENT_LIBRARY_ID VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME; do
+            if [ -z "${!var:-}" ]; then
+              MISSING="${MISSING}  - ${var}\n"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required variables:"
+            echo -e "$MISSING"
+            exit 1
+          fi
+          echo "All required inputs validated successfully"
+          echo "  CLUSTER_NAME=$CLUSTER_NAME"
+          echo "  SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE"
+          echo "  PROJECT_NAME=$PROJECT_NAME"
+          echo "  VM_IMAGE=$VM_IMAGE"
+
+      # Step 3: Create VCF CLI Context
+      - name: Create VCF CLI Context
+        run: |
+          set -euo pipefail
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            exit 1
+          fi
+          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
+
+      # Step 4: Setup Kubeconfig
+      - name: Setup Kubeconfig
+        run: |
+          set -euo pipefail
+          KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
+
+          # If the kubeconfig file doesn't exist, retrieve it via VCF CLI
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+            vcf context create "$CONTEXT_NAME" \
+              --endpoint "https://$VCFA_ENDPOINT" \
+              --type cci \
+              --tenant-name "$TENANT_NAME" \
+              --api-token "$VCF_API_TOKEN" \
+              --set-current
+
+            # Find and switch to the namespace context matching the SUPERVISOR_NAMESPACE
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              # Try matching by project name pattern
+              PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+              NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+            fi
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              echo "::error::Could not find a namespace context for supervisor namespace '${SUPERVISOR_NAMESPACE}' under context '${CONTEXT_NAME}'. Ensure Deploy Cluster has completed."
+              exit 1
+            fi
+            echo "Found namespace context: $NAMESPACE_CONTEXT"
+            vcf context use "$NAMESPACE_CONTEXT"
+
+            # Retrieve the admin kubeconfig
+            vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
+            echo "Kubeconfig retrieved via VCF CLI"
+          fi
+
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
+            exit 1
+          fi
+
+          # Save the kubeconfig path for later use (do NOT export KUBECONFIG yet — supervisor steps come first)
+          echo "KUBECONFIG_PATH=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+          echo "Kubeconfig saved to '$KUBECONFIG_PATH' (will be activated for guest cluster steps)"
+
+      # Step 5: Provision PostgreSQL VM
+      - name: Provision PostgreSQL VM
+        run: |
+          set -euo pipefail
+
+          # Ensure we are on the supervisor context (unset KUBECONFIG so kubectl uses VCF CLI context)
+          unset KUBECONFIG 2>/dev/null || true
+
+          # Re-establish VCF CLI context for supervisor operations
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current
+
+          # Switch to the namespace context for the supervisor namespace
+          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+          if [ -z "$NAMESPACE_CONTEXT" ]; then
+            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+          fi
+          if [ -n "$NAMESPACE_CONTEXT" ]; then
+            vcf context use "$NAMESPACE_CONTEXT"
+          fi
+
+          # Idempotency check — skip creation if VM already exists
+          if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+            echo "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
+          else
+            # Generate cloud-init user data for PostgreSQL 16 installation and configuration
+            CLOUD_INIT_USERDATA=$(cat <<'CLOUDINIT_INNER'
+          #cloud-config
+          package_update: true
+          packages:
+            - postgresql-16
+            - postgresql-client-16
+
+          write_files:
+            - path: /etc/postgresql/16/main/pg_hba.conf
+              content: |
+                # TYPE  DATABASE        USER            ADDRESS                 METHOD
+                local   all             postgres                                peer
+                local   all             all                                     peer
+                host    all             all             127.0.0.1/32            md5
+                host    all             all             ::1/128                 md5
+                host    all             all             0.0.0.0/0               md5
+              owner: postgres:postgres
+              permissions: '0640'
+
+          runcmd:
+            - |
+              # Configure PostgreSQL to listen on all interfaces
+              sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/16/main/postgresql.conf
+              # Restart PostgreSQL to apply configuration changes
+              systemctl restart postgresql
+              # Create the application database user and database
+              sudo -u postgres psql -c "CREATE USER POSTGRES_USER_PLACEHOLDER WITH PASSWORD 'POSTGRES_PASSWORD_PLACEHOLDER';"
+              sudo -u postgres psql -c "CREATE DATABASE POSTGRES_DB_PLACEHOLDER OWNER POSTGRES_USER_PLACEHOLDER;"
+              sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE POSTGRES_DB_PLACEHOLDER TO POSTGRES_USER_PLACEHOLDER;"
+              # Ensure PostgreSQL is enabled on boot
+              systemctl enable postgresql
+          CLOUDINIT_INNER
+          )
+
+            # Substitute actual credential values into cloud-init
+            CLOUD_INIT_USERDATA="${CLOUD_INIT_USERDATA//POSTGRES_USER_PLACEHOLDER/${POSTGRES_USER}}"
+            CLOUD_INIT_USERDATA="${CLOUD_INIT_USERDATA//POSTGRES_PASSWORD_PLACEHOLDER/${POSTGRES_PASSWORD}}"
+            CLOUD_INIT_USERDATA="${CLOUD_INIT_USERDATA//POSTGRES_DB_PLACEHOLDER/${POSTGRES_DB}}"
+
+            # Base64-encode the cloud-init user data
+            CLOUD_INIT_B64=$(echo "${CLOUD_INIT_USERDATA}" | base64 -w 0)
+
+            if ! cat <<EOF | kubectl apply -f -
+          apiVersion: vmoperator.vmware.com/v1alpha3
+          kind: VirtualMachine
+          metadata:
+            name: ${VM_NAME}
+            namespace: ${SUPERVISOR_NAMESPACE}
+          spec:
+            className: ${VM_CLASS}
+            imageName: ${VM_IMAGE}
+            powerState: PoweredOn
+            bootstrap:
+              cloudInit:
+                rawCloudConfig:
+                  key: guestinfo.userdata
+                  name: ${VM_NAME}-cloud-init
+            volumes:
+            - name: cloud-init-volume
+              cloudInitNoCloud:
+                userData:
+                  value: "${CLOUD_INIT_B64}"
+          EOF
+            then
+              echo "::error::Failed to apply VirtualMachine manifest for '${VM_NAME}'"
+              exit 1
+            fi
+
+            echo "VirtualMachine '${VM_NAME}' manifest applied to namespace '${SUPERVISOR_NAMESPACE}'"
+          fi
+
+      # Step 6: Wait for VM Ready
+      - name: Wait for VM Ready
+        run: |
+          set -euo pipefail
+
+          # Ensure we are on the supervisor context
+          unset KUBECONFIG 2>/dev/null || true
+
+          TIMEOUT="${VM_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            POWER_STATE=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.powerState}' 2>/dev/null || echo "Unknown")
+            if [ "$POWER_STATE" = "PoweredOn" ]; then
+              echo "VM '${VM_NAME}' is powered on and ready"
+              break
+            fi
+            echo "VM power state: $POWER_STATE — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            VM_STATUS=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status}' 2>/dev/null || echo "unable to retrieve status")
+            echo "::error::VM '${VM_NAME}' did not reach PoweredOn state within ${TIMEOUT}s. Current status: ${VM_STATUS}"
+            exit 1
+          fi
+
+          # Extract VM IP address from VirtualMachine status
+          VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ipAddresses[0]}' 2>/dev/null || true)
+
+          if [ -z "${VM_IP}" ]; then
+            # Try alternative IP path
+            VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.vmIp}' 2>/dev/null || true)
+          fi
+
+          if [ -z "${VM_IP}" ]; then
+            echo "::error::Failed to extract IP address for VM '${VM_NAME}'. Check VirtualMachine status."
+            exit 1
+          fi
+
+          echo "VM_IP=$VM_IP" >> "$GITHUB_ENV"
+          echo "PostgreSQL VM IP address: ${VM_IP}"
+
+      # Step 7: Build and Push API Image
+      - name: Build and Push API Image
+        run: |
+          set -euo pipefail
+          API_IMAGE="${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}"
+
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            echo "Logged in to DockerHub"
+          fi
+
+          if ! docker build -t "${API_IMAGE}" examples/deploy-vm-app/api/; then
+            echo "::error::Failed to build API container image '${API_IMAGE}'"
+            exit 1
+          fi
+          echo "API container image '${API_IMAGE}' built successfully"
+
+          if ! docker push "${API_IMAGE}"; then
+            echo "::error::Failed to push API container image '${API_IMAGE}'"
+            exit 1
+          fi
+          echo "API container image '${API_IMAGE}' pushed successfully"
+
+      # Step 8: Build and Push Frontend Image
+      - name: Build and Push Frontend Image
+        run: |
+          set -euo pipefail
+          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}"
+
+          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-vm-app/dashboard/; then
+            echo "::error::Failed to build Frontend container image '${FRONTEND_IMAGE}'"
+            exit 1
+          fi
+          echo "Frontend container image '${FRONTEND_IMAGE}' built successfully"
+
+          if ! docker push "${FRONTEND_IMAGE}"; then
+            echo "::error::Failed to push Frontend container image '${FRONTEND_IMAGE}'"
+            exit 1
+          fi
+          echo "Frontend container image '${FRONTEND_IMAGE}' pushed successfully"
+
+      # Step 9: Setup Guest Cluster Kubeconfig
+      - name: Setup Guest Cluster Kubeconfig
+        run: |
+          set -euo pipefail
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+
+          # Switch to the admin context (the file may contain multiple contexts)
+          ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+          if kubectl config get-contexts "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1; then
+            kubectl config use-context "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH"
+            echo "Switched to admin context '$ADMIN_CONTEXT'"
+          else
+            kubectl config use-context "$(kubectl config get-contexts -o name --kubeconfig="$KUBECONFIG_PATH" | head -1)" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1 || true
+          fi
+
+          if ! kubectl get namespaces >/dev/null 2>&1; then
+            echo "::error::Unable to reach guest cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_PATH}'. Verify the cluster is running and the kubeconfig is valid."
+            exit 1
+          fi
+          echo "Guest cluster '${CLUSTER_NAME}' is reachable via '${KUBECONFIG_PATH}'"
+
+      # Step 10: Create Application Namespace
+      - name: Create Application Namespace
+        run: |
+          set -euo pipefail
+          if kubectl get ns "${APP_NAMESPACE}" >/dev/null 2>&1; then
+            echo "Namespace '${APP_NAMESPACE}' already exists, skipping creation"
+          else
+            kubectl create ns "${APP_NAMESPACE}"
+            echo "Namespace '${APP_NAMESPACE}' created"
+          fi
+
+          kubectl label ns "${APP_NAMESPACE}" \
+            pod-security.kubernetes.io/enforce=privileged \
+            --overwrite >/dev/null 2>&1 || true
+          echo "Namespace '${APP_NAMESPACE}' labelled with privileged PodSecurity standard"
+
+      # Step 11: Deploy API Service
+      - name: Deploy API Service
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vm-app-api
+            namespace: ${APP_NAMESPACE}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: vm-app-api
+            template:
+              metadata:
+                labels:
+                  app: vm-app-api
+              spec:
+                containers:
+                - name: api
+                  image: ${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}
+                  env:
+                  - name: POSTGRES_HOST
+                    value: "${VM_IP}"
+                  - name: POSTGRES_PORT
+                    value: "5432"
+                  - name: POSTGRES_USER
+                    value: "${POSTGRES_USER}"
+                  - name: POSTGRES_PASSWORD
+                    value: "${POSTGRES_PASSWORD}"
+                  - name: POSTGRES_DB
+                    value: "${POSTGRES_DB}"
+                  - name: API_PORT
+                    value: "${API_PORT}"
+                  ports:
+                  - containerPort: ${API_PORT}
+                  readinessProbe:
+                    httpGet:
+                      path: /healthz
+                      port: ${API_PORT}
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vm-app-api
+            namespace: ${APP_NAMESPACE}
+          spec:
+            type: ClusterIP
+            selector:
+              app: vm-app-api
+            ports:
+            - port: ${API_PORT}
+              targetPort: ${API_PORT}
+              protocol: TCP
+          EOF
+          echo "API Deployment and ClusterIP Service applied on port ${API_PORT}"
+
+      # Step 12: Wait for API Pod Running
+      - name: Wait for API Pod Running
+        run: |
+          set -euo pipefail
+          TIMEOUT="${POD_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-api --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "API pod is running"
+              exit 0
+            fi
+            echo "Waiting for API pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::API pod did not reach Running state within ${TIMEOUT}s"
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-api -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 13: Deploy Frontend Service
+      - name: Deploy Frontend Service
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: vm-app-dashboard
+            namespace: ${APP_NAMESPACE}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: vm-app-dashboard
+            template:
+              metadata:
+                labels:
+                  app: vm-app-dashboard
+              spec:
+                containers:
+                - name: dashboard
+                  image: ${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}
+                  env:
+                  - name: API_HOST
+                    value: "vm-app-api.${APP_NAMESPACE}.svc.cluster.local"
+                  - name: API_PORT
+                    value: "${API_PORT}"
+                  ports:
+                  - containerPort: ${FRONTEND_PORT}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: vm-app-dashboard-lb
+            namespace: ${APP_NAMESPACE}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: vm-app-dashboard
+            ports:
+            - port: 80
+              targetPort: ${FRONTEND_PORT}
+              protocol: TCP
+          EOF
+          echo "Frontend Deployment and LoadBalancer Service applied (port 80 → ${FRONTEND_PORT})"
+
+      # Step 14: Wait for Frontend Pod Running
+      - name: Wait for Frontend Pod Running
+        run: |
+          set -euo pipefail
+          TIMEOUT="${POD_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-dashboard --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "Frontend pod is running"
+              exit 0
+            fi
+            echo "Waiting for Frontend pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::Frontend pod did not reach Running state within ${TIMEOUT}s"
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-dashboard -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 15: Wait for LoadBalancer IP
+      - name: Wait for LoadBalancer IP
+        id: get-lb-ip
+        run: |
+          set -euo pipefail
+          TIMEOUT="${LB_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+          FRONTEND_IP=""
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            FRONTEND_IP=$(kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$FRONTEND_IP" ]; then
+              echo "LoadBalancer 'vm-app-dashboard-lb' assigned external IP: $FRONTEND_IP"
+              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+              echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::LoadBalancer 'vm-app-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
+          kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 16: HTTP Connectivity Test
+      - name: HTTP Connectivity Test
+        run: |
+          set -euo pipefail
+          FRONTEND_IP="${{ steps.get-lb-ip.outputs.frontend_ip }}"
+
+          # Test frontend HTTP connectivity
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+          else
+            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
+            exit 1
+          fi
+
+          # Test API health check via frontend
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+          else
+            echo "::error::API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
+            exit 1
+          fi
+
+          echo "End-to-end connectivity verified"
+
+      # Step 17: Write Job Summary
+      - name: Write Job Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ VM App Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | App Namespace | \`${APP_NAMESPACE}\` |
+          | PostgreSQL VM | \`${VM_IP}\` |
+          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+          | Environment | \`${ENVIRONMENT}\` |
+
+          ### Deployed Services
+          | Service | Endpoint |
+          |---|---|
+          | PostgreSQL VM | \`${VM_IP}:5432\` |
+          | API | \`vm-app-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
+          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+
+          ### Container Images
+          | Image | Tag |
+          |---|---|
+          | \`${CONTAINER_REGISTRY}/vm-app-api\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/vm-app-dashboard\` | \`${IMAGE_TAG}\` |
+          EOF
+
+      # Step 18: Write Failure Summary
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ VM App Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | App Namespace | \`${APP_NAMESPACE}\` |
+          | Environment | \`${ENVIRONMENT}\` |
+          | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Verify the VKS cluster from Deploy Cluster is running and accessible
+          3. Check that the kubeconfig file exists and is valid
+          4. Verify SUPERVISOR_NAMESPACE and PROJECT_NAME are set correctly
+          5. Re-run the workflow — most steps are idempotent and will skip already-completed work
+          EOF
