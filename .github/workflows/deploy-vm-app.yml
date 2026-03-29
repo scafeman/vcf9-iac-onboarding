@@ -644,21 +644,39 @@ jobs:
         run: |
           set -euo pipefail
           FRONTEND_IP="${{ steps.get-lb-ip.outputs.frontend_ip }}"
+          RETRY_TIMEOUT=120
+          RETRY_INTERVAL=10
 
-          # Test frontend HTTP connectivity
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
-          if [ "$HTTP_STATUS" = "200" ]; then
-            echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
-          else
+          # Test frontend HTTP connectivity (with retries — Next.js may need a moment)
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+              break
+            fi
+            echo "Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+            sleep "$RETRY_INTERVAL"
+            ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+          done
+          if [ "$HTTP_STATUS" != "200" ]; then
             echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
             exit 1
           fi
 
-          # Test API health check via frontend
-          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
-          if [ "$HEALTH_STATUS" = "200" ]; then
-            echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
-          else
+          # Test API health check via frontend (with retries — API may still be initializing schema)
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+            if [ "$HEALTH_STATUS" = "200" ]; then
+              echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+              break
+            fi
+            echo "API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+            sleep "$RETRY_INTERVAL"
+            ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+          done
+          if [ "$HEALTH_STATUS" != "200" ]; then
             echo "::error::API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
             exit 1
           fi

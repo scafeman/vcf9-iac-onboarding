@@ -561,20 +561,41 @@ log_success "Phase 4 complete — Frontend service deployed with external IP ${F
 
 log_step 5 "Verifying end-to-end connectivity"
 
-# HTTP GET to frontend — verify 200
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
-if [[ "${HTTP_STATUS}" == "200" ]]; then
-  log_success "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
-else
+RETRY_TIMEOUT=120
+RETRY_INTERVAL=10
+
+# HTTP GET to frontend — verify 200 (with retries)
+ELAPSED=0
+HTTP_STATUS=""
+while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+  if [[ "${HTTP_STATUS}" == "200" ]]; then
+    log_success "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+    break
+  fi
+  echo "  Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+  sleep "${RETRY_INTERVAL}"
+  ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+done
+if [[ "${HTTP_STATUS}" != "200" ]]; then
   log_error "Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
   exit 6
 fi
 
-# HTTP GET to API health check via frontend
-HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
-if [[ "${HEALTH_STATUS}" == "200" ]]; then
-  log_success "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
-else
+# HTTP GET to API health check via frontend (with retries — API may still be initializing schema)
+ELAPSED=0
+HEALTH_STATUS=""
+while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
+  HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+  if [[ "${HEALTH_STATUS}" == "200" ]]; then
+    log_success "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+    break
+  fi
+  echo "  API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+  sleep "${RETRY_INTERVAL}"
+  ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+done
+if [[ "${HEALTH_STATUS}" != "200" ]]; then
   log_error "API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
   exit 6
 fi
