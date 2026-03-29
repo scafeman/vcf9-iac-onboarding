@@ -265,20 +265,29 @@ fi
 
 log_success "VM '${VM_NAME}' is powered on and ready"
 
-# Extract VM IP address from VirtualMachine status
-VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.primaryIP4}' 2>/dev/null || true)
+# Wait for VM IP address to be assigned (may take additional time after PoweredOn)
+echo "Waiting for VM IP address to be assigned..."
+IP_TIMEOUT=120
+IP_ELAPSED=0
+VM_IP=""
+while [[ "${IP_ELAPSED}" -lt "${IP_TIMEOUT}" ]]; do
+  VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.primaryIP4}' 2>/dev/null || true)
+  if [[ -z "${VM_IP}" ]]; then
+    VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ip.addresses[0].address}' 2>/dev/null || true)
+  fi
+  if [[ -z "${VM_IP}" ]]; then
+    VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.vmIp}' 2>/dev/null || true)
+  fi
+  if [[ -n "${VM_IP}" ]]; then
+    break
+  fi
+  echo "  VM IP not yet assigned — waiting... (${IP_ELAPSED}s/${IP_TIMEOUT}s)"
+  sleep 10
+  IP_ELAPSED=$((IP_ELAPSED + 10))
+done
 
 if [[ -z "${VM_IP}" ]]; then
-  # Try alternative IP paths
-  VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ip.addresses[0].address}' 2>/dev/null || true)
-fi
-
-if [[ -z "${VM_IP}" ]]; then
-  VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.vmIp}' 2>/dev/null || true)
-fi
-
-if [[ -z "${VM_IP}" ]]; then
-  log_error "Failed to extract IP address for VM '${VM_NAME}'. Check VirtualMachine status."
+  log_error "Failed to extract IP address for VM '${VM_NAME}' within ${IP_TIMEOUT}s. Check VirtualMachine status."
   exit 2
 fi
 
