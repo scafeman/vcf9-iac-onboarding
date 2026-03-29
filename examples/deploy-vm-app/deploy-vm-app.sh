@@ -183,20 +183,19 @@ packages:
   - postgresql-16
   - postgresql-client-16
 
-write_files:
-  - path: /etc/postgresql/16/main/pg_hba.conf
-    content: |
-      # TYPE  DATABASE        USER            ADDRESS                 METHOD
-      local   all             postgres                                peer
-      local   all             all                                     peer
-      host    all             all             127.0.0.1/32            scram-sha-256
-      host    all             all             ::1/128                 scram-sha-256
-      host    all             all             0.0.0.0/0               scram-sha-256
-    owner: postgres:postgres
-    permissions: '0640'
-
 runcmd:
   - |
+    # Write pg_hba.conf AFTER postgresql is installed (write_files runs before packages)
+    cat > /etc/postgresql/16/main/pg_hba.conf <<'PGHBA'
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             postgres                                peer
+    local   all             all                                     peer
+    host    all             all             127.0.0.1/32            scram-sha-256
+    host    all             all             ::1/128                 scram-sha-256
+    host    all             all             0.0.0.0/0               scram-sha-256
+    PGHBA
+    chown postgres:postgres /etc/postgresql/16/main/pg_hba.conf
+    chmod 640 /etc/postgresql/16/main/pg_hba.conf
     # Configure PostgreSQL to listen on all interfaces
     sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/16/main/postgresql.conf
     # Restart PostgreSQL to apply configuration changes
