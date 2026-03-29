@@ -183,6 +183,15 @@ packages:
   - postgresql-16
   - postgresql-client-16
 
+users:
+  - default
+  - name: rackadmin
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair
+
 runcmd:
   - |
     # Write pg_hba.conf AFTER postgresql is installed (write_files runs before packages)

@@ -2,13 +2,14 @@
 
 ## Overview
 
-This repository contains four GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains five GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
 | Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
+| Deploy VM App — Infrastructure Asset Tracker | `deploy-vm-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
@@ -18,7 +19,8 @@ Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps
 ```
 Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Metrics (deploy-vks-metrics.yml)
-    └── Deploy GitOps (deploy-argocd.yml)
+    ├── Deploy GitOps (deploy-argocd.yml)
+    └── Deploy VM App (deploy-vm-app.yml)
 
 Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase A: GitOps Stack Teardown
@@ -592,6 +594,139 @@ Deploy Metrics and Deploy GitOps share these components, all handled idempotentl
 - If the workflow times out, increase `PACKAGE_TIMEOUT` (default `900s`)
 - Check pod events: `kubectl describe pod <pod-name> -n gitlab-system`
 - Common causes: insufficient memory (GitLab requires ~8 GB RAM), PVC binding delays, image pull throttling
+
+---
+
+# Deploy VM App — Infrastructure Asset Tracker (`deploy-vm-app.yml`)
+
+## Overview
+
+Deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. Both the VM and containers reside in the same VCF namespace and NSX VPC, communicating over Layer 3 networking.
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Deploy VM App"** → **"Run workflow"**
+2. Fill in: **cluster_name** (required), **supervisor_namespace** (required), **project_name** (required), **vm_content_library_id** (required), and optionally **environment**, **vm_class**, **vm_image**
+
+### Trigger Script (repository_dispatch)
+
+```bash
+./scripts/trigger-deploy-vm-app.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01 \
+  --supervisor-namespace my-project-ns-xxxxx \
+  --project-name my-project-01 \
+  --vm-content-library-id cl-97acf13b5e2909643
+```
+
+**Required:** `--repo`, `--token`, `--cluster-name`
+
+**Optional:** `--environment`, `--supervisor-namespace`, `--project-name`, `--vm-class`, `--vm-image`, `--vm-content-library-id`, `--postgres-user`, `--postgres-password`, `--postgres-db`, `--vm-name`, `--app-namespace`, `--container-registry`, `--image-tag`, `--vcfa-endpoint`, `--tenant-name`
+
+### Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -H "Content-Type: application/json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-vm-app",
+    "client_payload": {
+      "cluster_name": "my-dev-project-01-clus-01",
+      "supervisor_namespace": "my-project-ns-xxxxx",
+      "project_name": "my-dev-project-01",
+      "vm_content_library_id": "cl-97acf13b5e2909643"
+    }
+  }'
+```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `SUPERVISOR_NAMESPACE` | `supervisor_namespace` | (required) | Supervisor namespace where the VKS cluster and VM are provisioned |
+| `PROJECT_NAME` | `project_name` | (required) | VCF project name |
+| `VM_CONTENT_LIBRARY_ID` | `vm_content_library_id` | (required) | Content library ID for VM images (separate from VKS node images) |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label |
+| `VM_CLASS` | `vm_class` | `best-effort-medium` | VM Service compute class for the PostgreSQL VM |
+| `VM_IMAGE` | `vm_image` | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name (must be a cloud image with cloud-init) |
+| `POSTGRES_USER` | `postgres_user` | `assetadmin` | PostgreSQL database user |
+| `POSTGRES_PASSWORD` | `postgres_password` | `assetpass` | PostgreSQL database password |
+| `POSTGRES_DB` | `postgres_db` | `assetdb` | PostgreSQL database name |
+| `VM_NAME` | `vm_name` | `postgresql-vm` | Name for the VirtualMachine resource |
+| `APP_NAMESPACE` | `app_namespace` | `vm-app` | Kubernetes namespace for API + Frontend in guest cluster |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for the VM disk |
+| `CONTAINER_REGISTRY` | `container_registry` | `scafeman` | Docker registry prefix for container images |
+| `IMAGE_TAG` | `image_tag` | `latest` | Container image tag |
+| `API_PORT` | `api_port` | `3001` | API service port |
+| `FRONTEND_PORT` | `frontend_port` | `3000` | Frontend container port |
+| `VM_TIMEOUT` | `vm_timeout` | `600` | Seconds to wait for VM ready power state |
+| `POD_TIMEOUT` | `pod_timeout` | `300` | Seconds to wait for pod Running state |
+| `LB_TIMEOUT` | `lb_timeout` | `300` | Seconds to wait for LoadBalancer external IP |
+| `POLL_INTERVAL` | `poll_interval` | `30` | Seconds between polling attempts |
+
+## Workflow Steps
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| 2 | **Validate Inputs** | Checks all required environment variables are set; fails with a list of missing variables |
+| 3 | **Create VCF CLI Context** | Creates a VCF CLI context authenticated to the VCFA endpoint |
+| 4 | **Setup Kubeconfig** | Retrieves the admin kubeconfig for the VKS guest cluster via VCF CLI |
+| 5 | **Provision PostgreSQL VM** | Creates a cloud-init Secret and applies the VirtualMachine manifest (`vmoperator.vmware.com/v1alpha3`) to the supervisor namespace |
+| 6 | **Wait for VM Ready** | Polls until the VM reaches PoweredOn state and an IP address is assigned |
+| 7 | **Build and Push API Image** | Builds and pushes the Node.js API container image to DockerHub |
+| 8 | **Build and Push Frontend Image** | Builds and pushes the Next.js dashboard container image to DockerHub |
+| 9 | **Setup Guest Cluster Kubeconfig** | Switches to the guest cluster kubeconfig and verifies connectivity |
+| 10 | **Create Application Namespace** | Creates the `vm-app` namespace with privileged PodSecurity label |
+| 11 | **Deploy API Service** | Deploys the API Deployment (with readiness probe on `/healthz`) and ClusterIP Service |
+| 12 | **Wait for API Pod Running** | Polls until the API pod reaches Running state |
+| 13 | **Deploy Frontend Service** | Deploys the Frontend Deployment and LoadBalancer Service (port 80 → 3000) |
+| 14 | **Wait for Frontend Pod Running** | Polls until the Frontend pod reaches Running state |
+| 15 | **Wait for LoadBalancer IP** | Polls until the LoadBalancer receives an external IP |
+| 16 | **HTTP Connectivity Test** | Curls the frontend IP for HTTP 200 and the `/api/healthz` endpoint for healthy database status |
+| 17 | **Write Job Summary** | Writes a Markdown summary with cluster details, VM IP, frontend IP, and container images |
+| 18 | **Write Failure Summary** | On failure, writes a failure summary with troubleshooting steps |
+
+## Troubleshooting
+
+### VM does not reach PoweredOn state
+
+- Verify the `VM_IMAGE` exists in the content library and is a cloud image (Template type, not ISO)
+- Verify the `VM_CLASS` is available in the namespace: `kubectl get virtualmachineclasses`
+- Check VirtualMachine events: `kubectl describe virtualmachine postgresql-vm -n <SUPERVISOR_NAMESPACE>`
+- Increase `VM_TIMEOUT` if the environment is slow to provision VMs
+
+### VM IP not assigned
+
+- The VM IP may take 30–60 seconds to appear after PoweredOn state
+- The workflow polls for up to 120 seconds for the IP to be assigned
+- Check VM network status: `kubectl get virtualmachine postgresql-vm -n <SUPERVISOR_NAMESPACE> -o jsonpath='{.status.network}'`
+
+### API pod in CrashLoopBackOff
+
+- Check pod logs: `kubectl logs -l app=vm-app-api -n vm-app`
+- Common cause: PostgreSQL not reachable from the pod (cloud-init may not have completed)
+- Verify PostgreSQL is listening: `kubectl exec -it deploy/vm-app-api -n vm-app -- nc -zv <VM_IP> 5432`
+- Verify `pg_hba.conf` allows connections from the pod CIDR
+
+### Frontend returns 502 on /api/healthz
+
+- The API pod may still be starting or in CrashLoopBackOff
+- Check API pod status: `kubectl get pods -l app=vm-app-api -n vm-app`
+- Check API pod logs for database connection errors
+
+### Container image build/push fails
+
+- Verify Docker is running on the self-hosted runner
+- Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set
+- Check that the Dockerfiles at `examples/deploy-vm-app/api/Dockerfile` and `examples/deploy-vm-app/dashboard/Dockerfile` are valid
 
 ---
 

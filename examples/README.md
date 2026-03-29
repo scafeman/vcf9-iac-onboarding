@@ -226,10 +226,11 @@ These end-to-end scripts orchestrate full deployments across multiple VCF resour
 ```
 Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
-  └─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
+  ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
+  └─► Deploy VM App: Infrastructure Asset Tracker (VM-to-container connectivity)
 ```
 
-Deploy Metrics and Deploy GitOps both require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order (or only one of them).
+Deploy Metrics, Deploy GitOps, and Deploy VM App all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
 
 ---
 
@@ -267,5 +268,17 @@ Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructur
 | Deploy | `bash examples/deploy-gitops/deploy-gitops.sh` |
 | Teardown | `bash examples/deploy-gitops/teardown-gitops.sh` |
 | Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |
+
+## Deploy VM App: Infrastructure Asset Tracker
+
+Deploys a full-stack demo application demonstrating VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster.
+
+| | |
+|---|---|
+| Folder | [`deploy-vm-app/`](deploy-vm-app/) |
+| Depends on | Deploy Cluster (running VKS cluster) |
+| Deploy | `bash examples/deploy-vm-app/deploy-vm-app.sh` |
+| Teardown | `bash examples/deploy-vm-app/teardown-vm-app.sh` |
+| Output | Next.js dashboard at LoadBalancer IP, PostgreSQL VM, Node.js API — all communicating over NSX VPC |
 
 ---
