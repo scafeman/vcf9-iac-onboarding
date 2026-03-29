@@ -266,10 +266,14 @@ fi
 log_success "VM '${VM_NAME}' is powered on and ready"
 
 # Extract VM IP address from VirtualMachine status
-VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ipAddresses[0]}' 2>/dev/null || true)
+VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.primaryIP4}' 2>/dev/null || true)
 
 if [[ -z "${VM_IP}" ]]; then
-  # Try alternative IP path
+  # Try alternative IP paths
+  VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ip.addresses[0].address}' 2>/dev/null || true)
+fi
+
+if [[ -z "${VM_IP}" ]]; then
   VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.vmIp}' 2>/dev/null || true)
 fi
 
