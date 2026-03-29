@@ -53,10 +53,10 @@ on:
         type: string
         default: "best-effort-medium"
       vm_image:
-        description: "VM image name (default: ubuntu-24.04.3-live-server-amd64)"
+        description: "VM image name (default: ubuntu-24.04-server-cloudimg-amd64)"
         required: false
         type: string
-        default: "ubuntu-24.04.3-live-server-amd64"
+        default: "ubuntu-24.04-server-cloudimg-amd64"
 
   repository_dispatch:
     types: [deploy-vm-app]
@@ -78,7 +78,7 @@ jobs:
       SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
       PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
       VM_CLASS: ${{ github.event.inputs.vm_class || github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
-      VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04.3-live-server-amd64' }}
+      VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04-server-cloudimg-amd64' }}
       VM_CONTENT_LIBRARY_ID: ${{ github.event.inputs.vm_content_library_id || github.event.client_payload.vm_content_library_id || secrets.VM_CONTENT_LIBRARY_ID }}
       POSTGRES_USER: ${{ github.event.client_payload.postgres_user || secrets.POSTGRES_USER || 'assetadmin' }}
       POSTGRES_PASSWORD: ${{ github.event.client_payload.postgres_password || secrets.POSTGRES_PASSWORD || 'assetpass' }}

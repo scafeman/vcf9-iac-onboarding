@@ -26,7 +26,7 @@ Optional (override workflow defaults):
   --supervisor-namespace       Supervisor namespace for VM provisioning
   --project-name               VCF project name
   --vm-class                   VM Service compute class (default: best-effort-medium)
-  --vm-image                   Content library image name for Ubuntu cloud image (default: ubuntu-24.04.3-live-server-amd64)
+  --vm-image                   Content library image name for Ubuntu cloud image (default: ubuntu-24.04-server-cloudimg-amd64)
   --vm-content-library-id      Content library ID for VM images (separate from VKS node images)
   --postgres-user              PostgreSQL username (default: assetadmin)
   --postgres-password          PostgreSQL password (default: assetpass)

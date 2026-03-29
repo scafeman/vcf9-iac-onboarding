@@ -46,7 +46,7 @@ PROJECT_NAME="${PROJECT_NAME:-}"
 
 # --- VM Configuration ---
 VM_CLASS="${VM_CLASS:-best-effort-medium}"
-VM_IMAGE="${VM_IMAGE:-ubuntu-24.04.3-live-server-amd64}"
+VM_IMAGE="${VM_IMAGE:-ubuntu-24.04-server-cloudimg-amd64}"
 VM_CONTENT_LIBRARY_ID="${VM_CONTENT_LIBRARY_ID:-}"
 VM_NAME="${VM_NAME:-postgresql-vm}"
 
