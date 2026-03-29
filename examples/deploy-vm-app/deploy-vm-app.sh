@@ -58,6 +58,9 @@ POSTGRES_DB="${POSTGRES_DB:-assetdb}"
 # --- Application Namespace ---
 APP_NAMESPACE="${APP_NAMESPACE:-vm-app}"
 
+# --- Storage ---
+STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
+
 # --- Container Image ---
 CONTAINER_REGISTRY="${CONTAINER_REGISTRY:-scafeman}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
@@ -233,6 +236,7 @@ metadata:
 spec:
   className: ${VM_CLASS}
   imageName: ${VM_IMAGE}
+  storageClass: ${STORAGE_CLASS}
   powerState: PoweredOn
   bootstrap:
     cloudInit:

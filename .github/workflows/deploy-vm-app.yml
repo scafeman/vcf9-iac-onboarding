@@ -85,6 +85,7 @@ jobs:
       POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
       VM_NAME: ${{ github.event.client_payload.vm_name || secrets.VM_NAME || 'postgresql-vm' }}
       APP_NAMESPACE: ${{ github.event.client_payload.app_namespace || secrets.APP_NAMESPACE || 'vm-app' }}
+      STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
       CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
       IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
       API_PORT: ${{ github.event.client_payload.api_port || secrets.API_PORT || '3001' }}
@@ -298,6 +299,7 @@ jobs:
           spec:
             className: ${VM_CLASS}
             imageName: ${VM_IMAGE}
+            storageClass: ${STORAGE_CLASS}
             powerState: PoweredOn
             bootstrap:
               cloudInit:
