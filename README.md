@@ -1,6 +1,6 @@
 # VCF 9 IaC Onboarding Toolkit
 
-Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Foundation (VCF) 9 environments with VMware Kubernetes Service (VKS). Built for DevOps engineers migrating container workloads from AWS EKS to on-premises VCF 9.
+Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Foundation (VCF) 9 environments with VMware Kubernetes Service (VKS). Built for DevOps engineers migrating container workloads from AWS EKS to a VCF VKS Private Cloud environment.
 
 ## What This Repo Provides
 
