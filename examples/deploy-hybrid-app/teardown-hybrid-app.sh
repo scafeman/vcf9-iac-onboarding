@@ -140,6 +140,14 @@ if [[ -n "${CONTEXT_NAME}" ]]; then
       --api-token "${VCF_API_TOKEN}" \
       --set-current 2>/dev/null || true
   fi
+
+  # Switch to the namespace-level context for supervisor operations
+  if [[ -n "${SUPERVISOR_NAMESPACE}" ]]; then
+    NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+    if [[ -n "${NAMESPACE_CONTEXT}" ]]; then
+      vcf context use "${NAMESPACE_CONTEXT}" 2>/dev/null || true
+    fi
+  fi
 fi
 
 if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
@@ -164,6 +172,10 @@ else
   log_success "VirtualMachine '${VM_NAME}' does not exist, already absent"
   RESOURCE_STATUS["virtualmachine"]="already absent"
 fi
+
+# Clean up cloud-init Secret
+kubectl delete secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+log_success "Cloud-init Secret '${VM_NAME}-cloud-init' cleaned up"
 
 ###############################################################################
 # Teardown Summary
