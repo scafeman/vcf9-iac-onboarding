@@ -74,6 +74,30 @@ log_error() {
   echo "✗ ERROR: $1" >&2
 }
 
+validate_variables() {
+  local missing=0
+  local required_vars=(
+    "CLUSTER_NAME"
+    "SUPERVISOR_NAMESPACE"
+    "VCF_API_TOKEN"
+    "VCFA_ENDPOINT"
+    "TENANT_NAME"
+    "CONTEXT_NAME"
+  )
+
+  for var_name in "${required_vars[@]}"; do
+    if [[ -z "${!var_name:-}" ]]; then
+      log_error "Required variable ${var_name} is not set or is empty"
+      missing=1
+    fi
+  done
+
+  if [[ "${missing}" -eq 1 ]]; then
+    log_error "One or more required variables are missing."
+    exit 1
+  fi
+}
+
 wait_for_deletion() {
   local description="$1"
   local timeout="$2"
@@ -98,18 +122,7 @@ wait_for_deletion() {
 # Pre-Flight Validation
 ###############################################################################
 
-MISSING=0
-for var_name in CLUSTER_NAME SUPERVISOR_NAMESPACE VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME CONTEXT_NAME; do
-  if [[ -z "${!var_name:-}" ]]; then
-    log_error "Required variable ${var_name} is not set or is empty"
-    MISSING=1
-  fi
-done
-if [[ "${MISSING}" -eq 1 ]]; then
-  log_error "One or more required variables are missing. Set them in your environment before running the teardown."
-  log_error "Example: CLUSTER_NAME=gh-actions-demo-01-clus-01 SUPERVISOR_NAMESPACE=gh-actions-demo-01-ns-6dxm9 bash examples/deploy-hybrid-app/teardown-hybrid-app.sh"
-  exit 1
-fi
+validate_variables
 
 ###############################################################################
 # Phase 1: Delete Application Namespace in Guest Cluster
