@@ -29,83 +29,15 @@ The toolkit automates the VCF 9 provisioning workflow across six phases:
 
 ## Quick Start
 
-### Prerequisites
+1. Clone the repo and create a `.env` file with your VCF 9 credentials
+2. `docker compose up -d --build` — start the dev container
+3. `docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh` — deploy a VKS cluster
 
-- Docker and Docker Compose
-- A VCF 9 / VCFA environment with API access
-- An API token from the VCFA portal
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/scafeman/vcf9-iac-onboarding.git
-cd vcf9-iac-onboarding
-```
-
-Create a `.env` file at the project root with your environment-specific values:
-
-```env
-# --- API Token (from VCF Automation portal) ---
-VCF_API_TOKEN=<your-api-token>
-
-# --- VCFA Connection ---
-VCFA_ENDPOINT=<vcfa-hostname>
-TENANT_NAME=<sso-tenant>
-CONTEXT_NAME=<cli-context-name>
-
-# --- Project & Namespace ---
-PROJECT_NAME=<project-name>
-USER_IDENTITY=<sso-user>
-NAMESPACE_PREFIX=<namespace-prefix->
-
-# --- Infrastructure (Zone) ---
-ZONE_NAME=<availability-zone>
-
-# --- VKS Cluster ---
-CLUSTER_NAME=<cluster-name>
-CONTENT_LIBRARY_ID=<content-library-id>
-
-# --- VKS Standard Packages (similar to EKS Add-ons — curated Kubernetes extensions) ---
-# These are used by Deploy Cluster (autoscaler), Deploy Metrics, and Deploy GitOps
-PACKAGE_NAMESPACE=tkg-packages
-PACKAGE_REPO_NAME=tkg-packages
-PACKAGE_REPO_URL=projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211
-
-# --- GitHub Actions Runner ---
-RUNNER_TOKEN=<your-runner-registration-token>
-REPO_URL=https://github.com/<OWNER>/<REPO>
-GITHUB_PAT=<your-github-personal-access-token>
-```
-
-Replace all `<placeholder>` values with your environment-specific settings. See the [deploy script README](examples/deploy-cluster/README-deploy.md) for the full variable reference including optional variables with defaults.
-
-### 2. Build and start the dev container
-
-```bash
-docker compose up -d --build
-```
-
-This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2) and kubectl (v1.33.0) pre-installed.
-
-### 3. Deploy the full stack
-
-```bash
-docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
-```
-
-Typical deployment time: 5–18 minutes. The script provisions a VCF project, supervisor namespace, VKS cluster with autoscaling workers, and validates the stack with a test workload.
-
-### 4. Tear it all down
-
-```bash
-docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
-```
-
-Typical teardown time: 1–6 minutes. Safe to run multiple times (fully idempotent).
+See the [Getting Started Guide](GETTING-STARTED.md) for full setup instructions, all deployment commands, and GitHub Actions configuration.
 
 ## GitHub Actions Workflows
 
-All three deployments are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
+All four deployments are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
 
 | Workflow | File | Trigger |
 |---|---|---|
@@ -117,142 +49,16 @@ All three deployments are also available as GitHub Actions workflows for automat
 
 Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order (GitOps → Metrics → Cluster) with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
 
-## Repository Structure
+## Deployments
 
-```
-.
-├── README.md                          # This file
-├── vcf9-iac-onboarding-guide.md       # Comprehensive IaC onboarding guide (8 phases + appendices)
-├── VCF_Engineering_Workflow.md         # Quick-reference engineering workflow
-├── AWS-EKS-to-VCF-VKS-Migration-Checklist.md  # Migration success criteria checklist
-├── Dockerfile                         # Dev container with VCF CLI + kubectl
-├── docker-compose.yml                 # Container orchestration config
-├── .env                               # Environment variables (not committed)
-├── .gitignore                         # Git ignore rules
-├── .github/
-│   └── workflows/
-│       ├── deploy-vks.yml             # Deploy Cluster: Deploy VKS Cluster workflow
-│       ├── deploy-vks-metrics.yml     # Deploy Metrics: Deploy VKS Metrics Stack workflow
-│       ├── deploy-argocd.yml          # Deploy GitOps: Deploy ArgoCD Stack workflow
-│       ├── deploy-hybrid-app.yml         # Deploy Hybrid App: Infrastructure Asset Tracker workflow
-│       ├── teardown.yml               # Teardown: Selective teardown of all stacks
-│       └── README.md                  # Workflow documentation (parameters, triggers, credentials)
-├── scripts/
-│   ├── trigger-deploy.sh             # Companion trigger script for Deploy Cluster
-│   ├── trigger-deploy-metrics.sh     # Companion trigger script for Deploy Metrics
-│   ├── trigger-deploy-argocd.sh      # Companion trigger script for Deploy GitOps
-│   ├── trigger-deploy-hybrid-app.sh     # Companion trigger script for Deploy Hybrid App
-│   └── trigger-teardown.sh           # Companion trigger script for Teardown
-├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
-├── examples/
-│   ├── deploy-cluster/                          # Deploy Cluster
-│   │   ├── deploy-cluster.sh                    #   Deploy script
-│   │   ├── teardown-cluster.sh                  #   Teardown script
-│   │   ├── README-deploy.md                     #   Deploy documentation
-│   │   └── README-teardown.md                   #   Teardown documentation
-│   ├── deploy-metrics/                           # Deploy Metrics
-│   │   ├── deploy-metrics.sh                    #   Deploy script
-│   │   ├── teardown-metrics.sh                  #   Teardown script
-│   │   ├── README-deploy.md                     #   Deploy documentation
-│   │   ├── README-teardown.md                   #   Teardown documentation
-│   │   ├── telegraf-values.yaml                 #   Telegraf Helm values
-│   │   ├── prometheus-values.yaml               #   Prometheus Helm values
-│   │   ├── grafana-instance.yaml                #   Grafana instance manifest
-│   │   ├── grafana-datasource-prometheus.yaml   #   Grafana datasource manifest
-│   │   └── grafana-dashboards-k8s.yaml          #   Grafana dashboards manifest
-│   ├── deploy-gitops/                            # Deploy GitOps
-│   │   ├── deploy-gitops.sh                     #   Deploy script
-│   │   ├── teardown-gitops.sh                   #   Teardown script
-│   │   ├── README-deploy.md                     #   Deploy documentation
-│   │   ├── README-teardown.md                   #   Teardown documentation
-│   │   ├── contour-values.yaml                  #   Contour Helm values
-│   │   ├── harbor-values.yaml                   #   Harbor Helm values
-│   │   ├── argocd-values.yaml                   #   ArgoCD Helm values
-│   │   ├── gitlab-operator-values.yaml          #   GitLab Operator Helm values
-│   │   ├── gitlab-runner-values.yaml            #   GitLab Runner Helm values
-│   │   ├── argocd-microservices-demo.yaml       #   ArgoCD Application manifest
-│   │   └── wildcard.cnf                         #   OpenSSL wildcard cert config
-│   ├── deploy-hybrid-app/                             # Deploy Hybrid App (Infrastructure Asset Tracker)
-│   │   ├── deploy-hybrid-app.sh                      #   Deploy script
-│   │   ├── teardown-hybrid-app.sh                    #   Teardown script
-│   │   ├── README-deploy.md                      #   Deploy documentation
-│   │   ├── README-teardown.md                    #   Teardown documentation
-│   │   ├── api/                                  #   Node.js REST API (Express + pg)
-│   │   │   ├── server.js                         #     API server with CRUD endpoints
-│   │   │   ├── package.json                      #     Dependencies
-│   │   │   └── Dockerfile                        #     Multi-stage build
-│   │   └── dashboard/                            #   Next.js frontend dashboard
-│   │       ├── src/                              #     App source (pages, API routes)
-│   │       ├── package.json                      #     Dependencies
-│   │       └── Dockerfile                        #     Multi-stage build
-│   ├── sample-create-vpc.yaml                   # Sample VPC manifest
-│   ├── sample-vpc-connectivity-profile.yaml     # Sample VPC Connectivity Profile manifest
-│   ├── sample-vpc-attachment.yaml               # Sample VPCAttachment manifest
-│   ├── sample-create-project-ns.yaml            # Sample Project + RBAC + Namespace manifest
-│   ├── sample-nat-rules.yaml                    # Sample NAT rules manifest (optional)
-│   ├── sample-create-cluster.yaml               # Sample VKS Cluster manifest
-│   ├── sample-vks-functional-test.yaml          # Sample functional test workload manifest
-│   └── README.md                                # Examples overview and sample manifest guide
-└── tests/
-    ├── conftest.py                    # Shared pytest fixtures
-    ├── requirements.txt               # Python test dependencies
-    ├── test_content.py                # Content-presence tests for the onboarding guide
-    ├── test_properties.py             # Property-based tests for guide YAML manifests
-    ├── test_deploy_cluster_content.py      # Content-presence tests for Deploy Cluster scripts
-    ├── test_deploy_cluster_properties.py   # Property-based tests for Deploy Cluster scripts
-    ├── test_deploy_metrics_content.py      # Content-presence tests for Deploy Metrics scripts
-    ├── test_deploy_metrics_properties.py   # Property-based tests for Deploy Metrics scripts
-    ├── test_deploy_gitops_content.py      # Content-presence tests for Deploy GitOps scripts
-    ├── test_deploy_gitops_properties.py   # Property-based tests for Deploy GitOps scripts
-    ├── test_gh_actions_deploy_content.py       # Content tests for Deploy Cluster workflow
-    ├── test_gh_actions_deploy_properties.py    # Property tests for Deploy Cluster workflow
-    ├── test_gh_actions_metrics_gitops_content.py    # Content tests for Deploy Metrics and Deploy GitOps workflows
-    ├── test_gh_actions_metrics_gitops_properties.py # Property tests for Deploy Metrics and Deploy GitOps workflows
-    ├── test_workflow_secrets_hardening.py      # Security hardening tests for all workflows
-    └── test_teardown_workflow_content.py       # Content tests for Teardown workflow
-```
+| Deployment | What It Does | Folder |
+|---|---|---|
+| Deploy Cluster | Provisions VKS cluster with autoscaling, packages, and functional validation | [`examples/deploy-cluster/`](examples/deploy-cluster/) |
+| Deploy Metrics | Installs Telegraf, Prometheus, and Grafana on the VKS cluster | [`examples/deploy-metrics/`](examples/deploy-metrics/) |
+| Deploy GitOps | Installs Harbor, ArgoCD, GitLab, and deploys Microservices Demo | [`examples/deploy-gitops/`](examples/deploy-gitops/) |
+| Deploy Hybrid App | Provisions a PostgreSQL VM + deploys a Next.js/Node.js app on VKS | [`examples/deploy-hybrid-app/`](examples/deploy-hybrid-app/) |
 
-## Documentation
-
-| Document | Description |
-|---|---|
-| [VCF 9 IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) | Full walkthrough of the VCF 9 IaC workflow with annotated manifests, CLI commands, troubleshooting, and an EKS-to-VKS migration mapping |
-| [Engineering Workflow](VCF_Engineering_Workflow.md) | Condensed step-by-step engineering workflow |
-| [Examples Overview](examples/README.md) | Summary of all deployments, dependency chain, and deploy/teardown commands |
-| [Deploy Cluster Deploy README](examples/deploy-cluster/README-deploy.md) | Detailed breakdown of each Deploy Cluster deploy phase, expected output, and timing |
-| [Deploy Cluster Teardown README](examples/deploy-cluster/README-teardown.md) | Detailed breakdown of each Deploy Cluster teardown phase with idempotency notes |
-| [Deploy Metrics Deploy README](examples/deploy-metrics/README-deploy.md) | VKS Metrics Observability deploy documentation |
-| [Deploy Metrics Teardown README](examples/deploy-metrics/README-teardown.md) | VKS Metrics Observability teardown documentation |
-| [Deploy GitOps Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
-| [Deploy GitOps Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
-| [Deploy Hybrid App Deploy README](examples/deploy-hybrid-app/README-deploy.md) | Infrastructure Asset Tracker deploy documentation (VM + API + Frontend) |
-| [Deploy Hybrid App Teardown README](examples/deploy-hybrid-app/README-teardown.md) | Infrastructure Asset Tracker teardown documentation |
-| [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
-| [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all five workflows (deploy and teardown) |
-
-## Testing
-
-The test suite validates both the onboarding guide and the automation scripts using pytest and Hypothesis (property-based testing).
-
-### Run tests inside the dev container
-
-```bash
-docker exec vcf9-dev pytest tests/ -v
-```
-
-### Run tests locally (requires Python 3.10+)
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-pip install -r tests/requirements.txt
-pytest tests/ -v
-```
-
-### What the tests cover
-
-- **Content-presence tests** — Verify all required phases, CLI commands, manifest kinds, and reference sections exist in the guide and scripts
-- **Property-based tests** — Use Hypothesis to generate random inputs and verify YAML round-trip integrity, placeholder parameterization, API version consistency, heredoc validity, and more
+Each deployment has its own deploy script, teardown script, and README documentation. See the [Examples Overview](examples/README.md) for details.
 
 ## Key VCF 9 Concepts
 
@@ -266,81 +72,24 @@ pytest tests/ -v
 | **Package Repository** | An OCI registry containing the VKS standard packages catalog. Registered via `vcf package repository add` before any packages can be installed. Similar to adding a Helm repo, but uses the Carvel packaging APIs (PackageRepository, PackageInstall, App) instead of Helm charts. |
 | **kapp-controller** | The Carvel package manager that runs on every VKS cluster. It watches PackageInstall resources and reconciles them — fetching the OCI bundle, templating with ytt, and deploying with kapp. When you `vcf package install`, it creates a PackageInstall CR that kapp-controller picks up. During teardown, finalizers must be stripped before deletion to prevent kapp-controller's reconcile-delete from cascading into namespace destruction. |
 
-## Environment Variables Reference
+## Documentation
 
-### Deploy Cluster — VKS Cluster Deployment
+- [Getting Started Guide](GETTING-STARTED.md) — Setup, configuration, and deployment commands
+- [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) — All configurable variables for every deployment
+- [GitHub Actions Workflows](.github/workflows/README.md) — Workflow parameters, triggers, credential retrieval, and troubleshooting
+- [IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) — Full VCF 9 walkthrough with annotated manifests and CLI commands
+- [Engineering Workflow](VCF_Engineering_Workflow.md) — Condensed step-by-step engineering workflow
+- [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) — Pass/fail migration validation checklist
+- [Examples Overview](examples/README.md) — Sample manifests and automation script documentation
 
-| Variable | Required | Description |
-|---|---|---|
-| `VCF_API_TOKEN` | Yes | API token from the VCFA portal |
-| `VCFA_ENDPOINT` | Yes | VCFA hostname (no `https://` prefix) |
-| `TENANT_NAME` | Yes | SSO tenant/organization |
-| `CONTEXT_NAME` | Yes | Local CLI context name |
-| `PROJECT_NAME` | Yes | VCF Project name |
-| `USER_IDENTITY` | Yes | SSO user identity for RBAC |
-| `NAMESPACE_PREFIX` | Yes | Supervisor Namespace prefix (VCF appends a random suffix) |
-| `ZONE_NAME` | Yes | Availability zone for namespace placement |
-| `CLUSTER_NAME` | Yes | VKS cluster name |
-| `CONTENT_LIBRARY_ID` | Yes | vSphere content library ID for OS images |
-| `REGION_NAME` | No | Region name (default: `region-us1-a`) |
-| `VPC_NAME` | No | VPC name (default: `region-us1-a-default-vpc`) |
-| `RESOURCE_CLASS` | No | Namespace resource class (default: `xxlarge`) |
-| `K8S_VERSION` | No | Kubernetes version (default: `v1.33.6+vmware.1-fips`) |
-| `VM_CLASS` | No | VM class for worker nodes (default: `best-effort-large`) |
-| `STORAGE_CLASS` | No | Storage class for PVCs (default: `nfs`) |
-| `MIN_NODES` | No | Autoscaler minimum nodes (default: `2`) |
-| `MAX_NODES` | No | Autoscaler maximum nodes (default: `10`) |
-| `CONTAINERD_VOLUME_SIZE` | No | Containerd data volume per node (default: `50Gi`) |
-| `OS_NAME` | No | Node OS image: `photon` or `ubuntu` (default: `photon`) |
-| `OS_VERSION` | No | Node OS version, required for ubuntu (e.g., `24.04`) |
-| `CONTROL_PLANE_REPLICAS` | No | Control plane node count: `1` (default) or `3` (HA) |
-| `NODE_POOL_NAME` | No | Worker node pool name (default: `node-pool-01`) |
-| `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` | No | Time before underutilized node removal (default: `5m`) |
-| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` | No | Cooldown after scale-up before scale-down (default: `5m`) |
-| `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | No | Node utilization threshold for scale-down (default: `0.5`) |
-| `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` | No | Cooldown after node deletion before next scale-down (default: `10s`) |
-| `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
-| `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
-| `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |
+## Testing
 
-### Deploy Metrics — VKS Metrics Observability
+```bash
+docker exec vcf9-dev pytest tests/ -v    # inside dev container
+pytest tests/ -v                          # locally (requires Python 3.10+)
+```
 
-| Variable | Required | Description |
-|---|---|---|
-| `PACKAGE_NAMESPACE` | No | Namespace for VKS packages (default: `tkg-packages`) |
-| `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
-| `TELEGRAF_VERSION` | No | Telegraf package version (default: `1.37.1+vmware.1-vks.1`) |
-
-### Deploy GitOps — ArgoCD Consumption Model
-
-| Variable | Required | Description |
-|---|---|---|
-| `HARBOR_VERSION` | No | Harbor Helm chart version (default: `1.18.3`) |
-| `ARGOCD_VERSION` | No | ArgoCD Helm chart version (default: `9.4.17`) |
-| `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.1`) |
-| `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.75.0`) |
-
-### Deploy Hybrid App — Infrastructure Asset Tracker
-
-| Variable | Required | Description |
-|---|---|---|
-| `SUPERVISOR_NAMESPACE` | Yes | Supervisor namespace where the VKS cluster and VM are provisioned |
-| `VM_CONTENT_LIBRARY_ID` | Yes | Content library ID for VM images (separate from VKS node `CONTENT_LIBRARY_ID`) |
-| `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
-| `VM_CLASS` | No | VM Service compute class (default: `best-effort-medium`) |
-| `VM_NAME` | No | VirtualMachine resource name (default: `postgresql-vm`) |
-| `POSTGRES_USER` | No | PostgreSQL database user (default: `assetadmin`) |
-| `POSTGRES_PASSWORD` | No | PostgreSQL database password (default: `assetpass`) |
-| `POSTGRES_DB` | No | PostgreSQL database name (default: `assetdb`) |
-| `APP_NAMESPACE` | No | Kubernetes namespace for API + Frontend (default: `hybrid-app`) |
-| `STORAGE_CLASS` | No | Storage class for the VM disk (default: `nfs`) |
-
-### GitHub Actions Runner
-
-| Variable | Required | Description |
-|---|---|---|
-| `RUNNER_TOKEN` | Yes | GitHub Actions runner registration token |
-| `REPO_URL` | Yes | GitHub repository URL (e.g., `https://github.com/OWNER/REPO`) |
+The test suite uses pytest and Hypothesis for content-presence and property-based testing across all scripts, manifests, and workflows.
 
 ## License
 
