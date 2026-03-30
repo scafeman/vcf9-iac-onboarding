@@ -10,7 +10,7 @@ This repository contains five GitHub Actions workflows that automate the end-to-
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
 | Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
-| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, and Cluster stacks in reverse dependency order |
+| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
 
@@ -741,7 +741,7 @@ Selectively tears down the three VCF 9 deployment stacks (GitOps, Metrics, Clust
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Teardown VCF Stacks"** → **"Run workflow"**
-2. Fill in: **cluster_name** (required), optionally uncheck **teardown_gitops**, **teardown_metrics**, or **teardown_cluster** to skip specific stacks
+2. Fill in: **cluster_name** (required), optionally uncheck **teardown_gitops**, **teardown_metrics**, **teardown_hybrid_app**, or **teardown_cluster** to skip specific stacks
 
 ### Trigger Script (repository_dispatch)
 
@@ -754,7 +754,7 @@ Selectively tears down the three VCF 9 deployment stacks (GitOps, Metrics, Clust
 
 **Required:** `--repo`, `--token`, `--cluster-name`
 
-**Optional:** `--teardown-gitops`, `--teardown-metrics`, `--teardown-cluster` (default `true`), `--domain`, `--kubeconfig-path`, `--vcfa-endpoint`, `--tenant-name`
+**Optional:** `--teardown-gitops`, `--teardown-metrics`, `--teardown-cluster`, `--teardown-hybrid-app` (default `true`), `--domain`, `--kubeconfig-path`, `--vcfa-endpoint`, `--tenant-name`
 
 Selective teardown example (skip GitOps and Cluster, tear down only Metrics):
 
@@ -781,7 +781,8 @@ curl -X POST \
       "cluster_name": "my-dev-project-01-clus-01",
       "teardown_gitops": "true",
       "teardown_metrics": "true",
-      "teardown_cluster": "true"
+      "teardown_cluster": "true",
+      "teardown_hybrid_app": "true"
     }
   }'
 ```
@@ -794,6 +795,7 @@ curl -X POST \
 | `TEARDOWN_GITOPS` | `teardown_gitops` | boolean | `true` | Tear down the GitOps stack (ArgoCD, GitLab, Harbor) |
 | `TEARDOWN_METRICS` | `teardown_metrics` | boolean | `true` | Tear down the Metrics stack (Grafana, packages) |
 | `TEARDOWN_CLUSTER` | `teardown_cluster` | boolean | `true` | Tear down the VKS cluster and project |
+| `TEARDOWN_HYBRID_APP` | `teardown_hybrid_app` | boolean | `true` | Tear down the Hybrid App stack (PostgreSQL VM, API, Frontend) |
 | `DOMAIN` | `domain` | string | `lab.local` | Domain suffix for service hostnames |
 | `KUBECONFIG_PATH` | `kubeconfig_path` | string | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
 | `PACKAGE_NAMESPACE` | `package_namespace` | string | `tkg-packages` | Namespace for VKS standard packages |
@@ -818,6 +820,8 @@ curl -X POST \
 | B | **Delete Package Repository** | Strips finalizers and deletes the package repository |
 | B | **Delete Package Namespace** | Strips finalizers, deletes namespace with timeout, force-removes finalizer as fallback |
 | B | **Clean Up Cluster-Scoped Resources** | Deletes ClusterRoles, ClusterRoleBindings, CRDs, webhooks left by packages |
+| D | **Delete Hybrid App Namespace** | Deletes the `hybrid-app` namespace in the guest cluster (removes API + Frontend Deployments and Services) |
+| D | **Delete PostgreSQL VM** | Switches to supervisor context, deletes the VirtualMachine resource, waits for termination, cleans up cloud-init Secret |
 | C | **Delete Guest Cluster Workloads** | Deletes vks-test-lb Service, vks-test-app Deployment, vks-test-pvc PVC |
 | C | **Delete VKS Cluster** | Deletes the VKS cluster resource and waits for deletion |
 | C | **Delete Supervisor Namespace and Project** | Deletes SupervisorNamespace, ProjectRoleBinding, and Project |

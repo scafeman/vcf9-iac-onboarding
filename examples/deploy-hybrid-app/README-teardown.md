@@ -62,19 +62,41 @@ Optional: `VM_NAME` (default: `postgresql-vm`), `APP_NAMESPACE` (default: `hybri
 
 ## How to Trigger
 
-### Docker exec (recommended)
+### GitHub Actions (recommended)
+
+The Hybrid App teardown is integrated into the **Teardown VCF Stacks** workflow:
+
+1. Go to **Actions** → **"Teardown VCF Stacks"** → **"Run workflow"**
+2. Enter the **cluster_name**
+3. Ensure **"Tear down the Hybrid App stack"** is checked
+4. Optionally uncheck other stacks (GitOps, Metrics, Cluster) if you only want to tear down the Hybrid App
+
+The workflow automatically discovers the supervisor namespace from the cluster name and handles kubeconfig retrieval — no additional inputs needed.
+
+### Docker exec (local)
+
+When running locally, you must pass `CLUSTER_NAME` and `SUPERVISOR_NAMESPACE` explicitly:
 
 ```bash
-docker exec vcf9-dev bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
+docker exec \
+  -e CLUSTER_NAME=gh-actions-demo-01-clus-01 \
+  -e SUPERVISOR_NAMESPACE=gh-actions-demo-01-ns-6dxm9 \
+  vcf9-dev bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
 ```
 
-### GitHub Actions
+### Trigger script (repository_dispatch)
 
-The teardown can be triggered by adding a teardown job to the workflow, or by running the script manually on the self-hosted runner.
+```bash
+./scripts/trigger-teardown.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name gh-actions-demo-01-clus-01 \
+  --teardown-gitops false \
+  --teardown-metrics false \
+  --teardown-cluster false
+```
 
-### curl (repository_dispatch)
-
-A dedicated teardown workflow can be created following the same pattern as the deploy workflow, using event type `teardown-hybrid-app`.
+This tears down only the Hybrid App stack while leaving everything else intact.
 
 ---
 

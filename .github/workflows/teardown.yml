@@ -776,10 +776,11 @@ jobs:
           | GitOps Stack | $([ "$TEARDOWN_GITOPS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Hybrid App Stack | $([ "$TEARDOWN_HYBRID_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
-            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ]; then
               cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.
