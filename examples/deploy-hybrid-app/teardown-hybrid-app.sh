@@ -101,8 +101,33 @@ wait_for_deletion() {
 
 log_step 1 "Deleting application namespace '${APP_NAMESPACE}' in guest cluster"
 
+# If kubeconfig doesn't exist, try to retrieve it via VCF CLI
+if [[ ! -f "${KUBECONFIG_FILE}" ]] && [[ -n "${CLUSTER_NAME}" ]] && [[ -n "${VCFA_ENDPOINT}" ]]; then
+  log_warn "Kubeconfig not found at '${KUBECONFIG_FILE}', attempting retrieval via VCF CLI..."
+  vcf context delete teardown-ctx --yes 2>/dev/null || true
+  vcf context create teardown-ctx \
+    --endpoint "https://${VCFA_ENDPOINT}" \
+    --type cci \
+    --tenant-name "${TENANT_NAME}" \
+    --api-token "${VCF_API_TOKEN}" \
+    --set-current 2>/dev/null || true
+
+  if [[ -n "${SUPERVISOR_NAMESPACE}" ]]; then
+    NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "teardown-ctx:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+    if [[ -n "${NAMESPACE_CONTEXT}" ]]; then
+      vcf context use "${NAMESPACE_CONTEXT}" 2>/dev/null || true
+      vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null || true
+    fi
+  fi
+fi
+
 if [[ -f "${KUBECONFIG_FILE}" ]]; then
   export KUBECONFIG="${KUBECONFIG_FILE}"
+
+  # Switch to admin context
+  ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+  kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" 2>/dev/null || \
+    kubectl config use-context "$(kubectl config get-contexts -o name --kubeconfig="${KUBECONFIG_FILE}" | head -1)" --kubeconfig="${KUBECONFIG_FILE}" 2>/dev/null || true
 
   if kubectl get ns "${APP_NAMESPACE}" >/dev/null 2>&1; then
     if kubectl delete ns "${APP_NAMESPACE}" --ignore-not-found; then
