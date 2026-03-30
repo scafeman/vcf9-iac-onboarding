@@ -320,6 +320,21 @@ pytest tests/ -v
 | `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.1`) |
 | `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.75.0`) |
 
+### Deploy Hybrid App — Infrastructure Asset Tracker
+
+| Variable | Required | Description |
+|---|---|---|
+| `SUPERVISOR_NAMESPACE` | Yes | Supervisor namespace where the VKS cluster and VM are provisioned |
+| `VM_CONTENT_LIBRARY_ID` | Yes | Content library ID for VM images (separate from VKS node `CONTENT_LIBRARY_ID`) |
+| `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
+| `VM_CLASS` | No | VM Service compute class (default: `best-effort-medium`) |
+| `VM_NAME` | No | VirtualMachine resource name (default: `postgresql-vm`) |
+| `POSTGRES_USER` | No | PostgreSQL database user (default: `assetadmin`) |
+| `POSTGRES_PASSWORD` | No | PostgreSQL database password (default: `assetpass`) |
+| `POSTGRES_DB` | No | PostgreSQL database name (default: `assetdb`) |
+| `APP_NAMESPACE` | No | Kubernetes namespace for API + Frontend (default: `hybrid-app`) |
+| `STORAGE_CLASS` | No | Storage class for the VM disk (default: `nfs`) |
+
 ### GitHub Actions Runner
 
 | Variable | Required | Description |
