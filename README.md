@@ -9,7 +9,8 @@ Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Founda
 - A Dockerized development environment with VCF CLI, kubectl, and all tooling pre-installed
 - Declarative YAML manifests for VCF 9 resources (Projects, Namespaces, VKS Clusters, functional test workloads)
 - Property-based and content-presence test suites validating manifest correctness and guide accuracy
-- GitHub Actions workflows for automated deployment of all three deployments via CI/CD
+- GitHub Actions workflows for automated deployment of all four deployments via CI/CD
+- A hybrid VM+container demo (Infrastructure Asset Tracker) showcasing VCF VM Service with PostgreSQL on a VM and a Next.js/Node.js app on VKS — proving VM-to-container connectivity over NSX VPC
 - Companion trigger scripts for dispatching workflows from the command line
 - A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS
