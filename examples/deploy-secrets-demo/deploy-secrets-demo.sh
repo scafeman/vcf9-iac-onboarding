@@ -415,7 +415,7 @@ spec:
         - name: AGENT_INJECT_VAULT_IMAGE
           value: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
         - name: AGENT_INJECT_VAULT_ADDR
-          value: "https://secret-store-service:8200"
+          value: "http://secret-store-service:8200"
         - name: AGENT_INJECT_LOG_LEVEL
           value: "info"
         - name: AGENT_INJECT_TLS_AUTO
