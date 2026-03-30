@@ -340,23 +340,32 @@ kind: ServiceAccount
 metadata:
   name: vault-injector
   namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: vault-injector-clusterrole
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 rules:
-- apiGroups: [""]
-  resources: ["pods", "pods/log"]
-  verbs: ["get", "list", "watch"]
 - apiGroups: ["admissionregistration.k8s.io"]
   resources: ["mutatingwebhookconfigurations"]
   verbs: ["get", "list", "watch", "patch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: vault-injector-clusterrolebinding
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 subjects:
 - kind: ServiceAccount
   name: vault-injector
@@ -371,16 +380,25 @@ kind: Role
 metadata:
   name: vault-injector-role
   namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 rules:
 - apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["get", "list", "watch"]
+  resources: ["secrets", "configmaps"]
+  verbs: ["create", "get", "watch", "list", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: vault-injector-rolebinding
   namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 subjects:
 - kind: ServiceAccount
   name: vault-injector
@@ -395,33 +413,70 @@ kind: Deployment
 metadata:
   name: vault-injector
   namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vault-injector
+      app.kubernetes.io/name: vault-injector
+      app.kubernetes.io/instance: vault
   template:
     metadata:
       labels:
-        app: vault-injector
+        app.kubernetes.io/name: vault-injector
+        app.kubernetes.io/instance: vault
     spec:
       serviceAccountName: vault-injector
       containers:
-      - name: vault-injector
+      - name: sidecar-injector
         image: projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/vault-k8s:1.4.2
-        command: ["vault-k8s"]
-        args: ["agent-inject"]
+        args: ["agent-inject", "2>&1"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 1000
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
         env:
-        - name: AGENT_INJECT_VAULT_IMAGE
-          value: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
-        - name: AGENT_INJECT_VAULT_ADDR
-          value: "http://secret-store-service:8200"
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: AGENT_INJECT_LISTEN
+          value: ":8080"
         - name: AGENT_INJECT_LOG_LEVEL
           value: "info"
+        - name: AGENT_INJECT_LOG_FORMAT
+          value: "standard"
+        - name: AGENT_INJECT_VAULT_ADDR
+          value: "http://secret-store:8200"
+        - name: AGENT_INJECT_VAULT_IMAGE
+          value: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
         - name: AGENT_INJECT_TLS_AUTO
-          value: "vault-injector-cfg"
+          value: "vault-agent-injector-cfg"
         - name: AGENT_INJECT_TLS_AUTO_HOSTS
-          value: "vault-injector-svc,vault-injector-svc.${NAMESPACE},vault-injector-svc.${NAMESPACE}.svc"
+          value: "vault-agent-injector-svc,vault-agent-injector-svc.\$(NAMESPACE),vault-agent-injector-svc.\$(NAMESPACE).svc"
+        - name: AGENT_INJECT_USE_LEADER_ELECTOR
+          value: "true"
+        - name: AGENT_INJECT_DEFAULT_TEMPLATE
+          value: "map"
+        - name: AGENT_INJECT_CPU_REQUEST
+          value: "250m"
+        - name: AGENT_INJECT_MEM_REQUEST
+          value: "64Mi"
+        - name: AGENT_INJECT_CPU_LIMIT
+          value: "500m"
+        - name: AGENT_INJECT_MEM_LIMIT
+          value: "128Mi"
         ports:
         - containerPort: 8080
           name: https
@@ -429,12 +484,16 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: vault-injector-svc
+  name: vault-agent-injector-svc
   namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 spec:
   type: ClusterIP
   selector:
-    app: vault-injector
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
   ports:
   - port: 443
     targetPort: 8080
@@ -443,47 +502,54 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: vault-injector-cfg
+  name: vault-agent-injector-cfg
+  labels:
+    app.kubernetes.io/name: vault-injector
+    app.kubernetes.io/instance: vault
 webhooks:
 - name: vault.hashicorp.com
   admissionReviewVersions:
   - v1
+  - v1beta1
   clientConfig:
     service:
-      name: vault-injector-svc
+      name: vault-agent-injector-svc
       namespace: ${NAMESPACE}
       path: "/mutate"
   rules:
   - operations: ["CREATE", "UPDATE"]
     apiGroups: [""]
     apiVersions: ["v1"]
-    resources: ["pods"]
+    resources: ["deployments", "jobs", "pods", "statefulsets"]
+  objectSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: NotIn
+      values:
+      - vault-injector
   sideEffects: None
   failurePolicy: Ignore
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: secret-store-service
+  name: secret-store
   namespace: ${NAMESPACE}
 spec:
-  type: ClusterIP
   ports:
   - port: 8200
     targetPort: 8200
-    protocol: TCP
 ---
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: secret-store-service
+  name: secret-store
   namespace: ${NAMESPACE}
 subsets:
 - addresses:
   - ip: ${SECRET_STORE_IP}
   ports:
   - port: 8200
-    protocol: TCP
 EOF
 then
   log_error "Failed to deploy vault-injector resources"
@@ -495,9 +561,9 @@ log_success "Vault-injector resources deployed"
 # Wait for vault-injector pod readiness
 if ! wait_for_condition "vault-injector pod to be ready" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get pods -n '${NAMESPACE}' -l app=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
+  "kubectl get pods -n '${NAMESPACE}' -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
   log_error "Vault-injector pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${NAMESPACE}" -l app=vault-injector -o wide 2>/dev/null || true
+  kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=vault-injector -o wide 2>/dev/null || true
   exit 5
 fi
 
@@ -715,6 +781,13 @@ spec:
           value: "redis.${NAMESPACE}.svc.cluster.local"
         - name: POSTGRES_HOST
           value: "postgres.${NAMESPACE}.svc.cluster.local"
+        volumeMounts:
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: vault-token
+      volumes:
+      - name: vault-token
+        secret:
+          secretName: test-service-account-token
 ---
 apiVersion: v1
 kind: Service
@@ -792,7 +865,7 @@ echo ""
 echo "  Deployed Services:"
 echo "    - Redis:      redis.${NAMESPACE}.svc.cluster.local:6379"
 echo "    - PostgreSQL: postgres.${NAMESPACE}.svc.cluster.local:5432"
-echo "    - Vault Injector: vault-injector-svc.${NAMESPACE}.svc.cluster.local:443"
+echo "    - Vault Injector: vault-agent-injector-svc.${NAMESPACE}.svc.cluster.local:443"
 echo "    - Dashboard:  http://${DASHBOARD_IP}"
 echo "============================================="
 echo ""
