@@ -588,7 +588,7 @@ spec:
       volumes:
       - name: vault-token
         secret:
-          secretName: test-service-account-token
+          secretName: internal-app-token
 ---
 apiVersion: v1
 kind: Service
