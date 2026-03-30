@@ -1,6 +1,6 @@
 # VCF 9 IaC Onboarding Toolkit
 
-Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Foundation (VCF) 9 environments with VMware Kubernetes Service (VKS). Built for DevOps engineers migrating container workloads from AWS EKS to a VCF VKS Private Cloud environment.
+Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with VMware Kubernetes Service (VKS). Automates the full lifecycle — from cluster provisioning to hybrid VM+container deployments — on Private Cloud infrastructure.
 
 ## What This Repo Provides
 
@@ -15,9 +15,26 @@ Infrastructure-as-Code toolkit for provisioning and managing VMware Cloud Founda
 - A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS
 
+## EKS to VKS at a Glance
+
+Coming from AWS EKS? Here's how the core concepts map to VCF 9 and where this toolkit handles them:
+
+| AWS EKS Concept | VCF 9 / VKS Equivalent | Toolkit Implementation |
+|---|---|---|
+| EKS Add-ons | VKS Standard Packages | Automated via `vcf package install` in Deploy Cluster, Metrics, and GitOps |
+| IAM Roles / IRSA | CCI Projects & RBAC | Handled in Phase 2 (Project & Namespace Provisioning) |
+| Managed Node Groups | Worker Pools (Cluster API) | Declarative YAML with autoscaler annotations in `examples/deploy-cluster/` |
+| EBS / EFS | Cloud Native Storage (CNS) | Validated in Phase 7 (Functional Validation) with PVC + `nfs` StorageClass |
+| ALB / NLB | NSX Load Balancer | LoadBalancer Services provisioned automatically via NSX VPC |
+| ECR | Harbor (self-hosted) | Deployed via `examples/deploy-gitops/` with Helm |
+| CodePipeline / CodeBuild | GitLab CI + ArgoCD | Full GitOps stack in `examples/deploy-gitops/` |
+| Secrets Manager | VCF Secret Store Service | Demonstrated in `examples/deploy-secrets-demo/` |
+
+See the [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) for a full pass/fail validation checklist.
+
 ## Architecture Overview
 
-The toolkit automates the VCF 9 provisioning workflow across six phases:
+The toolkit automates the VCF 9 provisioning workflow across seven phases:
 
 1. **Environment Initialization** — VCF CLI context creation and VCFA authentication
 2. **Project & Namespace Provisioning** — Project, RBAC, and Supervisor Namespace creation via CCI APIs
@@ -27,17 +44,32 @@ The toolkit automates the VCF 9 provisioning workflow across six phases:
 6. **Cluster Autoscaler Installation** — VKS standard package for automatic node scaling based on pod resource demands
 7. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
 
+> [!TIP]
+> **The Context Bridge** is the critical step that most engineers miss. In VCF 9, Cluster API resources are hidden from the global context. This toolkit automates the switch to the namespace-scoped context, effectively "unlocking" `kubectl get clusters`. Without it, the command returns nothing — even though the cluster exists.
+
+## How to Use This Toolkit
+
+| Path | Best For | What You Need |
+|---|---|---|
+| **Run locally** | Fastest way to deploy — no GitHub setup needed | Clone the repo, configure `.env`, run scripts via `docker exec` |
+| **Fork to your GitHub org** | CI/CD automation with GitHub Actions workflows | Fork the repo, add your secrets, register a self-hosted runner |
+| **Watch the demo** | See the workflows in action before committing | The source repo has approval-gated workflows for live demos |
+
+> [!NOTE]
+> The GitHub Actions workflows in this repository are locked down with environment protection rules and require reviewer approval. To run the workflows yourself, **fork the repo** to your own GitHub organization, configure your secrets, and register your own self-hosted runner. See the [Getting Started Guide](GETTING-STARTED.md) for detailed fork and runner setup instructions.
+
 ## Quick Start
 
 1. Clone the repo and create a `.env` file with your VCF 9 credentials
 2. `docker compose up -d --build` — start the dev container
 3. `docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh` — deploy a VKS cluster
+4. Estimated time: **12–18 minutes** for a fully validated VKS cluster with autoscaling
 
 See the [Getting Started Guide](GETTING-STARTED.md) for full setup instructions, all deployment commands, and GitHub Actions configuration.
 
 ## GitHub Actions Workflows
 
-All four deployments are also available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
+All four deployments are available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
 
 | Workflow | File | Trigger |
 |---|---|---|
@@ -47,7 +79,7 @@ All four deployments are also available as GitHub Actions workflows for automate
 | Deploy Hybrid App | `deploy-hybrid-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-hybrid-app`) |
 | Teardown VCF Stacks | `teardown.yml` | `workflow_dispatch` / `repository_dispatch` (event: `teardown`) |
 
-Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order (GitOps → Metrics → Cluster) with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
 
 ## Deployments
 
@@ -60,6 +92,16 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 
 Each deployment has its own deploy script, teardown script, and README documentation. See the [Examples Overview](examples/README.md) for details.
 
+### Showcase: Hybrid VM+Container Demo
+
+The Deploy Hybrid App deployment proves the power of the NSX VPC by connecting workloads across both compute models in the same VCF namespace:
+
+- **Data Tier** — PostgreSQL 16 running on a traditional VM, provisioned via VCF VM Service with cloud-init
+- **App Tier** — Next.js frontend and Node.js API running as containerized workloads on VKS
+- **Connectivity** — Seamless Layer 3 routing between VM and pods over the NSX VPC network, no manual firewall rules
+
+This is the scenario most teams struggle with when moving off public cloud — proving that VMs and containers can coexist and communicate on the same platform.
+
 ## Key VCF 9 Concepts
 
 | Concept | Description |
@@ -68,9 +110,9 @@ Each deployment has its own deploy script, teardown script, and README documenta
 | **generateName** | Supervisor Namespaces use `generateName` instead of `name`, so VCF appends a random 5-character suffix. Scripts must discover the dynamic name after creation. |
 | **CCI APIs** | Cloud Consumption Interface — the VCF 9 API layer for Projects, Namespaces, RBAC, and infrastructure resources. |
 | **VKS** | VMware Kubernetes Service — managed Kubernetes clusters deployed via Cluster API on a vSphere Supervisor. |
-| **VKS Standard Packages** | Pre-built, versioned Kubernetes add-ons distributed as OCI images and managed by kapp-controller. Installed via `vcf package install` into a dedicated namespace (default: `tkg-packages`). The AWS equivalent is EKS Add-ons — both provide curated, lifecycle-managed cluster extensions. Available packages include Telegraf, Prometheus, cert-manager, Contour, and Cluster Autoscaler. |
-| **Package Repository** | An OCI registry containing the VKS standard packages catalog. Registered via `vcf package repository add` before any packages can be installed. Similar to adding a Helm repo, but uses the Carvel packaging APIs (PackageRepository, PackageInstall, App) instead of Helm charts. |
-| **kapp-controller** | The Carvel package manager that runs on every VKS cluster. It watches PackageInstall resources and reconciles them — fetching the OCI bundle, templating with ytt, and deploying with kapp. When you `vcf package install`, it creates a PackageInstall CR that kapp-controller picks up. During teardown, finalizers must be stripped before deletion to prevent kapp-controller's reconcile-delete from cascading into namespace destruction. |
+| **VKS Standard Packages** | Pre-built, versioned Kubernetes add-ons distributed as OCI images and managed by kapp-controller. Installed via `vcf package install` into a dedicated namespace (default: `tkg-packages`). The AWS equivalent is EKS Add-ons — both provide curated, lifecycle-managed cluster extensions. |
+| **Package Repository** | An OCI registry containing the VKS standard packages catalog. Registered via `vcf package repository add` before any packages can be installed. Similar to adding a Helm repo, but uses the Carvel packaging APIs. |
+| **kapp-controller** | The Carvel package manager that runs on every VKS cluster. It watches PackageInstall resources and reconciles them. During teardown, finalizers must be stripped before deletion to prevent cascading namespace destruction. |
 
 ## Documentation
 

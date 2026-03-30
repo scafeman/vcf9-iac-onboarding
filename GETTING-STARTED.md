@@ -154,26 +154,71 @@ Typical teardown time: **1–6 minutes**. This removes the VKS cluster, supervis
 
 The toolkit includes GitHub Actions workflows for automated CI/CD deployment. Workflows run on a self-hosted runner built from `Dockerfile.runner`.
 
-### 1. Build the runner image
+> **Important:** The workflows in the source repository (`scafeman/vcf9-iac-onboarding`) are locked down with environment protection rules and require reviewer approval. To run the workflows yourself, you need to **fork the repo** to your own GitHub organization.
+
+### Fork the Repository
+
+1. Go to [github.com/scafeman/vcf9-iac-onboarding](https://github.com/scafeman/vcf9-iac-onboarding) and click **Fork**
+2. Choose your GitHub organization or personal account as the destination
+3. The fork includes all workflow files, scripts, and documentation
+4. You can pull upstream updates later with `git fetch upstream && git merge upstream/main`
+
+### Configure GitHub Secrets
+
+In your forked repo, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Description |
+|---|---|
+| `VCF_API_TOKEN` | API token from the VCFA portal |
+| `VCFA_ENDPOINT` | VCFA hostname (no `https://` prefix) |
+| `TENANT_NAME` | SSO tenant/organization |
+| `DOCKERHUB_TOKEN` | DockerHub access token (for container image push) |
+| `DOCKERHUB_USERNAME` | DockerHub username |
+
+Optional secrets (override defaults): `USER_IDENTITY`, `CONTENT_LIBRARY_ID`, `ZONE_NAME`, `SUPERVISOR_NAMESPACE`, `VM_CONTENT_LIBRARY_ID`. See the [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) for the full list.
+
+### Create the Environment
+
+1. Go to **Settings → Environments → New environment**
+2. Name it `vcf-production`
+3. Optionally enable **Required reviewers** if you want approval gates (recommended for production)
+
+### Register a Self-Hosted Runner
+
+The VCFA endpoint is on a private network, so workflows require a self-hosted runner with network access.
+
+#### Option A: Docker Compose (recommended)
+
+Add your runner registration token to `.env`:
+
+```env
+RUNNER_TOKEN=<your-runner-registration-token>
+REPO_URL=https://github.com/<YOUR-ORG>/<YOUR-FORK>
+GITHUB_PAT=<your-github-personal-access-token>
+```
+
+Start the runner:
+
+```bash
+docker compose up -d
+```
+
+#### Option B: Build the runner image manually
 
 ```bash
 docker build -f Dockerfile.runner -t vcf9-runner .
 ```
 
-### 2. Register the runner
+Then register it following [GitHub's self-hosted runner docs](https://docs.github.com/en/actions/hosting-your-own-runners).
 
-Add your runner registration token and repo URL to `.env`:
+### Verify the Runner
 
-```env
-RUNNER_TOKEN=<your-runner-registration-token>
-REPO_URL=https://github.com/<OWNER>/<REPO>
-GITHUB_PAT=<your-github-personal-access-token>
-```
+Go to **Settings → Actions → Runners** in your forked repo. The runner should appear as `vcf-local-runner` with labels `self-hosted` and `vcf`.
 
-### 3. Start the runner with Docker Compose
+### Run Your First Workflow
 
-```bash
-docker compose --profile runner up -d
-```
+1. Go to **Actions → Deploy VKS Cluster → Run workflow**
+2. Fill in `project_name`, `cluster_name`, `namespace_prefix`
+3. Click **Run workflow**
 
-The runner registers itself with GitHub and begins polling for workflow jobs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
