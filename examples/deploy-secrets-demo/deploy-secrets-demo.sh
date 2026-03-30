@@ -331,232 +331,32 @@ EOF
   log_success "Service account token copied into namespace '${NAMESPACE}'"
 fi
 
-# --- Deploy vault-injector resources ---
-log_step "4b" "Deploying vault-injector resources"
+# --- Install vault-injector via VKS standard package ---
+log_step "4b" "Installing vault-injector package"
 
-if ! cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: vault-injector
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: vault-injector-clusterrole
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-rules:
-- apiGroups: ["admissionregistration.k8s.io"]
-  resources: ["mutatingwebhookconfigurations"]
-  verbs: ["get", "list", "watch", "patch"]
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: vault-injector-clusterrolebinding
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-subjects:
-- kind: ServiceAccount
-  name: vault-injector
-  namespace: ${NAMESPACE}
-roleRef:
-  kind: ClusterRole
-  name: vault-injector-clusterrole
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: vault-injector-role
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-rules:
-- apiGroups: [""]
-  resources: ["secrets", "configmaps"]
-  verbs: ["create", "get", "watch", "list", "update"]
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: vault-injector-rolebinding
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-subjects:
-- kind: ServiceAccount
-  name: vault-injector
-  namespace: ${NAMESPACE}
-roleRef:
-  kind: Role
-  name: vault-injector-role
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vault-injector
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: vault-injector
-      app.kubernetes.io/instance: vault
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: vault-injector
-        app.kubernetes.io/instance: vault
-    spec:
-      serviceAccountName: vault-injector
-      containers:
-      - name: sidecar-injector
-        image: projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/vault-k8s:1.4.2
-        args: ["agent-inject", "2>&1"]
-        securityContext:
-          allowPrivilegeEscalation: false
-          runAsUser: 1000
-          runAsNonRoot: true
-          capabilities:
-            drop:
-            - ALL
-          seccompProfile:
-            type: RuntimeDefault
-        env:
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: AGENT_INJECT_LISTEN
-          value: ":8080"
-        - name: AGENT_INJECT_LOG_LEVEL
-          value: "info"
-        - name: AGENT_INJECT_LOG_FORMAT
-          value: "standard"
-        - name: AGENT_INJECT_VAULT_ADDR
-          value: "http://secret-store:8200"
-        - name: AGENT_INJECT_VAULT_IMAGE
-          value: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
-        - name: AGENT_INJECT_TLS_AUTO
-          value: "vault-agent-injector-cfg"
-        - name: AGENT_INJECT_TLS_AUTO_HOSTS
-          value: "vault-agent-injector-svc,vault-agent-injector-svc.\$(NAMESPACE),vault-agent-injector-svc.\$(NAMESPACE).svc"
-        - name: AGENT_INJECT_USE_LEADER_ELECTOR
-          value: "true"
-        - name: AGENT_INJECT_DEFAULT_TEMPLATE
-          value: "map"
-        - name: AGENT_INJECT_CPU_REQUEST
-          value: "250m"
-        - name: AGENT_INJECT_MEM_REQUEST
-          value: "64Mi"
-        - name: AGENT_INJECT_CPU_LIMIT
-          value: "500m"
-        - name: AGENT_INJECT_MEM_LIMIT
-          value: "128Mi"
-        ports:
-        - containerPort: 8080
-          name: https
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: vault-agent-injector-svc
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-  ports:
-  - port: 443
-    targetPort: 8080
-    protocol: TCP
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: MutatingWebhookConfiguration
-metadata:
-  name: vault-agent-injector-cfg
-  labels:
-    app.kubernetes.io/name: vault-injector
-    app.kubernetes.io/instance: vault
-webhooks:
-- name: vault.hashicorp.com
-  admissionReviewVersions:
-  - v1
-  - v1beta1
-  clientConfig:
-    service:
-      name: vault-agent-injector-svc
-      namespace: ${NAMESPACE}
-      path: "/mutate"
-  rules:
-  - operations: ["CREATE", "UPDATE"]
-    apiGroups: [""]
-    apiVersions: ["v1"]
-    resources: ["deployments", "jobs", "pods", "statefulsets"]
-  objectSelector:
-    matchExpressions:
-    - key: app.kubernetes.io/name
-      operator: NotIn
-      values:
-      - vault-injector
-  sideEffects: None
-  failurePolicy: Ignore
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: secret-store
-  namespace: ${NAMESPACE}
-spec:
-  ports:
-  - port: 8200
-    targetPort: 8200
----
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: secret-store
-  namespace: ${NAMESPACE}
-subsets:
-- addresses:
-  - ip: ${SECRET_STORE_IP}
-  ports:
-  - port: 8200
-EOF
-then
-  log_error "Failed to deploy vault-injector resources"
-  exit 5
+if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+  log_success "vault-injector package already installed, skipping"
+else
+  VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
+  cat > "${VAULT_VALUES_FILE}" <<VALEOF
+externalIP: "${SECRET_STORE_IP}"
+namespace: "${NAMESPACE}"
+agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
+VALEOF
+
+  if ! vcf package install vault-injector \
+    -p vault-injector.kubernetes.vmware.com \
+    --version 1.6.2+vmware.1-vks.1 \
+    --values-file "${VAULT_VALUES_FILE}" \
+    -n tkg-packages; then
+    log_error "Failed to install vault-injector package"
+    rm -f "${VAULT_VALUES_FILE}"
+    exit 5
+  fi
+
+  rm -f "${VAULT_VALUES_FILE}"
+  log_success "vault-injector package installed"
 fi
-
-log_success "Vault-injector resources deployed"
 
 # Wait for vault-injector pod readiness
 if ! wait_for_condition "vault-injector pod to be ready" \
