@@ -156,13 +156,14 @@ if vcf secret list 2>/dev/null | grep -q "redis-creds"; then
 else
   REDIS_CREDS_FILE=$(mktemp /tmp/redis-creds-XXXXXX.yaml)
   cat > "${REDIS_CREDS_FILE}" <<EOF
-apiVersion: infrastructure.cci.vmware.com/v1alpha1
+apiVersion: secretstore.vmware.com/v1alpha1
 kind: KeyValueSecret
 metadata:
   name: redis-creds
 spec:
   data:
-    password: ${REDIS_PASSWORD}
+  - key: password
+    value: ${REDIS_PASSWORD}
 EOF
 
   if ! vcf secret create -f "${REDIS_CREDS_FILE}"; then
@@ -181,15 +182,18 @@ if vcf secret list 2>/dev/null | grep -q "postgres-creds"; then
 else
   POSTGRES_CREDS_FILE=$(mktemp /tmp/postgres-creds-XXXXXX.yaml)
   cat > "${POSTGRES_CREDS_FILE}" <<EOF
-apiVersion: infrastructure.cci.vmware.com/v1alpha1
+apiVersion: secretstore.vmware.com/v1alpha1
 kind: KeyValueSecret
 metadata:
   name: postgres-creds
 spec:
   data:
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
-    database: ${POSTGRES_DB}
+  - key: username
+    value: ${POSTGRES_USER}
+  - key: password
+    value: ${POSTGRES_PASSWORD}
+  - key: database
+    value: ${POSTGRES_DB}
 EOF
 
   if ! vcf secret create -f "${POSTGRES_CREDS_FILE}"; then
