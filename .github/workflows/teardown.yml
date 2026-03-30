@@ -10,6 +10,7 @@
 # Teardown order (reverse dependency):
 #   Phase Group A: GitOps Stack Teardown (ArgoCD, GitLab, Harbor, etc.)
 #   Phase Group B: Metrics Stack Teardown (Grafana, packages, etc.)
+#   Phase Group D: Hybrid App Stack Teardown (PostgreSQL VM, API, Frontend)
 #   Phase Group C: Cluster Stack Teardown (workloads, VKS cluster, project)
 #
 # Prerequisites:
@@ -48,6 +49,11 @@ on:
         required: false
         type: boolean
         default: true
+      teardown_hybrid_app:
+        description: "Tear down the Hybrid App stack (PostgreSQL VM, API, Frontend)"
+        required: false
+        type: boolean
+        default: true
 
   repository_dispatch:
     types: [teardown]
@@ -68,6 +74,7 @@ jobs:
       TEARDOWN_GITOPS: ${{ github.event.inputs.teardown_gitops || github.event.client_payload.teardown_gitops || 'true' }}
       TEARDOWN_METRICS: ${{ github.event.inputs.teardown_metrics || github.event.client_payload.teardown_metrics || 'true' }}
       TEARDOWN_CLUSTER: ${{ github.event.inputs.teardown_cluster || github.event.client_payload.teardown_cluster || 'true' }}
+      TEARDOWN_HYBRID_APP: ${{ github.event.inputs.teardown_hybrid_app || github.event.client_payload.teardown_hybrid_app || 'true' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -149,7 +156,7 @@ jobs:
       # =====================================================================
 
       - name: Warn Orphaned Stacks
-        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true')
+        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true')
         run: |
           set -euo pipefail
           if [ "$TEARDOWN_GITOPS" != "true" ]; then
@@ -157,6 +164,9 @@ jobs:
           fi
           if [ "$TEARDOWN_METRICS" != "true" ]; then
             echo "::warning::Metrics stack teardown is skipped but cluster teardown is enabled. Metrics resources will be orphaned when the cluster is deleted."
+          fi
+          if [ "$TEARDOWN_HYBRID_APP" != "true" ]; then
+            echo "::warning::Hybrid App stack teardown is skipped but cluster teardown is enabled. The PostgreSQL VM and hybrid-app namespace will be orphaned."
           fi
 
       # =====================================================================
@@ -560,6 +570,68 @@ jobs:
           done
 
           echo "Cluster-scoped resources cleaned up"
+
+      # =====================================================================
+      # Phase Group D: Hybrid App Stack Teardown
+      # =====================================================================
+
+      - name: Delete Hybrid App Namespace
+        if: env.TEARDOWN_HYBRID_APP == 'true'
+        run: |
+          set -euo pipefail
+          HYBRID_APP_NAMESPACE="hybrid-app"
+
+          if kubectl get ns "$HYBRID_APP_NAMESPACE" >/dev/null 2>&1; then
+            kubectl delete ns "$HYBRID_APP_NAMESPACE" --ignore-not-found
+            echo "Namespace '$HYBRID_APP_NAMESPACE' deleted (includes API + Frontend Deployments and Services)"
+          else
+            echo "Namespace '$HYBRID_APP_NAMESPACE' does not exist, skipping"
+          fi
+
+      - name: Delete PostgreSQL VM
+        if: env.TEARDOWN_HYBRID_APP == 'true'
+        run: |
+          set -euo pipefail
+          VM_NAME="postgresql-vm"
+          CONTEXT_NAME="teardown-deploy"
+          VM_DELETE_TIMEOUT=300
+          POLL_INTERVAL=15
+
+          # Unset guest cluster kubeconfig so kubectl uses VCF CLI context
+          unset KUBECONFIG
+
+          # Switch to the namespace-scoped VCF CLI context for supervisor operations
+          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
+            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null || true
+          fi
+
+          # Delete the VirtualMachine
+          if kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
+            kubectl delete virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found
+
+            # Wait for VM termination
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$VM_DELETE_TIMEOUT" ]; do
+              if ! kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" 2>/dev/null; then
+                echo "VirtualMachine '$VM_NAME' fully terminated"
+                break
+              fi
+              echo "Waiting for VM deletion... (${ELAPSED}s/${VM_DELETE_TIMEOUT}s)"
+              sleep "$POLL_INTERVAL"
+              ELAPSED=$((ELAPSED + POLL_INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$VM_DELETE_TIMEOUT" ]; then
+              echo "::warning::VirtualMachine '$VM_NAME' was not fully terminated within ${VM_DELETE_TIMEOUT}s"
+            fi
+          else
+            echo "VirtualMachine '$VM_NAME' does not exist, skipping"
+          fi
+
+          # Clean up cloud-init Secret
+          kubectl delete secret "${VM_NAME}-cloud-init" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found 2>/dev/null || true
+          echo "Cloud-init Secret cleaned up"
 
       # =====================================================================
       # Phase Group C: Cluster Stack Teardown

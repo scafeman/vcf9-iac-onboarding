@@ -52,6 +52,7 @@ CLUSTER_NAME=""
 TEARDOWN_GITOPS=""
 TEARDOWN_METRICS=""
 TEARDOWN_CLUSTER=""
+TEARDOWN_HYBRID_APP=""
 DOMAIN=""
 KUBECONFIG_PATH=""
 VCFA_ENDPOINT=""
@@ -66,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --teardown-gitops)   TEARDOWN_GITOPS="$2"; shift 2 ;;
     --teardown-metrics)  TEARDOWN_METRICS="$2"; shift 2 ;;
     --teardown-cluster)  TEARDOWN_CLUSTER="$2"; shift 2 ;;
+    --teardown-hybrid-app) TEARDOWN_HYBRID_APP="$2"; shift 2 ;;
     --domain)            DOMAIN="$2"; shift 2 ;;
     --kubeconfig-path)   KUBECONFIG_PATH="$2"; shift 2 ;;
     --vcfa-endpoint)     VCFA_ENDPOINT="$2"; shift 2 ;;
@@ -110,6 +112,7 @@ add_field() {
 add_field "teardown_gitops"  "$TEARDOWN_GITOPS"
 add_field "teardown_metrics" "$TEARDOWN_METRICS"
 add_field "teardown_cluster" "$TEARDOWN_CLUSTER"
+add_field "teardown_hybrid_app" "$TEARDOWN_HYBRID_APP"
 add_field "domain"           "$DOMAIN"
 add_field "kubeconfig_path"  "$KUBECONFIG_PATH"
 add_field "vcfa_endpoint"    "$VCFA_ENDPOINT"
