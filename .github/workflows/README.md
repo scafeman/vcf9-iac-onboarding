@@ -9,7 +9,7 @@ This repository contains five GitHub Actions workflows that automate the end-to-
 | Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
-| Deploy VM App — Infrastructure Asset Tracker | `deploy-vm-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
+| Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
@@ -20,7 +20,7 @@ Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps
 Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Metrics (deploy-vks-metrics.yml)
     ├── Deploy GitOps (deploy-argocd.yml)
-    └── Deploy VM App (deploy-vm-app.yml)
+    └── Deploy Hybrid App (deploy-hybrid-app.yml)
 
 Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase A: GitOps Stack Teardown
@@ -597,7 +597,7 @@ Deploy Metrics and Deploy GitOps share these components, all handled idempotentl
 
 ---
 
-# Deploy VM App — Infrastructure Asset Tracker (`deploy-vm-app.yml`)
+# Deploy Hybrid App — Infrastructure Asset Tracker (`deploy-hybrid-app.yml`)
 
 ## Overview
 
@@ -607,13 +607,13 @@ Deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-c
 
 ### GitHub UI (workflow_dispatch)
 
-1. Go to **Actions** → **"Deploy VM App"** → **"Run workflow"**
+1. Go to **Actions** → **"Deploy Hybrid App"** → **"Run workflow"**
 2. Fill in: **cluster_name** (required), **supervisor_namespace** (required), **project_name** (required), **vm_content_library_id** (required), and optionally **environment**, **vm_class**, **vm_image**
 
 ### Trigger Script (repository_dispatch)
 
 ```bash
-./scripts/trigger-deploy-vm-app.sh \
+./scripts/trigger-deploy-hybrid-app.sh \
   --repo myorg/vcf9-iac \
   --token ghp_xxxxxxxxxxxx \
   --cluster-name my-project-01-clus-01 \
@@ -635,7 +635,7 @@ curl -X POST \
   -H "Content-Type: application/json" \
   "https://api.github.com/repos/OWNER/REPO/dispatches" \
   -d '{
-    "event_type": "deploy-vm-app",
+    "event_type": "deploy-hybrid-app",
     "client_payload": {
       "cluster_name": "my-dev-project-01-clus-01",
       "supervisor_namespace": "my-project-ns-xxxxx",
@@ -660,7 +660,7 @@ curl -X POST \
 | `POSTGRES_PASSWORD` | `postgres_password` | `assetpass` | PostgreSQL database password |
 | `POSTGRES_DB` | `postgres_db` | `assetdb` | PostgreSQL database name |
 | `VM_NAME` | `vm_name` | `postgresql-vm` | Name for the VirtualMachine resource |
-| `APP_NAMESPACE` | `app_namespace` | `vm-app` | Kubernetes namespace for API + Frontend in guest cluster |
+| `APP_NAMESPACE` | `app_namespace` | `hybrid-app` | Kubernetes namespace for API + Frontend in guest cluster |
 | `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for the VM disk |
 | `CONTAINER_REGISTRY` | `container_registry` | `scafeman` | Docker registry prefix for container images |
 | `IMAGE_TAG` | `image_tag` | `latest` | Container image tag |
@@ -684,7 +684,7 @@ curl -X POST \
 | 7 | **Build and Push API Image** | Builds and pushes the Node.js API container image to DockerHub |
 | 8 | **Build and Push Frontend Image** | Builds and pushes the Next.js dashboard container image to DockerHub |
 | 9 | **Setup Guest Cluster Kubeconfig** | Switches to the guest cluster kubeconfig and verifies connectivity |
-| 10 | **Create Application Namespace** | Creates the `vm-app` namespace with privileged PodSecurity label |
+| 10 | **Create Application Namespace** | Creates the `hybrid-app` namespace with privileged PodSecurity label |
 | 11 | **Deploy API Service** | Deploys the API Deployment (with readiness probe on `/healthz`) and ClusterIP Service |
 | 12 | **Wait for API Pod Running** | Polls until the API pod reaches Running state |
 | 13 | **Deploy Frontend Service** | Deploys the Frontend Deployment and LoadBalancer Service (port 80 → 3000) |
@@ -711,22 +711,22 @@ curl -X POST \
 
 ### API pod in CrashLoopBackOff
 
-- Check pod logs: `kubectl logs -l app=vm-app-api -n vm-app`
+- Check pod logs: `kubectl logs -l app=hybrid-app-api -n hybrid-app`
 - Common cause: PostgreSQL not reachable from the pod (cloud-init may not have completed)
-- Verify PostgreSQL is listening: `kubectl exec -it deploy/vm-app-api -n vm-app -- nc -zv <VM_IP> 5432`
+- Verify PostgreSQL is listening: `kubectl exec -it deploy/hybrid-app-api -n hybrid-app -- nc -zv <VM_IP> 5432`
 - Verify `pg_hba.conf` allows connections from the pod CIDR
 
 ### Frontend returns 502 on /api/healthz
 
 - The API pod may still be starting or in CrashLoopBackOff
-- Check API pod status: `kubectl get pods -l app=vm-app-api -n vm-app`
+- Check API pod status: `kubectl get pods -l app=hybrid-app-api -n hybrid-app`
 - Check API pod logs for database connection errors
 
 ### Container image build/push fails
 
 - Verify Docker is running on the self-hosted runner
 - Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set
-- Check that the Dockerfiles at `examples/deploy-vm-app/api/Dockerfile` and `examples/deploy-vm-app/dashboard/Dockerfile` are valid
+- Check that the Dockerfiles at `examples/deploy-hybrid-app/api/Dockerfile` and `examples/deploy-hybrid-app/dashboard/Dockerfile` are valid
 
 ---
 

@@ -111,10 +111,10 @@ All three deployments are also available as GitHub Actions workflows for automat
 | Deploy VKS Cluster | `deploy-vks.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks`) |
 | Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vks-metrics`) |
 | Deploy ArgoCD Stack | `deploy-argocd.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-argocd`) |
-| Deploy VM App | `deploy-vm-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-vm-app`) |
+| Deploy Hybrid App | `deploy-hybrid-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-hybrid-app`) |
 | Teardown VCF Stacks | `teardown.yml` | `workflow_dispatch` / `repository_dispatch` (event: `teardown`) |
 
-Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy VM App can run. The Teardown workflow reverses the deploy order (GitOps → Metrics → Cluster) with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
+Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order (GitOps → Metrics → Cluster) with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
 
 ## Repository Structure
 
@@ -133,14 +133,14 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy VM 
 │       ├── deploy-vks.yml             # Deploy Cluster: Deploy VKS Cluster workflow
 │       ├── deploy-vks-metrics.yml     # Deploy Metrics: Deploy VKS Metrics Stack workflow
 │       ├── deploy-argocd.yml          # Deploy GitOps: Deploy ArgoCD Stack workflow
-│       ├── deploy-vm-app.yml         # Deploy VM App: Infrastructure Asset Tracker workflow
+│       ├── deploy-hybrid-app.yml         # Deploy Hybrid App: Infrastructure Asset Tracker workflow
 │       ├── teardown.yml               # Teardown: Selective teardown of all stacks
 │       └── README.md                  # Workflow documentation (parameters, triggers, credentials)
 ├── scripts/
 │   ├── trigger-deploy.sh             # Companion trigger script for Deploy Cluster
 │   ├── trigger-deploy-metrics.sh     # Companion trigger script for Deploy Metrics
 │   ├── trigger-deploy-argocd.sh      # Companion trigger script for Deploy GitOps
-│   ├── trigger-deploy-vm-app.sh     # Companion trigger script for Deploy VM App
+│   ├── trigger-deploy-hybrid-app.sh     # Companion trigger script for Deploy Hybrid App
 │   └── trigger-teardown.sh           # Companion trigger script for Teardown
 ├── Dockerfile.runner                  # Self-hosted GitHub Actions runner image
 ├── examples/
@@ -171,9 +171,9 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy VM 
 │   │   ├── gitlab-runner-values.yaml            #   GitLab Runner Helm values
 │   │   ├── argocd-microservices-demo.yaml       #   ArgoCD Application manifest
 │   │   └── wildcard.cnf                         #   OpenSSL wildcard cert config
-│   ├── deploy-vm-app/                             # Deploy VM App (Infrastructure Asset Tracker)
-│   │   ├── deploy-vm-app.sh                      #   Deploy script
-│   │   ├── teardown-vm-app.sh                    #   Teardown script
+│   ├── deploy-hybrid-app/                             # Deploy Hybrid App (Infrastructure Asset Tracker)
+│   │   ├── deploy-hybrid-app.sh                      #   Deploy script
+│   │   ├── teardown-hybrid-app.sh                    #   Teardown script
 │   │   ├── README-deploy.md                      #   Deploy documentation
 │   │   ├── README-teardown.md                    #   Teardown documentation
 │   │   ├── api/                                  #   Node.js REST API (Express + pg)
@@ -224,8 +224,8 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy VM 
 | [Deploy Metrics Teardown README](examples/deploy-metrics/README-teardown.md) | VKS Metrics Observability teardown documentation |
 | [Deploy GitOps Deploy README](examples/deploy-gitops/README-deploy.md) | ArgoCD Consumption Model deploy documentation (15 phases) |
 | [Deploy GitOps Teardown README](examples/deploy-gitops/README-teardown.md) | ArgoCD Consumption Model teardown documentation |
-| [Deploy VM App Deploy README](examples/deploy-vm-app/README-deploy.md) | Infrastructure Asset Tracker deploy documentation (VM + API + Frontend) |
-| [Deploy VM App Teardown README](examples/deploy-vm-app/README-teardown.md) | Infrastructure Asset Tracker teardown documentation |
+| [Deploy Hybrid App Deploy README](examples/deploy-hybrid-app/README-deploy.md) | Infrastructure Asset Tracker deploy documentation (VM + API + Frontend) |
+| [Deploy Hybrid App Teardown README](examples/deploy-hybrid-app/README-teardown.md) | Infrastructure Asset Tracker teardown documentation |
 | [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) | Pass/fail checklist for validating a migration from AWS EKS to VCF VKS |
 | [GitHub Actions Workflows README](.github/workflows/README.md) | Workflow documentation: parameters, triggers, credential retrieval, and troubleshooting for all five workflows (deploy and teardown) |
 

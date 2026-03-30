@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_HOST = process.env.API_HOST || 'vm-app-api.vm-app.svc.cluster.local';
+const API_HOST = process.env.API_HOST || 'hybrid-app-api.hybrid-app.svc.cluster.local';
 const API_PORT = process.env.API_PORT || '3001';
 const BACKEND = `http://${API_HOST}:${API_PORT}`;
 

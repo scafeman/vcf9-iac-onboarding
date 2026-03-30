@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Companion trigger script for the deploy-vm-app GitHub Actions workflow.
+# Companion trigger script for the deploy-hybrid-app GitHub Actions workflow.
 # Sends a repository_dispatch event via the GitHub REST API.
 #
 # Required: --repo, --token, --cluster-name
-# Optional: all VM app parameters (environment, VM config, DB credentials, etc.)
+# Optional: all Hybrid App parameters (environment, VM config, DB credentials, etc.)
 #           — if not provided, the workflow falls back to GitHub secrets or defaults.
 #
-# NOTE: Make this file executable with: chmod +x scripts/trigger-deploy-vm-app.sh
+# NOTE: Make this file executable with: chmod +x scripts/trigger-deploy-hybrid-app.sh
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Trigger the deploy-vm-app GitHub Actions workflow via repository_dispatch.
+Trigger the deploy-hybrid-app GitHub Actions workflow via repository_dispatch.
 
 Required:
   --repo                       GitHub repository (OWNER/REPO)
@@ -32,7 +32,7 @@ Optional (override workflow defaults):
   --postgres-password          PostgreSQL password (default: assetpass)
   --postgres-db                PostgreSQL database name (default: assetdb)
   --vm-name                    Name for the VirtualMachine resource (default: postgresql-vm)
-  --app-namespace              Kubernetes namespace for API + Frontend (default: vm-app)
+  --app-namespace              Kubernetes namespace for API + Frontend (default: hybrid-app)
   --container-registry         Container registry prefix (default: scafeman)
   --image-tag                  Container image tag (default: latest)
   --vcfa-endpoint              VCF Automation endpoint
@@ -144,7 +144,7 @@ add_field "tenant_name"              "$TENANT_NAME"
 
 # --- Send repository_dispatch event ---
 DISPATCH_BODY=$(jq -n --argjson payload "$PAYLOAD" '{
-  "event_type": "deploy-vm-app",
+  "event_type": "deploy-hybrid-app",
   "client_payload": $payload
 }')
 

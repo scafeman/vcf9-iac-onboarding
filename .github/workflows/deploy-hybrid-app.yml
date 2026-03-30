@@ -1,5 +1,5 @@
 # =============================================================================
-# Deploy VM App — GitHub Actions Workflow
+# Deploy Hybrid App — GitHub Actions Workflow
 # =============================================================================
 #
 # This workflow deploys the VCF VM PostgreSQL Infrastructure Asset Tracker demo
@@ -17,11 +17,11 @@
 #
 # Triggers:
 #   - workflow_dispatch: Manual trigger from the GitHub Actions UI
-#   - repository_dispatch: API trigger with event type "deploy-vm-app"
+#   - repository_dispatch: API trigger with event type "deploy-hybrid-app"
 #
 # =============================================================================
 
-name: Deploy VM App
+name: Deploy Hybrid App
 
 on:
   workflow_dispatch:
@@ -59,11 +59,11 @@ on:
         default: "ubuntu-24.04-server-cloudimg-amd64"
 
   repository_dispatch:
-    types: [deploy-vm-app]
+    types: [deploy-hybrid-app]
 
 jobs:
   deploy:
-    name: Deploy VM App
+    name: Deploy Hybrid App
     runs-on: [self-hosted, vcf]
     environment: vcf-production
     defaults:
@@ -84,7 +84,7 @@ jobs:
       POSTGRES_PASSWORD: ${{ github.event.client_payload.postgres_password || secrets.POSTGRES_PASSWORD || 'assetpass' }}
       POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
       VM_NAME: ${{ github.event.client_payload.vm_name || secrets.VM_NAME || 'postgresql-vm' }}
-      APP_NAMESPACE: ${{ github.event.client_payload.app_namespace || secrets.APP_NAMESPACE || 'vm-app' }}
+      APP_NAMESPACE: ${{ github.event.client_payload.app_namespace || secrets.APP_NAMESPACE || 'hybrid-app' }}
       STORAGE_CLASS: ${{ github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
       CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
       IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
@@ -105,7 +105,7 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       # --- Static Configuration ---
-      CONTEXT_NAME: vm-app-deploy
+      CONTEXT_NAME: hybrid-app-deploy
 
     steps:
       # Step 1: Checkout Repository
@@ -385,14 +385,14 @@ jobs:
       - name: Build and Push API Image
         run: |
           set -euo pipefail
-          API_IMAGE="${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}"
+          API_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}"
 
           if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
             echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
             echo "Logged in to DockerHub"
           fi
 
-          if ! docker build -t "${API_IMAGE}" examples/deploy-vm-app/api/; then
+          if ! docker build -t "${API_IMAGE}" examples/deploy-hybrid-app/api/; then
             echo "::error::Failed to build API container image '${API_IMAGE}'"
             exit 1
           fi
@@ -408,9 +408,9 @@ jobs:
       - name: Build and Push Frontend Image
         run: |
           set -euo pipefail
-          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}"
+          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
 
-          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-vm-app/dashboard/; then
+          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
             echo "::error::Failed to build Frontend container image '${FRONTEND_IMAGE}'"
             exit 1
           fi
@@ -468,21 +468,21 @@ jobs:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: vm-app-api
+            name: hybrid-app-api
             namespace: ${APP_NAMESPACE}
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: vm-app-api
+                app: hybrid-app-api
             template:
               metadata:
                 labels:
-                  app: vm-app-api
+                  app: hybrid-app-api
               spec:
                 containers:
                 - name: api
-                  image: ${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}
+                  image: ${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}
                   env:
                   - name: POSTGRES_HOST
                     value: "${VM_IP}"
@@ -508,12 +508,12 @@ jobs:
           apiVersion: v1
           kind: Service
           metadata:
-            name: vm-app-api
+            name: hybrid-app-api
             namespace: ${APP_NAMESPACE}
           spec:
             type: ClusterIP
             selector:
-              app: vm-app-api
+              app: hybrid-app-api
             ports:
             - port: ${API_PORT}
               targetPort: ${API_PORT}
@@ -530,7 +530,7 @@ jobs:
           ELAPSED=0
 
           while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            if kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-api --no-headers 2>/dev/null | grep -q 'Running'; then
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-api --no-headers 2>/dev/null | grep -q 'Running'; then
               echo "API pod is running"
               exit 0
             fi
@@ -540,7 +540,7 @@ jobs:
           done
 
           echo "::error::API pod did not reach Running state within ${TIMEOUT}s"
-          kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-api -o wide 2>/dev/null || true
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-api -o wide 2>/dev/null || true
           exit 1
 
       # Step 13: Deploy Frontend Service
@@ -551,24 +551,24 @@ jobs:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: vm-app-dashboard
+            name: hybrid-app-dashboard
             namespace: ${APP_NAMESPACE}
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: vm-app-dashboard
+                app: hybrid-app-dashboard
             template:
               metadata:
                 labels:
-                  app: vm-app-dashboard
+                  app: hybrid-app-dashboard
               spec:
                 containers:
                 - name: dashboard
-                  image: ${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}
+                  image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
                   env:
                   - name: API_HOST
-                    value: "vm-app-api.${APP_NAMESPACE}.svc.cluster.local"
+                    value: "hybrid-app-api.${APP_NAMESPACE}.svc.cluster.local"
                   - name: API_PORT
                     value: "${API_PORT}"
                   ports:
@@ -577,12 +577,12 @@ jobs:
           apiVersion: v1
           kind: Service
           metadata:
-            name: vm-app-dashboard-lb
+            name: hybrid-app-dashboard-lb
             namespace: ${APP_NAMESPACE}
           spec:
             type: LoadBalancer
             selector:
-              app: vm-app-dashboard
+              app: hybrid-app-dashboard
             ports:
             - port: 80
               targetPort: ${FRONTEND_PORT}
@@ -599,7 +599,7 @@ jobs:
           ELAPSED=0
 
           while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            if kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-dashboard --no-headers 2>/dev/null | grep -q 'Running'; then
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-dashboard --no-headers 2>/dev/null | grep -q 'Running'; then
               echo "Frontend pod is running"
               exit 0
             fi
@@ -609,7 +609,7 @@ jobs:
           done
 
           echo "::error::Frontend pod did not reach Running state within ${TIMEOUT}s"
-          kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-dashboard -o wide 2>/dev/null || true
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-dashboard -o wide 2>/dev/null || true
           exit 1
 
       # Step 15: Wait for LoadBalancer IP
@@ -623,9 +623,9 @@ jobs:
           FRONTEND_IP=""
 
           while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            FRONTEND_IP=$(kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            FRONTEND_IP=$(kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$FRONTEND_IP" ]; then
-              echo "LoadBalancer 'vm-app-dashboard-lb' assigned external IP: $FRONTEND_IP"
+              echo "LoadBalancer 'hybrid-app-dashboard-lb' assigned external IP: $FRONTEND_IP"
               echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
               echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
               exit 0
@@ -635,8 +635,8 @@ jobs:
             ELAPSED=$((ELAPSED + INTERVAL))
           done
 
-          echo "::error::LoadBalancer 'vm-app-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
-          kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+          echo "::error::LoadBalancer 'hybrid-app-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
+          kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
           exit 1
 
       # Step 16: HTTP Connectivity Test
@@ -687,7 +687,7 @@ jobs:
       - name: Write Job Summary
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## ✅ VM App Deployment Complete
+          ## ✅ Hybrid App Deployment Complete
 
           | Field | Value |
           |---|---|
@@ -702,14 +702,14 @@ jobs:
           | Service | Endpoint |
           |---|---|
           | PostgreSQL VM | \`${VM_IP}:5432\` |
-          | API | \`vm-app-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
+          | API | \`hybrid-app-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
           | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
 
           ### Container Images
           | Image | Tag |
           |---|---|
-          | \`${CONTAINER_REGISTRY}/vm-app-api\` | \`${IMAGE_TAG}\` |
-          | \`${CONTAINER_REGISTRY}/vm-app-dashboard\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/hybrid-app-api\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/hybrid-app-dashboard\` | \`${IMAGE_TAG}\` |
           EOF
 
       # Step 18: Write Failure Summary
@@ -717,7 +717,7 @@ jobs:
         if: failure()
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## ❌ VM App Deployment Failed
+          ## ❌ Hybrid App Deployment Failed
 
           | Field | Value |
           |---|---|

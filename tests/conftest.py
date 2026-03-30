@@ -489,55 +489,55 @@ def trigger_teardown_script_text() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Deploy VM App Fixtures
+# Deploy Hybrid App Fixtures
 # ---------------------------------------------------------------------------
 
-VM_APP_DEPLOY_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "deploy-vm-app", "deploy-vm-app.sh"
+HYBRID_APP_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-hybrid-app", "deploy-hybrid-app.sh"
 )
 
-VM_APP_TEARDOWN_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "examples", "deploy-vm-app", "teardown-vm-app.sh"
+HYBRID_APP_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-hybrid-app", "teardown-hybrid-app.sh"
 )
 
-VM_APP_WORKFLOW_YAML_PATH = os.path.join(
-    PROJECT_ROOT, ".github", "workflows", "deploy-vm-app.yml"
+HYBRID_APP_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-hybrid-app.yml"
 )
 
-VM_APP_TRIGGER_SCRIPT_PATH = os.path.join(
-    PROJECT_ROOT, "scripts", "trigger-deploy-vm-app.sh"
+HYBRID_APP_TRIGGER_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy-hybrid-app.sh"
 )
 
 
 @pytest.fixture(scope="session")
-def vm_app_deploy_text() -> str:
-    """Return the full text of the deploy-vm-app deploy script."""
-    with open(VM_APP_DEPLOY_PATH, encoding="utf-8") as f:
+def hybrid_app_deploy_text() -> str:
+    """Return the full text of the deploy-hybrid-app deploy script."""
+    with open(HYBRID_APP_DEPLOY_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def vm_app_teardown_text() -> str:
-    """Return the full text of the deploy-vm-app teardown script."""
-    with open(VM_APP_TEARDOWN_PATH, encoding="utf-8") as f:
+def hybrid_app_teardown_text() -> str:
+    """Return the full text of the deploy-hybrid-app teardown script."""
+    with open(HYBRID_APP_TEARDOWN_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def vm_app_workflow_yaml_text() -> str:
-    """Return the raw text of .github/workflows/deploy-vm-app.yml."""
-    with open(VM_APP_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+def hybrid_app_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-hybrid-app.yml."""
+    with open(HYBRID_APP_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
         return f.read()
 
 
 @pytest.fixture(scope="session")
-def vm_app_workflow_yaml(vm_app_workflow_yaml_text: str) -> dict:
-    """Return the parsed YAML dict of the deploy-vm-app workflow file."""
-    return yaml.safe_load(vm_app_workflow_yaml_text)
+def hybrid_app_workflow_yaml(hybrid_app_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the deploy-hybrid-app workflow file."""
+    return yaml.safe_load(hybrid_app_workflow_yaml_text)
 
 
 @pytest.fixture(scope="session")
-def vm_app_trigger_script_text() -> str:
-    """Return the raw text of scripts/trigger-deploy-vm-app.sh."""
-    with open(VM_APP_TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
+def hybrid_app_trigger_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy-hybrid-app.sh."""
+    with open(HYBRID_APP_TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
         return f.read()

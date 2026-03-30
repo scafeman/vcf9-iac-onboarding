@@ -1,8 +1,8 @@
-# Deploy VM App — Infrastructure Asset Tracker
+# Deploy Hybrid App — Infrastructure Asset Tracker
 
 ## Overview
 
-`deploy-vm-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
+`deploy-hybrid-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
 
 The system spans two compute models in the same VCF namespace and NSX VPC:
 
@@ -45,17 +45,17 @@ An idempotency check skips VM creation if the VirtualMachine resource already ex
 Builds Docker images for both the API and Frontend services, then pushes them to the configured container registry:
 
 ```
-docker build -t <CONTAINER_REGISTRY>/vm-app-api:<IMAGE_TAG> examples/deploy-vm-app/api/
-docker build -t <CONTAINER_REGISTRY>/vm-app-dashboard:<IMAGE_TAG> examples/deploy-vm-app/dashboard/
-docker push <CONTAINER_REGISTRY>/vm-app-api:<IMAGE_TAG>
-docker push <CONTAINER_REGISTRY>/vm-app-dashboard:<IMAGE_TAG>
+docker build -t <CONTAINER_REGISTRY>/hybrid-app-api:<IMAGE_TAG> examples/deploy-hybrid-app/api/
+docker build -t <CONTAINER_REGISTRY>/hybrid-app-dashboard:<IMAGE_TAG> examples/deploy-hybrid-app/dashboard/
+docker push <CONTAINER_REGISTRY>/hybrid-app-api:<IMAGE_TAG>
+docker push <CONTAINER_REGISTRY>/hybrid-app-dashboard:<IMAGE_TAG>
 ```
 
 If `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set, the script logs in to DockerHub before pushing.
 
 ### Phase 3: Deploy API Service
 
-Switches to the guest cluster kubeconfig, creates the application namespace (default: `vm-app`), and deploys:
+Switches to the guest cluster kubeconfig, creates the application namespace (default: `hybrid-app`), and deploys:
 
 1. **API Deployment** (`apps/v1`) — Node.js/Express container with environment variables pointing to the PostgreSQL VM IP. Includes a readiness probe on `/healthz` to ensure the pod only receives traffic when the database connection is healthy.
 2. **API ClusterIP Service** (`v1`) — Exposes the API on port 3001 within the cluster.
@@ -66,7 +66,7 @@ The script waits for the API pod to reach Running state (timeout: 300s).
 
 Deploys the Next.js dashboard:
 
-1. **Frontend Deployment** (`apps/v1`) — Next.js container configured to proxy API requests to the API ClusterIP Service via cluster DNS (`vm-app-api.<APP_NAMESPACE>.svc.cluster.local`).
+1. **Frontend Deployment** (`apps/v1`) — Next.js container configured to proxy API requests to the API ClusterIP Service via cluster DNS (`hybrid-app-api.<APP_NAMESPACE>.svc.cluster.local`).
 2. **Frontend LoadBalancer Service** (`v1`) — Exposes the dashboard on port 80 (mapping to container port 3000) with an NSX-provisioned external IP.
 
 The script waits for the Frontend pod to reach Running state and the LoadBalancer to receive an external IP (timeout: 300s).
@@ -102,7 +102,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `POSTGRES_USER` | No | `assetadmin` | PostgreSQL database user |
 | `POSTGRES_PASSWORD` | No | `assetpass` | PostgreSQL database password |
 | `POSTGRES_DB` | No | `assetdb` | PostgreSQL database name |
-| `APP_NAMESPACE` | No | `vm-app` | Kubernetes namespace for API + Frontend in guest cluster |
+| `APP_NAMESPACE` | No | `hybrid-app` | Kubernetes namespace for API + Frontend in guest cluster |
 | `CONTAINER_REGISTRY` | No | `scafeman` | Docker registry prefix for container images |
 | `IMAGE_TAG` | No | `latest` | Container image tag |
 | `API_PORT` | No | `3001` | API service port |
@@ -121,17 +121,17 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 ### Docker exec (recommended)
 
 ```bash
-docker exec vcf9-dev bash examples/deploy-vm-app/deploy-vm-app.sh
+docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh
 ```
 
 ### GitHub Actions UI
 
-Navigate to **Actions → Deploy VM App → Run workflow**, enter the VKS cluster name, and click **Run workflow**.
+Navigate to **Actions → Deploy Hybrid App → Run workflow**, enter the VKS cluster name, and click **Run workflow**.
 
 ### Trigger script (repository_dispatch)
 
 ```bash
-bash scripts/trigger-deploy-vm-app.sh \
+bash scripts/trigger-deploy-hybrid-app.sh \
   --repo myorg/vcf9-iac \
   --token ghp_xxxxxxxxxxxx \
   --cluster-name my-project-01-clus-01 \
@@ -147,7 +147,7 @@ curl -X POST \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/OWNER/REPO/dispatches" \
   -d '{
-    "event_type": "deploy-vm-app",
+    "event_type": "deploy-hybrid-app",
     "client_payload": {
       "cluster_name": "my-project-01-clus-01",
       "supervisor_namespace": "my-project-ns",
@@ -159,7 +159,7 @@ curl -X POST \
 ### PowerShell (Windows 11 workstation)
 
 ```powershell
-docker exec vcf9-dev bash examples/deploy-vm-app/deploy-vm-app.sh
+docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh
 ```
 
 Or trigger via the GitHub API from PowerShell:
@@ -170,7 +170,7 @@ $headers = @{
     "Accept"        = "application/vnd.github+json"
 }
 $body = @{
-    event_type     = "deploy-vm-app"
+    event_type     = "deploy-hybrid-app"
     client_payload = @{
         cluster_name         = "my-project-01-clus-01"
         supervisor_namespace = "my-project-ns"
@@ -202,18 +202,18 @@ A successful run produces output like this:
 ✓ PostgreSQL VM IP address: 10.0.2.15
 ✓ Phase 1 complete — PostgreSQL VM 'postgresql-vm' provisioned at 10.0.2.15
 [Step 2] Building and pushing container images...
-✓ API container image 'scafeman/vm-app-api:latest' built successfully
-✓ Frontend container image 'scafeman/vm-app-dashboard:latest' built successfully
-✓ API container image 'scafeman/vm-app-api:latest' pushed successfully
-✓ Frontend container image 'scafeman/vm-app-dashboard:latest' pushed successfully
+✓ API container image 'scafeman/hybrid-app-api:latest' built successfully
+✓ Frontend container image 'scafeman/hybrid-app-dashboard:latest' built successfully
+✓ API container image 'scafeman/hybrid-app-api:latest' pushed successfully
+✓ Frontend container image 'scafeman/hybrid-app-dashboard:latest' pushed successfully
 ✓ Phase 2 complete — container images built and pushed
 [Step 3] Deploying API service to guest cluster...
 ✓ Connected to guest cluster via './kubeconfig-my-clus-01.yaml'
-✓ Namespace 'vm-app' created
+✓ Namespace 'hybrid-app' created
 ✓ API Deployment applied
 ✓ API ClusterIP Service applied on port 3001
 ✓ API pod is running
-✓ Phase 3 complete — API service deployed to namespace 'vm-app'
+✓ Phase 3 complete — API service deployed to namespace 'hybrid-app'
 [Step 4] Deploying Frontend service to guest cluster...
 ✓ Frontend Deployment applied
 ✓ Frontend LoadBalancer Service applied (port 80 → 3000)
@@ -226,10 +226,10 @@ A successful run produces output like this:
 ✓ Phase 5 complete — end-to-end connectivity verified
 
 =============================================
-  VCF 9 VM App — Deployment Complete
+  VCF 9 Hybrid App — Deployment Complete
 =============================================
   Cluster:       my-clus-01
-  Namespace:     vm-app
+  Namespace:     hybrid-app
   PostgreSQL VM: 10.0.2.15
   Frontend:      http://74.205.11.90
 =============================================
@@ -277,19 +277,19 @@ A successful run produces output like this:
 
 - Verify Docker is running and accessible
 - Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set if pushing to DockerHub
-- Check that the Dockerfiles at `examples/deploy-vm-app/api/Dockerfile` and `examples/deploy-vm-app/dashboard/Dockerfile` are valid
+- Check that the Dockerfiles at `examples/deploy-hybrid-app/api/Dockerfile` and `examples/deploy-hybrid-app/dashboard/Dockerfile` are valid
 - Verify network connectivity to the container registry
 
 ### API pod not running (exit 4)
 
-- Check pod events: `kubectl describe pod -l app=vm-app-api -n vm-app`
-- Verify the API container image exists in the registry: `docker pull <CONTAINER_REGISTRY>/vm-app-api:<IMAGE_TAG>`
-- Check pod logs: `kubectl logs -l app=vm-app-api -n vm-app`
+- Check pod events: `kubectl describe pod -l app=hybrid-app-api -n hybrid-app`
+- Verify the API container image exists in the registry: `docker pull <CONTAINER_REGISTRY>/hybrid-app-api:<IMAGE_TAG>`
+- Check pod logs: `kubectl logs -l app=hybrid-app-api -n hybrid-app`
 - Verify the PostgreSQL VM IP is reachable from the guest cluster pods
 
 ### Frontend pod not running or no LoadBalancer IP (exit 5)
 
-- Check pod events: `kubectl describe pod -l app=vm-app-dashboard -n vm-app`
+- Check pod events: `kubectl describe pod -l app=hybrid-app-dashboard -n hybrid-app`
 - Verify the Frontend container image exists in the registry
 - If the LoadBalancer IP is not assigned, check NSX load balancer capacity and VPC configuration
 - Increase `LB_TIMEOUT` if the environment is slow to provision LoadBalancer IPs
@@ -297,9 +297,9 @@ A successful run produces output like this:
 ### Connectivity verification fails (exit 6)
 
 - Verify the Frontend LoadBalancer IP is reachable from the runner: `curl -v http://<FRONTEND_IP>`
-- Check API health: `kubectl exec -it deploy/vm-app-api -n vm-app -- curl localhost:3001/healthz`
-- Verify the PostgreSQL VM is accepting connections: `kubectl exec -it deploy/vm-app-api -n vm-app -- pg_isready -h <VM_IP> -p 5432`
-- Check API pod logs for database connection errors: `kubectl logs -l app=vm-app-api -n vm-app`
+- Check API health: `kubectl exec -it deploy/hybrid-app-api -n hybrid-app -- curl localhost:3001/healthz`
+- Verify the PostgreSQL VM is accepting connections: `kubectl exec -it deploy/hybrid-app-api -n hybrid-app -- pg_isready -h <VM_IP> -p 5432`
+- Check API pod logs for database connection errors: `kubectl logs -l app=hybrid-app-api -n hybrid-app`
 
 ### Monitor during deployment
 
@@ -308,8 +308,8 @@ A successful run produces output like this:
 docker exec vcf9-dev kubectl get virtualmachines -n <SUPERVISOR_NAMESPACE> -w
 
 # Watch pod status in guest cluster
-docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml && kubectl get pods -n vm-app -w"
+docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml && kubectl get pods -n hybrid-app -w"
 
 # Watch LoadBalancer IP assignment
-docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml && kubectl get svc -n vm-app -w"
+docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml && kubectl get svc -n hybrid-app -w"
 ```

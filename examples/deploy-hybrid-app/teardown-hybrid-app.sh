@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Deploy VM App — Infrastructure Asset Tracker Teardown Script
+# VCF 9 Deploy Hybrid App — Infrastructure Asset Tracker Teardown Script
 #
-# This script reverses the VM app deployment, deleting all resources in the
+# This script reverses the Hybrid App deployment, deleting all resources in the
 # correct reverse dependency order:
 #   Phase 1: Delete application namespace in guest cluster
 #            (removes Frontend + API Deployments, Services)
@@ -12,7 +12,7 @@ set -euo pipefail
 #            (waits for VM termination within timeout)
 #
 # Uses the same environment variables as the deploy script.
-# Run: bash examples/deploy-vm-app/teardown-vm-app.sh
+# Run: bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
 ###############################################################################
 
 ###############################################################################
@@ -36,7 +36,7 @@ SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 VM_NAME="${VM_NAME:-postgresql-vm}"
 
 # --- Application Namespace ---
-APP_NAMESPACE="${APP_NAMESPACE:-vm-app}"
+APP_NAMESPACE="${APP_NAMESPACE:-hybrid-app}"
 
 # --- Timeouts and Polling ---
 VM_TIMEOUT="${VM_TIMEOUT:-600}"
@@ -171,7 +171,7 @@ fi
 
 echo ""
 echo "============================================="
-echo "  VCF 9 VM App — Teardown Complete"
+echo "  VCF 9 Hybrid App — Teardown Complete"
 echo "============================================="
 echo "  Cluster:        ${CLUSTER_NAME}"
 echo "  Namespace:      ${APP_NAMESPACE} (${RESOURCE_STATUS["namespace"]})"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Deploy VM App — Infrastructure Asset Tracker Deploy Script
+# VCF 9 Deploy Hybrid App — Infrastructure Asset Tracker Deploy Script
 #
 # This script deploys a full-stack Infrastructure Asset Tracker demo that
 # demonstrates VM-to-container connectivity within a VCF 9 namespace:
@@ -20,7 +20,7 @@ set -euo pipefail
 #   - Docker installed
 #
 # Edit the variable block below with your environment-specific values,
-# then run: bash examples/deploy-vm-app/deploy-vm-app.sh
+# then run: bash examples/deploy-hybrid-app/deploy-hybrid-app.sh
 ###############################################################################
 
 ###############################################################################
@@ -56,7 +56,7 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-assetpass}"
 POSTGRES_DB="${POSTGRES_DB:-assetdb}"
 
 # --- Application Namespace ---
-APP_NAMESPACE="${APP_NAMESPACE:-vm-app}"
+APP_NAMESPACE="${APP_NAMESPACE:-hybrid-app}"
 
 # --- Storage ---
 STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
@@ -308,8 +308,8 @@ log_success "Phase 1 complete — PostgreSQL VM '${VM_NAME}' provisioned at ${VM
 
 log_step 2 "Building and pushing container images"
 
-API_IMAGE="${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}"
-FRONTEND_IMAGE="${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}"
+API_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}"
+FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
 
 # Login to DockerHub if credentials are available
 if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -318,7 +318,7 @@ if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
 fi
 
 # Build API image
-if ! docker build -t "${API_IMAGE}" examples/deploy-vm-app/api/; then
+if ! docker build -t "${API_IMAGE}" examples/deploy-hybrid-app/api/; then
   log_error "Failed to build API container image '${API_IMAGE}'"
   exit 3
 fi
@@ -326,7 +326,7 @@ fi
 log_success "API container image '${API_IMAGE}' built successfully"
 
 # Build Frontend image
-if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-vm-app/dashboard/; then
+if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
   log_error "Failed to build Frontend container image '${FRONTEND_IMAGE}'"
   exit 3
 fi
@@ -388,21 +388,21 @@ if ! cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vm-app-api
+  name: hybrid-app-api
   namespace: ${APP_NAMESPACE}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vm-app-api
+      app: hybrid-app-api
   template:
     metadata:
       labels:
-        app: vm-app-api
+        app: hybrid-app-api
     spec:
       containers:
       - name: api
-        image: ${CONTAINER_REGISTRY}/vm-app-api:${IMAGE_TAG}
+        image: ${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}
         env:
         - name: POSTGRES_HOST
           value: "${VM_IP}"
@@ -437,12 +437,12 @@ if ! cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: vm-app-api
+  name: hybrid-app-api
   namespace: ${APP_NAMESPACE}
 spec:
   type: ClusterIP
   selector:
-    app: vm-app-api
+    app: hybrid-app-api
   ports:
   - port: ${API_PORT}
     targetPort: ${API_PORT}
@@ -458,9 +458,9 @@ log_success "API ClusterIP Service applied on port ${API_PORT}"
 # Wait for API pod to reach Running state
 if ! wait_for_condition "API pod to be running" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get pods -n '${APP_NAMESPACE}' -l app=vm-app-api --no-headers 2>/dev/null | grep -q 'Running'"; then
+  "kubectl get pods -n '${APP_NAMESPACE}' -l app=hybrid-app-api --no-headers 2>/dev/null | grep -q 'Running'"; then
   log_error "API pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-api -o wide 2>/dev/null || true
+  kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-api -o wide 2>/dev/null || true
   exit 4
 fi
 
@@ -478,24 +478,24 @@ if ! cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: vm-app-dashboard
+  name: hybrid-app-dashboard
   namespace: ${APP_NAMESPACE}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vm-app-dashboard
+      app: hybrid-app-dashboard
   template:
     metadata:
       labels:
-        app: vm-app-dashboard
+        app: hybrid-app-dashboard
     spec:
       containers:
       - name: dashboard
-        image: ${CONTAINER_REGISTRY}/vm-app-dashboard:${IMAGE_TAG}
+        image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
         env:
         - name: API_HOST
-          value: "vm-app-api.${APP_NAMESPACE}.svc.cluster.local"
+          value: "hybrid-app-api.${APP_NAMESPACE}.svc.cluster.local"
         - name: API_PORT
           value: "${API_PORT}"
         ports:
@@ -513,12 +513,12 @@ if ! cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
-  name: vm-app-dashboard-lb
+  name: hybrid-app-dashboard-lb
   namespace: ${APP_NAMESPACE}
 spec:
   type: LoadBalancer
   selector:
-    app: vm-app-dashboard
+    app: hybrid-app-dashboard
   ports:
   - port: 80
     targetPort: ${FRONTEND_PORT}
@@ -534,24 +534,24 @@ log_success "Frontend LoadBalancer Service applied (port 80 → ${FRONTEND_PORT}
 # Wait for Frontend pod to reach Running state
 if ! wait_for_condition "Frontend pod to be running" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get pods -n '${APP_NAMESPACE}' -l app=vm-app-dashboard --no-headers 2>/dev/null | grep -q 'Running'"; then
+  "kubectl get pods -n '${APP_NAMESPACE}' -l app=hybrid-app-dashboard --no-headers 2>/dev/null | grep -q 'Running'"; then
   log_error "Frontend pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${APP_NAMESPACE}" -l app=vm-app-dashboard -o wide 2>/dev/null || true
+  kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-dashboard -o wide 2>/dev/null || true
   exit 5
 fi
 
 log_success "Frontend pod is running"
 
 # Wait for LoadBalancer external IP
-if ! wait_for_condition "LoadBalancer 'vm-app-dashboard-lb' to receive external IP" \
+if ! wait_for_condition "LoadBalancer 'hybrid-app-dashboard-lb' to receive external IP" \
   "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
-  "[[ -n \$(kubectl get svc vm-app-dashboard-lb -n '${APP_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
-  log_error "LoadBalancer 'vm-app-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
-  kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+  "[[ -n \$(kubectl get svc hybrid-app-dashboard-lb -n '${APP_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+  log_error "LoadBalancer 'hybrid-app-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
+  kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
   exit 5
 fi
 
-FRONTEND_IP=$(kubectl get svc vm-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+FRONTEND_IP=$(kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "Frontend LoadBalancer assigned external IP: ${FRONTEND_IP}"
 log_success "Phase 4 complete — Frontend service deployed with external IP ${FRONTEND_IP}"
 
@@ -608,7 +608,7 @@ log_success "Phase 5 complete — end-to-end connectivity verified"
 
 echo ""
 echo "============================================="
-echo "  VCF 9 VM App — Deployment Complete"
+echo "  VCF 9 Hybrid App — Deployment Complete"
 echo "============================================="
 echo "  Cluster:       ${CLUSTER_NAME}"
 echo "  Namespace:     ${APP_NAMESPACE}"
