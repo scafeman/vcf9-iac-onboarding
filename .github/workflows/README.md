@@ -25,10 +25,11 @@ Deploy Cluster (deploy-vks.yml)  ← must run first
 Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase A: GitOps Stack Teardown
     ├── Phase B: Metrics Stack Teardown
+    ├── Phase D: Hybrid App Stack Teardown
     └── Phase C: Cluster Stack Teardown
 ```
 
-Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
+Deploy Metrics, Deploy GitOps, and Deploy Hybrid App share the same VKS cluster provisioned by Deploy Cluster. Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
 
 ## Shared Configuration
 
