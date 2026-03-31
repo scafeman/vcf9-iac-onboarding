@@ -66,6 +66,11 @@ on:
         required: false
         type: boolean
         default: true
+      bastion_vm_name:
+        description: "Bastion VM name (must match the name used during deploy)"
+        required: false
+        type: string
+        default: "bastion-vm"
 
   repository_dispatch:
     types: [teardown]
@@ -89,6 +94,7 @@ jobs:
       TEARDOWN_HYBRID_APP: ${{ github.event.inputs.teardown_hybrid_app || github.event.client_payload.teardown_hybrid_app || 'true' }}
       TEARDOWN_SECRETS_DEMO: ${{ github.event.inputs.teardown_secrets_demo || github.event.client_payload.teardown_secrets_demo || 'true' }}
       TEARDOWN_BASTION_VM: ${{ github.event.inputs.teardown_bastion_vm || github.event.client_payload.teardown_bastion_vm || 'true' }}
+      BASTION_VM_NAME: ${{ github.event.inputs.bastion_vm_name || github.event.client_payload.bastion_vm_name || 'bastion-vm' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -728,7 +734,7 @@ jobs:
         run: |
           set -euo pipefail
           CONTEXT_NAME="teardown-deploy"
-          VM_NAME="bastion-vm"
+          VM_NAME="${BASTION_VM_NAME}"
           VMSERVICE_NAME="${VM_NAME}-ssh"
           VM_DELETE_TIMEOUT=300
           POLL_INTERVAL=15
