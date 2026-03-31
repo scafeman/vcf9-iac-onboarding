@@ -12,6 +12,7 @@
 #   Phase Group B: Metrics Stack Teardown (Grafana, packages, etc.)
 #   Phase Group D: Hybrid App Stack Teardown (PostgreSQL VM, API, Frontend)
 #   Phase Group E: Secrets Demo Stack Teardown (vault-injector, Redis, PostgreSQL, Dashboard)
+#   Phase Group F: Bastion VM Teardown (VirtualMachineService, VM, cloud-init Secret)
 #   Phase Group C: Cluster Stack Teardown (workloads, VKS cluster, project)
 #
 # Prerequisites:
@@ -60,6 +61,11 @@ on:
         required: false
         type: boolean
         default: true
+      teardown_bastion_vm:
+        description: "Tear down the Bastion VM (SSH jump host, VirtualMachineService, cloud-init Secret)"
+        required: false
+        type: boolean
+        default: true
 
   repository_dispatch:
     types: [teardown]
@@ -82,6 +88,7 @@ jobs:
       TEARDOWN_CLUSTER: ${{ github.event.inputs.teardown_cluster || github.event.client_payload.teardown_cluster || 'true' }}
       TEARDOWN_HYBRID_APP: ${{ github.event.inputs.teardown_hybrid_app || github.event.client_payload.teardown_hybrid_app || 'true' }}
       TEARDOWN_SECRETS_DEMO: ${{ github.event.inputs.teardown_secrets_demo || github.event.client_payload.teardown_secrets_demo || 'true' }}
+      TEARDOWN_BASTION_VM: ${{ github.event.inputs.teardown_bastion_vm || github.event.client_payload.teardown_bastion_vm || 'true' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -163,7 +170,7 @@ jobs:
       # =====================================================================
 
       - name: Warn Orphaned Stacks
-        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true' || env.TEARDOWN_SECRETS_DEMO != 'true')
+        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true' || env.TEARDOWN_SECRETS_DEMO != 'true' || env.TEARDOWN_BASTION_VM != 'true')
         run: |
           set -euo pipefail
           if [ "$TEARDOWN_GITOPS" != "true" ]; then
@@ -177,6 +184,9 @@ jobs:
           fi
           if [ "$TEARDOWN_SECRETS_DEMO" != "true" ]; then
             echo "::warning::Secrets Demo stack teardown is skipped but cluster teardown is enabled. The secrets-demo namespace and vault-injector will be orphaned."
+          fi
+          if [ "$TEARDOWN_BASTION_VM" != "true" ]; then
+            echo "::warning::Bastion VM teardown is skipped but cluster teardown is enabled. The bastion VM, VirtualMachineService, and cloud-init Secret will be orphaned."
           fi
 
       # =====================================================================
@@ -710,6 +720,61 @@ jobs:
           echo "Secrets Demo supervisor resources cleaned up"
 
       # =====================================================================
+      # Phase Group F: Bastion VM Teardown
+      # =====================================================================
+
+      - name: Delete Bastion VM Resources
+        if: env.TEARDOWN_BASTION_VM == 'true'
+        run: |
+          set -euo pipefail
+          CONTEXT_NAME="teardown-deploy"
+          VM_NAME="bastion-vm"
+          VMSERVICE_NAME="${VM_NAME}-ssh"
+          VM_DELETE_TIMEOUT=300
+          POLL_INTERVAL=15
+
+          # Unset guest cluster kubeconfig
+          unset KUBECONFIG
+
+          # Switch to supervisor namespace context
+          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
+            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null || true
+          fi
+
+          # Delete VirtualMachineService (releases LoadBalancer IP)
+          if kubectl get virtualmachineservice "$VMSERVICE_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
+            kubectl delete virtualmachineservice "$VMSERVICE_NAME" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found
+            echo "VirtualMachineService '$VMSERVICE_NAME' deleted"
+          else
+            echo "VirtualMachineService '$VMSERVICE_NAME' does not exist, skipping"
+          fi
+
+          # Delete VirtualMachine
+          if kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
+            kubectl delete virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found
+            echo "VirtualMachine '$VM_NAME' delete command issued"
+
+            # Wait for VM termination
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$VM_DELETE_TIMEOUT" ]; do
+              if ! kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
+                echo "VirtualMachine '$VM_NAME' fully terminated"
+                break
+              fi
+              echo "  Waiting for VM termination... (${ELAPSED}s/${VM_DELETE_TIMEOUT}s)"
+              sleep "$POLL_INTERVAL"
+              ELAPSED=$((ELAPSED + POLL_INTERVAL))
+            done
+          else
+            echo "VirtualMachine '$VM_NAME' does not exist, skipping"
+          fi
+
+          # Delete cloud-init Secret
+          kubectl delete secret "${VM_NAME}-cloud-init" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found 2>/dev/null || true
+          echo "Bastion VM resources cleaned up"
+
+      # =====================================================================
       # Phase Group C: Cluster Stack Teardown
       # =====================================================================
 
@@ -853,10 +918,11 @@ jobs:
           | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Hybrid App Stack | $([ "$TEARDOWN_HYBRID_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
-            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ]; then
               cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.
