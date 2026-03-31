@@ -64,12 +64,12 @@ on:
         type: string
         default: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair"
       boot_disk_size:
-        description: "Boot disk size override (e.g., 50Gi). Leave empty for image default."
+        description: "Boot disk size override (e.g., 20Gi, 50Gi). Must include unit suffix. Leave empty for image default."
         required: false
         type: string
         default: ""
       data_disk_size:
-        description: "Additional data disk size (e.g., 100Gi). Leave empty for no data disk."
+        description: "Additional data disk size (e.g., 10Gi, 100Gi). Must include unit suffix. Leave empty for no data disk."
         required: false
         type: string
         default: ""
@@ -153,6 +153,15 @@ jobs:
           echo "  VM_IMAGE=$VM_IMAGE"
           echo "  VM_NAME=$VM_NAME"
 
+          # Validate disk size formats (must end with Mi, Gi, or Ti if set)
+          for disk_var in BOOT_DISK_SIZE DATA_DISK_SIZE; do
+            val="${!disk_var:-}"
+            if [ -n "$val" ] && ! echo "$val" | grep -qE '^[0-9]+(Mi|Gi|Ti)$'; then
+              echo "::error::${disk_var}='${val}' is invalid. Must include a unit suffix (e.g., 20Gi, 512Mi, 1Ti)."
+              exit 1
+            fi
+          done
+
       # Step 3: Create VCF CLI Context
       - name: Create VCF CLI Context
         run: |
@@ -187,6 +196,9 @@ jobs:
           # Idempotency check — skip creation if VM already exists
           if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
             echo "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
+            if [ -n "${BOOT_DISK_SIZE}" ] || [ -n "${DATA_DISK_SIZE}" ]; then
+              echo "::warning::Disk options (BOOT_DISK_SIZE, DATA_DISK_SIZE) cannot be changed on an existing VM. Delete and recreate the VM to apply disk changes."
+            fi
           else
             # Generate cloud-init user data for minimal SSH jump host
             CLOUD_INIT_USERDATA=$(cat <<CLOUDINIT_INNER

@@ -147,6 +147,15 @@ wait_for_condition() {
 
 validate_variables
 
+# Validate disk size formats (must end with Mi, Gi, or Ti if set)
+for disk_var in BOOT_DISK_SIZE DATA_DISK_SIZE; do
+  val="${!disk_var:-}"
+  if [[ -n "$val" ]] && ! echo "$val" | grep -qE '^[0-9]+(Mi|Gi|Ti)$'; then
+    log_error "${disk_var}='${val}' is invalid. Must include a unit suffix (e.g., 20Gi, 512Mi, 1Ti)."
+    exit 1
+  fi
+done
+
 ###############################################################################
 # Phase 1: Provision Bastion VM via VM Service
 ###############################################################################
@@ -156,6 +165,9 @@ log_step 1 "Provisioning Bastion VM '${VM_NAME}' in supervisor namespace '${SUPE
 # Idempotency check — skip creation if VM already exists
 if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
   log_success "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
+  if [[ -n "${BOOT_DISK_SIZE}" ]] || [[ -n "${DATA_DISK_SIZE}" ]]; then
+    log_warn "Disk options (BOOT_DISK_SIZE, DATA_DISK_SIZE) cannot be changed on an existing VM. Delete and recreate the VM to apply disk changes."
+  fi
 else
   # Generate cloud-init user data for minimal SSH jump host
   CLOUD_INIT_USERDATA=$(cat <<CLOUDINIT_INNER
