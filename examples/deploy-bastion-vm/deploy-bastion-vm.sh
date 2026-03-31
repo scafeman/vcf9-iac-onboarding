@@ -216,14 +216,37 @@ CLOUDINIT_INNER
   # Build optional volumes spec for data disk
   VOLUMES_SPEC=""
   if [[ -n "${DATA_DISK_SIZE}" ]]; then
+    # Create the PVC first — VM volumes reference existing PVCs by claimName
+    if kubectl get pvc "${VM_NAME}-data" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      log_success "PVC '${VM_NAME}-data' already exists, skipping creation"
+    else
+      if ! cat <<PVCEOF | kubectl apply -f -
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${VM_NAME}-data
+  namespace: ${SUPERVISOR_NAMESPACE}
+  labels:
+    vm-selector: ${VM_NAME}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: ${DATA_DISK_SIZE}
+  storageClassName: ${STORAGE_CLASS}
+PVCEOF
+      then
+        log_error "Failed to create PVC '${VM_NAME}-data'"
+        exit 2
+      fi
+      log_success "PVC '${VM_NAME}-data' created (${DATA_DISK_SIZE})"
+    fi
     VOLUMES_SPEC="  volumes:
   - name: data-disk
     persistentVolumeClaim:
-      claimName: ${VM_NAME}-data
-      instanceVolumeClaim:
-        size: ${DATA_DISK_SIZE}
-        storageClass: ${STORAGE_CLASS}"
-    log_success "Data disk will be provisioned at ${DATA_DISK_SIZE}"
+      claimName: ${VM_NAME}-data"
+    log_success "Data disk will be attached at ${DATA_DISK_SIZE}"
   fi
 
   # Apply VirtualMachine manifest with app label for VirtualMachineService selector
