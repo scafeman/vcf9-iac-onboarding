@@ -54,22 +54,29 @@ log_error() {
 }
 
 ###############################################################################
-# Phase 1: Guest Cluster Namespace Cleanup
+# Phase 1: Delete vault-injector package (must happen before namespace deletion)
 ###############################################################################
 
-log_step 1 "Deleting secrets-demo namespace in guest cluster"
+log_step 1 "Deleting vault-injector package"
 
 if [[ -f "${KUBECONFIG_FILE}" ]]; then
   export KUBECONFIG="${KUBECONFIG_FILE}"
 
+  if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+    vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+    log_success "vault-injector package deleted (cascades namespace deletion)"
+  else
+    log_success "vault-injector package not installed, skipping"
+  fi
+
+  ###########################################################################
+  # Phase 2: Delete namespace and cluster-scoped resources
+  ###########################################################################
+
+  log_step 2 "Deleting secrets-demo namespace and cluster-scoped resources"
+
   kubectl delete ns "${NAMESPACE}" --ignore-not-found || true
-  log_success "Namespace '${NAMESPACE}' deleted (or did not exist)"
-
-  ###########################################################################
-  # Phase 2: Guest Cluster Cluster-Scoped Resource Cleanup
-  ###########################################################################
-
-  log_step 2 "Deleting cluster-scoped resources from guest cluster"
+  log_success "Namespace '${NAMESPACE}' deleted (or already removed by package teardown)"
 
   kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found || true
   log_success "ClusterRole 'vault-injector-clusterrole' deleted"
@@ -105,10 +112,10 @@ if [[ -n "${CONTEXT_NAME}" ]]; then
 fi
 
 # Delete KeyValueSecrets
-vcf secret delete redis-creds 2>/dev/null || true
+echo "y" | vcf secret delete redis-creds 2>/dev/null || true
 log_success "KeyValueSecret 'redis-creds' deleted"
 
-vcf secret delete postgres-creds 2>/dev/null || true
+echo "y" | vcf secret delete postgres-creds 2>/dev/null || true
 log_success "KeyValueSecret 'postgres-creds' deleted"
 
 # Delete ServiceAccount and token

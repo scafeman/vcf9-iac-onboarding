@@ -11,6 +11,7 @@
 #   Phase Group A: GitOps Stack Teardown (ArgoCD, GitLab, Harbor, etc.)
 #   Phase Group B: Metrics Stack Teardown (Grafana, packages, etc.)
 #   Phase Group D: Hybrid App Stack Teardown (PostgreSQL VM, API, Frontend)
+#   Phase Group E: Secrets Demo Stack Teardown (vault-injector, Redis, PostgreSQL, Dashboard)
 #   Phase Group C: Cluster Stack Teardown (workloads, VKS cluster, project)
 #
 # Prerequisites:
@@ -54,6 +55,11 @@ on:
         required: false
         type: boolean
         default: true
+      teardown_secrets_demo:
+        description: "Tear down the Secrets Demo stack (vault-injector, Redis, PostgreSQL, Dashboard)"
+        required: false
+        type: boolean
+        default: true
 
   repository_dispatch:
     types: [teardown]
@@ -75,6 +81,7 @@ jobs:
       TEARDOWN_METRICS: ${{ github.event.inputs.teardown_metrics || github.event.client_payload.teardown_metrics || 'true' }}
       TEARDOWN_CLUSTER: ${{ github.event.inputs.teardown_cluster || github.event.client_payload.teardown_cluster || 'true' }}
       TEARDOWN_HYBRID_APP: ${{ github.event.inputs.teardown_hybrid_app || github.event.client_payload.teardown_hybrid_app || 'true' }}
+      TEARDOWN_SECRETS_DEMO: ${{ github.event.inputs.teardown_secrets_demo || github.event.client_payload.teardown_secrets_demo || 'true' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
@@ -156,7 +163,7 @@ jobs:
       # =====================================================================
 
       - name: Warn Orphaned Stacks
-        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true')
+        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true' || env.TEARDOWN_SECRETS_DEMO != 'true')
         run: |
           set -euo pipefail
           if [ "$TEARDOWN_GITOPS" != "true" ]; then
@@ -167,6 +174,9 @@ jobs:
           fi
           if [ "$TEARDOWN_HYBRID_APP" != "true" ]; then
             echo "::warning::Hybrid App stack teardown is skipped but cluster teardown is enabled. The PostgreSQL VM and hybrid-app namespace will be orphaned."
+          fi
+          if [ "$TEARDOWN_SECRETS_DEMO" != "true" ]; then
+            echo "::warning::Secrets Demo stack teardown is skipped but cluster teardown is enabled. The secrets-demo namespace and vault-injector will be orphaned."
           fi
 
       # =====================================================================
@@ -632,6 +642,72 @@ jobs:
           # Clean up cloud-init Secret
           kubectl delete secret "${VM_NAME}-cloud-init" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found 2>/dev/null || true
           echo "Cloud-init Secret cleaned up"
+
+      # =====================================================================
+      # Phase Group E: Secrets Demo Stack Teardown
+      # =====================================================================
+
+      - name: Delete Secrets Demo Vault-Injector Package
+        if: env.TEARDOWN_SECRETS_DEMO == 'true'
+        run: |
+          set -euo pipefail
+
+          # Delete the vault-injector package FIRST — it manages the secrets-demo namespace
+          # and will recreate it if the namespace is deleted while the package is still installed
+          if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+            vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+            echo "vault-injector package deleted (cascades namespace deletion)"
+          else
+            echo "vault-injector package not installed, skipping"
+          fi
+
+      - name: Delete Secrets Demo Namespace
+        if: env.TEARDOWN_SECRETS_DEMO == 'true'
+        run: |
+          set -euo pipefail
+          SECRETS_NAMESPACE="secrets-demo"
+
+          # Delete namespace if it still exists (may have been deleted by the package)
+          if kubectl get ns "$SECRETS_NAMESPACE" >/dev/null 2>&1; then
+            kubectl delete ns "$SECRETS_NAMESPACE" --ignore-not-found
+            echo "Namespace '$SECRETS_NAMESPACE' deleted"
+          else
+            echo "Namespace '$SECRETS_NAMESPACE' already deleted by package teardown"
+          fi
+
+          # Clean up cluster-scoped resources that may remain
+          kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found 2>/dev/null || true
+          kubectl delete clusterrolebinding vault-injector-binding --ignore-not-found 2>/dev/null || true
+          kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>/dev/null || true
+          echo "Secrets Demo cluster-scoped resources cleaned up"
+
+      - name: Delete Secrets Demo Supervisor Resources
+        if: env.TEARDOWN_SECRETS_DEMO == 'true'
+        run: |
+          set -euo pipefail
+          CONTEXT_NAME="teardown-deploy"
+
+          # Unset guest cluster kubeconfig
+          unset KUBECONFIG
+
+          # Switch to supervisor namespace context
+          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
+            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null || true
+          fi
+
+          # Install secret plugin if needed
+          vcf plugin install secret 2>/dev/null || true
+
+          # Delete KeyValueSecrets
+          echo "y" | vcf secret delete redis-creds 2>/dev/null || true
+          echo "y" | vcf secret delete postgres-creds 2>/dev/null || true
+          echo "KeyValueSecrets deleted"
+
+          # Delete ServiceAccount and token
+          kubectl delete sa internal-app --ignore-not-found 2>/dev/null || true
+          kubectl delete secret internal-app-token --ignore-not-found 2>/dev/null || true
+          echo "Secrets Demo supervisor resources cleaned up"
 
       # =====================================================================
       # Phase Group C: Cluster Stack Teardown
