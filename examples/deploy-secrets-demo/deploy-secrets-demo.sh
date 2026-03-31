@@ -568,19 +568,7 @@ spec:
         vault.hashicorp.com/agent-inject: "true"
         vault.hashicorp.com/role: "${SUPERVISOR_NAMESPACE}"
         vault.hashicorp.com/agent-inject-secret-redis-creds: "secret/data/${SUPERVISOR_NAMESPACE}/redis-creds"
-        vault.hashicorp.com/agent-inject-template-redis-creds: |
-          {{- with secret "secret/data/${SUPERVISOR_NAMESPACE}/redis-creds" -}}
-          {{- range \$k, \$v := .Data.data -}}
-          {{ \$k }}={{ \$v }}
-          {{ end -}}
-          {{- end -}}
         vault.hashicorp.com/agent-inject-secret-postgres-creds: "secret/data/${SUPERVISOR_NAMESPACE}/postgres-creds"
-        vault.hashicorp.com/agent-inject-template-postgres-creds: |
-          {{- with secret "secret/data/${SUPERVISOR_NAMESPACE}/postgres-creds" -}}
-          {{- range \$k, \$v := .Data.data -}}
-          {{ \$k }}={{ \$v }}
-          {{ end -}}
-          {{- end -}}
         vault.hashicorp.com/tls-skip-verify: "true"
     spec:
       serviceAccountName: test-service-account
