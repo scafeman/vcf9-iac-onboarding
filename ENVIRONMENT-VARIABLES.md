@@ -93,6 +93,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
 | `VM_NAME` | No | VirtualMachine resource name (default: `bastion-vm`) |
 | `STORAGE_CLASS` | No | Storage class for the VM disk (default: `nfs`) |
+| `SSH_USERNAME` | No | SSH username for the bastion VM (default: `rackadmin`) |
+| `SSH_PUBLIC_KEY` | No | SSH public key for the bastion VM user (default: ed25519 key) |
 | `VM_TIMEOUT` | No | Seconds to wait for VM PoweredOn (default: `600`) |
 | `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
 | `SSH_TIMEOUT` | No | Seconds to wait for SSH connectivity (default: `120`) |

@@ -53,6 +53,16 @@ on:
         required: false
         type: string
         default: "nfs"
+      ssh_username:
+        description: "SSH username for the bastion VM"
+        required: false
+        type: string
+        default: "rackadmin"
+      ssh_public_key:
+        description: "SSH public key for the bastion VM user"
+        required: false
+        type: string
+        default: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair"
 
   repository_dispatch:
     types: [deploy-bastion-vm]
@@ -75,6 +85,8 @@ jobs:
       VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04-server-cloudimg-amd64' }}
       VM_NAME: ${{ github.event.inputs.vm_name || github.event.client_payload.vm_name || secrets.VM_NAME || 'bastion-vm' }}
       STORAGE_CLASS: ${{ github.event.inputs.storage_class || github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
+      SSH_USERNAME: ${{ github.event.inputs.ssh_username || github.event.client_payload.ssh_username || secrets.SSH_USERNAME || 'rackadmin' }}
+      SSH_PUBLIC_KEY: ${{ github.event.inputs.ssh_public_key || github.event.client_payload.ssh_public_key || secrets.SSH_PUBLIC_KEY || 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair' }}
       VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
       LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
       SSH_TIMEOUT: ${{ github.event.client_payload.ssh_timeout || secrets.SSH_TIMEOUT || '120' }}
@@ -165,7 +177,7 @@ jobs:
             echo "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
           else
             # Generate cloud-init user data for minimal SSH jump host
-            CLOUD_INIT_USERDATA=$(cat <<'CLOUDINIT_INNER'
+            CLOUD_INIT_USERDATA=$(cat <<CLOUDINIT_INNER
           #cloud-config
           package_update: true
           packages:
@@ -173,12 +185,12 @@ jobs:
 
           users:
             - default
-            - name: rackadmin
+            - name: ${SSH_USERNAME}
               groups: sudo
               shell: /bin/bash
               sudo: ALL=(ALL) NOPASSWD:ALL
               ssh_authorized_keys:
-                - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair
+                - ${SSH_PUBLIC_KEY}
 
           runcmd:
             - |
@@ -380,7 +392,7 @@ jobs:
           echo "  VM Name:       ${VM_NAME}"
           echo "  Internal IP:   ${VM_IP}"
           echo "  External IP:   ${BASTION_EXTERNAL_IP}"
-          echo "  SSH Command:   ssh rackadmin@${BASTION_EXTERNAL_IP}"
+          echo "  SSH Command:   ssh ${SSH_USERNAME}@${BASTION_EXTERNAL_IP}"
           echo "  Allowed IPs:   ${ALLOWED_SSH_SOURCES}"
           echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
           echo "============================================="
@@ -397,7 +409,7 @@ jobs:
           | VM Name | \`${VM_NAME}\` |
           | Internal IP | \`${VM_IP}\` |
           | External IP | \`${{ steps.expose-ssh.outputs.bastion_external_ip }}\` |
-          | SSH Command | \`ssh rackadmin@${{ steps.expose-ssh.outputs.bastion_external_ip }}\` |
+          | SSH Command | \`ssh ${SSH_USERNAME}@${{ steps.expose-ssh.outputs.bastion_external_ip }}\` |
           | Allowed Source IPs | \`${ALLOWED_SSH_SOURCES}\` |
           | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
 
@@ -414,7 +426,7 @@ jobs:
           | VM Class | \`${VM_CLASS}\` |
           | VM Image | \`${VM_IMAGE}\` |
           | Storage Class | \`${STORAGE_CLASS}\` |
-          | OS User | \`rackadmin\` |
+          | OS User | \`${SSH_USERNAME}\` |
           | SSH Auth | ed25519 public key (password auth disabled) |
           EOF
 

@@ -22,12 +22,12 @@ Required:
   --supervisor-namespace       Supervisor namespace for VM provisioning
 
 Optional (override workflow defaults):
-  --bastion-external-ip        External IP for DNAT inbound SSH
-  --bastion-snat-ip            External IP for SNAT outbound access
   --allowed-ssh-sources        Comma-separated allowed SSH source IPs (default: 136.62.85.50)
   --vm-class                   VM Service compute class (default: best-effort-medium)
   --vm-image                   Content library image name (default: ubuntu-24.04-server-cloudimg-amd64)
   --vm-name                    Name for the VirtualMachine resource (default: bastion-vm)
+  --ssh-username               SSH username for the bastion VM (default: rackadmin)
+  --ssh-public-key             SSH public key for the bastion VM user
   --vcfa-endpoint              VCF Automation endpoint
   --tenant-name                VCF tenant name
 
@@ -36,8 +36,8 @@ Example:
     --repo myorg/vcf9-iac \\
     --token ghp_xxxxxxxxxxxx \\
     --supervisor-namespace my-project-ns \\
-    --bastion-external-ip 10.0.0.100 \\
-    --bastion-snat-ip 10.0.0.101
+    --ssh-username myuser \\
+    --ssh-public-key "ssh-ed25519 AAAA... my-key"
 EOF
 }
 
@@ -45,12 +45,12 @@ EOF
 REPO=""
 TOKEN=""
 SUPERVISOR_NAMESPACE=""
-BASTION_EXTERNAL_IP=""
-BASTION_SNAT_IP=""
 ALLOWED_SSH_SOURCES=""
 VM_CLASS=""
 VM_IMAGE=""
 VM_NAME=""
+SSH_USERNAME=""
+SSH_PUBLIC_KEY=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -60,12 +60,12 @@ while [[ $# -gt 0 ]]; do
     --repo)                       REPO="$2"; shift 2 ;;
     --token)                      TOKEN="$2"; shift 2 ;;
     --supervisor-namespace)       SUPERVISOR_NAMESPACE="$2"; shift 2 ;;
-    --bastion-external-ip)        BASTION_EXTERNAL_IP="$2"; shift 2 ;;
-    --bastion-snat-ip)            BASTION_SNAT_IP="$2"; shift 2 ;;
     --allowed-ssh-sources)        ALLOWED_SSH_SOURCES="$2"; shift 2 ;;
     --vm-class)                   VM_CLASS="$2"; shift 2 ;;
     --vm-image)                   VM_IMAGE="$2"; shift 2 ;;
     --vm-name)                    VM_NAME="$2"; shift 2 ;;
+    --ssh-username)               SSH_USERNAME="$2"; shift 2 ;;
+    --ssh-public-key)             SSH_PUBLIC_KEY="$2"; shift 2 ;;
     --vcfa-endpoint)              VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)                TENANT_NAME="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
@@ -105,12 +105,12 @@ add_field() {
   fi
 }
 
-add_field "bastion_external_ip"    "$BASTION_EXTERNAL_IP"
-add_field "bastion_snat_ip"        "$BASTION_SNAT_IP"
 add_field "allowed_ssh_sources"    "$ALLOWED_SSH_SOURCES"
 add_field "vm_class"               "$VM_CLASS"
 add_field "vm_image"               "$VM_IMAGE"
 add_field "vm_name"                "$VM_NAME"
+add_field "ssh_username"           "$SSH_USERNAME"
+add_field "ssh_public_key"         "$SSH_PUBLIC_KEY"
 add_field "vcfa_endpoint"          "$VCFA_ENDPOINT"
 add_field "tenant_name"            "$TENANT_NAME"
 

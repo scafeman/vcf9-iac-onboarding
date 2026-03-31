@@ -30,7 +30,7 @@ The script is fully non-interactive. All configuration is driven by environment 
 Creates a Kubernetes Secret (`bastion-vm-cloud-init`) containing cloud-init user data that configures a minimal SSH jump host:
 
 - Installs `openssh-server`
-- Creates the `rackadmin` user with sudo privileges and an `ssh-ed25519` authorized key
+- Creates the configured SSH user (default: `rackadmin`) with sudo privileges and the configured SSH public key
 - Disables password authentication via `sshd_config`
 
 Applies a `VirtualMachine` manifest (`vmoperator.vmware.com/v1alpha3`) to the supervisor namespace referencing the cloud-init Secret. The VM is created with an `app: bastion-vm` label used by the VirtualMachineService selector. Waits for the VM to reach `PoweredOn` power state (timeout: 600s, polling every 30s), then extracts the VM internal IP address from the VirtualMachine status.
@@ -72,6 +72,8 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `VM_IMAGE` | No | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
 | `VM_NAME` | No | `bastion-vm` | Name for the VirtualMachine resource |
 | `STORAGE_CLASS` | No | `nfs` | Storage class for VM |
+| `SSH_USERNAME` | No | `rackadmin` | SSH username for the bastion VM |
+| `SSH_PUBLIC_KEY` | No | *(ed25519 key)* | SSH public key for the bastion VM user |
 | `VM_TIMEOUT` | No | `600` | Seconds to wait for VM PoweredOn |
 | `LB_TIMEOUT` | No | `300` | Seconds to wait for LoadBalancer external IP |
 | `SSH_TIMEOUT` | No | `120` | Seconds to wait for SSH connectivity |

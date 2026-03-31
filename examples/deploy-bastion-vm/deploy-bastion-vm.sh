@@ -50,6 +50,10 @@ VM_IMAGE="${VM_IMAGE:-ubuntu-24.04-server-cloudimg-amd64}"
 VM_NAME="${VM_NAME:-bastion-vm}"
 STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
 
+# --- SSH User Configuration ---
+SSH_USERNAME="${SSH_USERNAME:-rackadmin}"
+SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair}"
+
 # --- Timeouts and Polling ---
 VM_TIMEOUT="${VM_TIMEOUT:-600}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
@@ -150,7 +154,7 @@ if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/nu
   log_success "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
 else
   # Generate cloud-init user data for minimal SSH jump host
-  CLOUD_INIT_USERDATA=$(cat <<'CLOUDINIT_INNER'
+  CLOUD_INIT_USERDATA=$(cat <<CLOUDINIT_INNER
 #cloud-config
 package_update: true
 packages:
@@ -158,12 +162,12 @@ packages:
 
 users:
   - default
-  - name: rackadmin
+  - name: ${SSH_USERNAME}
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair
+      - ${SSH_PUBLIC_KEY}
 
 runcmd:
   - |
@@ -354,7 +358,7 @@ echo "============================================="
 echo "  VM Name:       ${VM_NAME}"
 echo "  Internal IP:   ${VM_IP}"
 echo "  External IP:   ${BASTION_EXTERNAL_IP}"
-echo "  SSH Command:   ssh rackadmin@${BASTION_EXTERNAL_IP}"
+echo "  SSH Command:   ssh ${SSH_USERNAME}@${BASTION_EXTERNAL_IP}"
 echo "  Allowed IPs:   ${ALLOWED_SSH_SOURCES}"
 echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
 echo "============================================="
