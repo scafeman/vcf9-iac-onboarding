@@ -112,6 +112,18 @@ Typical deployment time: **8–12 minutes**. Requires a running VKS cluster from
 
 See the [Deploy Hybrid App README](examples/deploy-hybrid-app/README-deploy.md) for details.
 
+### Deploy Bastion VM
+
+Deploys a minimal Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted access via a VirtualMachineService LoadBalancer.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-bastion-vm/deploy-bastion-vm.sh
+```
+
+Typical deployment time: **4–12 minutes**. Requires a supervisor namespace with VPC networking (no VKS cluster required).
+
+See the [Deploy Bastion VM README](examples/deploy-bastion-vm/README-deploy.md) for details.
+
 ## Teardown
 
 Each deployment has a corresponding teardown script. Teardown scripts are fully idempotent — safe to run multiple times.
@@ -123,6 +135,14 @@ docker exec vcf9-dev bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
 ```
 
 Typical teardown time: **2–4 minutes**.
+
+### Teardown Bastion VM
+
+```bash
+docker exec vcf9-dev bash examples/deploy-bastion-vm/teardown-bastion-vm.sh
+```
+
+Typical teardown time: **1–6 minutes**.
 
 ### Teardown GitOps
 

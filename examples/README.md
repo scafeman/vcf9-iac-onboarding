@@ -227,7 +227,8 @@ These end-to-end scripts orchestrate full deployments across multiple VCF resour
 Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
   ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
-  └─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
+  ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
+  └─► Deploy Bastion VM: SSH Jump Host (standalone VM — no VKS cluster required)
 ```
 
 Deploy Metrics, Deploy GitOps, and Deploy Hybrid App all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
@@ -268,6 +269,18 @@ Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructur
 | Deploy | `bash examples/deploy-gitops/deploy-gitops.sh` |
 | Teardown | `bash examples/deploy-gitops/teardown-gitops.sh` |
 | Output | Harbor, GitLab, ArgoCD, and Online Boutique accessible via Contour ingress (shared VKS package) |
+
+## Deploy Bastion VM: SSH Jump Host
+
+Deploys a minimal Ubuntu 24.04 bastion VM as a secure SSH jump host in a VCF 9 supervisor namespace. The VM is exposed via a `VirtualMachineService` LoadBalancer with `loadBalancerSourceRanges` to restrict SSH access to specific source IPs. The public IP is automatically allocated from the NSX VPC external IP pool.
+
+| | |
+|---|---|
+| Folder | [`deploy-bastion-vm/`](deploy-bastion-vm/) |
+| Depends on | Supervisor Namespace with VPC networking (no VKS cluster required) |
+| Deploy | `bash examples/deploy-bastion-vm/deploy-bastion-vm.sh` |
+| Teardown | `bash examples/deploy-bastion-vm/teardown-bastion-vm.sh` |
+| Output | SSH-accessible bastion VM at auto-assigned LoadBalancer IP, restricted to allowed source IPs |
 
 ## Deploy Hybrid App: Infrastructure Asset Tracker
 

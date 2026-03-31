@@ -1,0 +1,387 @@
+# =============================================================================
+# Deploy Bastion VM — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow deploys an Ubuntu 24.04 bastion VM as a minimal SSH jump host
+# in a VCF 9 supervisor namespace. It provisions the VM via VM Service +
+# cloud-init, exposes SSH on port 22 through a VirtualMachineService
+# LoadBalancer with loadBalancerSourceRanges to restrict ingress to allowed
+# source IPs, and verifies SSH connectivity via the auto-assigned external IP.
+#
+# Prerequisites:
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the supervisor API. All required tools (VCF CLI,
+#     kubectl, nc, jq) are baked into the runner via Dockerfile.runner.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-bastion-vm"
+#
+# =============================================================================
+
+name: Deploy Bastion VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      supervisor_namespace:
+        description: "Supervisor namespace where the bastion VM will be provisioned"
+        required: true
+        type: string
+      allowed_ssh_sources:
+        description: "Comma-separated list of allowed SSH source IPs"
+        required: false
+        type: string
+        default: "136.62.85.50"
+      vm_class:
+        description: "VM Service compute class"
+        required: false
+        type: string
+        default: "best-effort-medium"
+      vm_image:
+        description: "Content library image name"
+        required: false
+        type: string
+        default: "ubuntu-24.04-server-cloudimg-amd64"
+      vm_name:
+        description: "Name for the VirtualMachine resource"
+        required: false
+        type: string
+        default: "bastion-vm"
+      storage_class:
+        description: "Storage class for VM disk"
+        required: false
+        type: string
+        default: "nfs"
+
+  repository_dispatch:
+    types: [deploy-bastion-vm]
+
+jobs:
+  deploy:
+    name: Deploy Bastion VM
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
+      SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
+      ALLOWED_SSH_SOURCES: ${{ github.event.inputs.allowed_ssh_sources || github.event.client_payload.allowed_ssh_sources || secrets.ALLOWED_SSH_SOURCES || '136.62.85.50' }}
+      VM_CLASS: ${{ github.event.inputs.vm_class || github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
+      VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04-server-cloudimg-amd64' }}
+      VM_NAME: ${{ github.event.inputs.vm_name || github.event.client_payload.vm_name || secrets.VM_NAME || 'bastion-vm' }}
+      STORAGE_CLASS: ${{ github.event.inputs.storage_class || github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
+      VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
+      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
+      SSH_TIMEOUT: ${{ github.event.client_payload.ssh_timeout || secrets.SSH_TIMEOUT || '120' }}
+      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '30' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+      # --- Static Configuration ---
+      CONTEXT_NAME: bastion-vm-deploy
+
+    steps:
+      # Step 1: Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Step 2: Validate Inputs
+      - name: Validate Inputs
+        run: |
+          set -euo pipefail
+          # Trim leading/trailing whitespace from input parameters
+          SUPERVISOR_NAMESPACE="$(echo -n "$SUPERVISOR_NAMESPACE" | xargs)"
+          ALLOWED_SSH_SOURCES="$(echo -n "$ALLOWED_SSH_SOURCES" | xargs)"
+          VM_CLASS="$(echo -n "$VM_CLASS" | xargs)"
+          VM_IMAGE="$(echo -n "$VM_IMAGE" | xargs)"
+          VM_NAME="$(echo -n "$VM_NAME" | xargs)"
+          STORAGE_CLASS="$(echo -n "$STORAGE_CLASS" | xargs)"
+          # Export trimmed values for subsequent steps
+          echo "SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE" >> "$GITHUB_ENV"
+          echo "ALLOWED_SSH_SOURCES=$ALLOWED_SSH_SOURCES" >> "$GITHUB_ENV"
+          echo "VM_CLASS=$VM_CLASS" >> "$GITHUB_ENV"
+          echo "VM_IMAGE=$VM_IMAGE" >> "$GITHUB_ENV"
+          echo "VM_NAME=$VM_NAME" >> "$GITHUB_ENV"
+          echo "STORAGE_CLASS=$STORAGE_CLASS" >> "$GITHUB_ENV"
+          MISSING=""
+          for var in SUPERVISOR_NAMESPACE VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME; do
+            if [ -z "${!var:-}" ]; then
+              MISSING="${MISSING}  - ${var}\n"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required variables:"
+            echo -e "$MISSING"
+            exit 1
+          fi
+          echo "All required inputs validated successfully"
+          echo "  SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE"
+          echo "  ALLOWED_SSH_SOURCES=$ALLOWED_SSH_SOURCES"
+          echo "  VM_CLASS=$VM_CLASS"
+          echo "  VM_IMAGE=$VM_IMAGE"
+          echo "  VM_NAME=$VM_NAME"
+
+      # Step 3: Create VCF CLI Context
+      - name: Create VCF CLI Context
+        run: |
+          set -euo pipefail
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            exit 1
+          fi
+          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
+
+          # Switch to the namespace context for the supervisor namespace
+          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+          if [ -z "$NAMESPACE_CONTEXT" ]; then
+            echo "::error::Could not find a namespace context for supervisor namespace '${SUPERVISOR_NAMESPACE}' under context '${CONTEXT_NAME}'"
+            exit 1
+          fi
+          echo "Found namespace context: $NAMESPACE_CONTEXT"
+          vcf context use "$NAMESPACE_CONTEXT"
+          echo "Switched to namespace context '$NAMESPACE_CONTEXT'"
+
+      # Step 4: Provision Bastion VM
+      - name: Provision Bastion VM
+        run: |
+          set -euo pipefail
+
+          # Idempotency check — skip creation if VM already exists
+          if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+            echo "VirtualMachine '${VM_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
+          else
+            # Generate cloud-init user data for minimal SSH jump host
+            CLOUD_INIT_USERDATA=$(cat <<'CLOUDINIT_INNER'
+          #cloud-config
+          package_update: true
+          packages:
+            - openssh-server
+
+          users:
+            - default
+            - name: rackadmin
+              groups: sudo
+              shell: /bin/bash
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              ssh_authorized_keys:
+                - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair
+
+          runcmd:
+            - |
+              # Disable password authentication for SSH
+              sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              sed -i 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+              systemctl restart sshd
+              systemctl enable ssh
+          CLOUDINIT_INNER
+          )
+
+            # Create a Kubernetes Secret with the cloud-init user data
+            if kubectl get secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+              echo "Secret '${VM_NAME}-cloud-init' already exists, updating..."
+              kubectl delete secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+            fi
+            kubectl create secret generic "${VM_NAME}-cloud-init" \
+              -n "${SUPERVISOR_NAMESPACE}" \
+              --from-literal=user-data="${CLOUD_INIT_USERDATA}"
+            echo "Cloud-init Secret '${VM_NAME}-cloud-init' created"
+
+            # Apply VirtualMachine manifest with app label for VirtualMachineService selector
+            if ! cat <<EOF | kubectl apply -f -
+          apiVersion: vmoperator.vmware.com/v1alpha3
+          kind: VirtualMachine
+          metadata:
+            name: ${VM_NAME}
+            namespace: ${SUPERVISOR_NAMESPACE}
+            labels:
+              app: ${VM_NAME}
+          spec:
+            className: ${VM_CLASS}
+            imageName: ${VM_IMAGE}
+            storageClass: ${STORAGE_CLASS}
+            powerState: PoweredOn
+            bootstrap:
+              cloudInit:
+                rawCloudConfig:
+                  name: ${VM_NAME}-cloud-init
+                  key: user-data
+          EOF
+            then
+              echo "::error::Failed to apply VirtualMachine manifest for '${VM_NAME}'"
+              exit 1
+            fi
+
+            echo "VirtualMachine '${VM_NAME}' manifest applied to namespace '${SUPERVISOR_NAMESPACE}'"
+          fi
+
+          # Ensure the app label exists on the VM (for idempotent re-runs)
+          kubectl label virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" app="${VM_NAME}" --overwrite 2>/dev/null || true
+
+          # Wait for VM to reach PoweredOn state
+          TIMEOUT="${VM_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            POWER_STATE=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.powerState}' 2>/dev/null || echo "Unknown")
+            if [ "$POWER_STATE" = "PoweredOn" ]; then
+              echo "VM '${VM_NAME}' is powered on and ready"
+              break
+            fi
+            echo "VM power state: $POWER_STATE — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            VM_STATUS=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status}' 2>/dev/null || echo "unable to retrieve status")
+            echo "::error::VM '${VM_NAME}' did not reach PoweredOn state within ${TIMEOUT}s. Current status: ${VM_STATUS}"
+            exit 1
+          fi
+
+          # Wait for VM IP address to be assigned
+          echo "Waiting for VM IP address to be assigned..."
+          IP_TIMEOUT=120
+          IP_ELAPSED=0
+          VM_IP=""
+          while [ "$IP_ELAPSED" -lt "$IP_TIMEOUT" ]; do
+            VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.primaryIP4}' 2>/dev/null || true)
+            if [ -z "${VM_IP}" ]; then
+              VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.network.interfaces[0].ip.addresses[0].address}' 2>/dev/null || true)
+            fi
+            if [ -z "${VM_IP}" ]; then
+              VM_IP=$(kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.vmIp}' 2>/dev/null || true)
+            fi
+            if [ -n "${VM_IP}" ]; then
+              break
+            fi
+            echo "VM IP not yet assigned — waiting... (${IP_ELAPSED}s/${IP_TIMEOUT}s)"
+            sleep 10
+            IP_ELAPSED=$((IP_ELAPSED + 10))
+          done
+
+          if [ -z "${VM_IP}" ]; then
+            echo "::error::Failed to extract IP address for VM '${VM_NAME}' within ${IP_TIMEOUT}s. Check VirtualMachine status."
+            exit 1
+          fi
+
+          echo "VM_IP=$VM_IP" >> "$GITHUB_ENV"
+          echo "Bastion VM internal IP address: ${VM_IP}"
+
+      # Step 5: Expose SSH via VirtualMachineService LoadBalancer
+      - name: Expose SSH via VirtualMachineService
+        id: expose-ssh
+        run: |
+          set -euo pipefail
+          VMSERVICE_NAME="${VM_NAME}-ssh"
+
+          # Build loadBalancerSourceRanges YAML from comma-separated ALLOWED_SSH_SOURCES
+          SOURCE_RANGES_YAML=""
+          IFS=',' read -ra SOURCE_IPS <<< "${ALLOWED_SSH_SOURCES}"
+          for ip in "${SOURCE_IPS[@]}"; do
+            ip=$(echo "${ip}" | xargs)
+            SOURCE_RANGES_YAML="${SOURCE_RANGES_YAML}
+            - ${ip}/32"
+          done
+
+          # Idempotency check
+          if kubectl get virtualmachineservice "${VMSERVICE_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+            echo "VirtualMachineService '${VMSERVICE_NAME}' already exists, skipping creation"
+          else
+            if ! cat <<EOF | kubectl apply -f -
+          apiVersion: vmoperator.vmware.com/v1alpha3
+          kind: VirtualMachineService
+          metadata:
+            name: ${VMSERVICE_NAME}
+            namespace: ${SUPERVISOR_NAMESPACE}
+          spec:
+            type: LoadBalancer
+            loadBalancerSourceRanges:${SOURCE_RANGES_YAML}
+            selector:
+              app: ${VM_NAME}
+            ports:
+            - name: ssh
+              port: 22
+              protocol: TCP
+              targetPort: 22
+          EOF
+            then
+              echo "::error::Failed to create VirtualMachineService '${VMSERVICE_NAME}'"
+              exit 1
+            fi
+            echo "VirtualMachineService '${VMSERVICE_NAME}' created (allowed sources: ${ALLOWED_SSH_SOURCES})"
+          fi
+
+          # Wait for LoadBalancer external IP
+          LB_ELAPSED=0
+          BASTION_EXTERNAL_IP=""
+          while [ "$LB_ELAPSED" -lt "$LB_TIMEOUT" ]; do
+            BASTION_EXTERNAL_IP=$(kubectl get virtualmachineservice "${VMSERVICE_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$BASTION_EXTERNAL_IP" ]; then
+              break
+            fi
+            echo "Waiting for LoadBalancer '${VMSERVICE_NAME}' to receive external IP... (${LB_ELAPSED}s/${LB_TIMEOUT}s)"
+            sleep "$POLL_INTERVAL"
+            LB_ELAPSED=$((LB_ELAPSED + POLL_INTERVAL))
+          done
+
+          if [ -z "$BASTION_EXTERNAL_IP" ]; then
+            echo "::error::LoadBalancer '${VMSERVICE_NAME}' did not receive an external IP within ${LB_TIMEOUT}s"
+            kubectl get virtualmachineservice "${VMSERVICE_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o wide 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "BASTION_EXTERNAL_IP=$BASTION_EXTERNAL_IP" >> "$GITHUB_ENV"
+          echo "bastion_external_ip=$BASTION_EXTERNAL_IP" >> "$GITHUB_OUTPUT"
+          echo "Bastion external IP: ${BASTION_EXTERNAL_IP}"
+
+      # Step 6: SSH Connectivity Verification
+      - name: SSH Connectivity Verification
+        run: |
+          set -euo pipefail
+          BASTION_EXTERNAL_IP="${{ steps.expose-ssh.outputs.bastion_external_ip }}"
+          TIMEOUT="${SSH_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if nc -z -w 5 "${BASTION_EXTERNAL_IP}" 22 >/dev/null 2>&1; then
+              echo "SSH connectivity test passed — port 22 is reachable on ${BASTION_EXTERNAL_IP}"
+              break
+            fi
+            echo "SSH not yet reachable on ${BASTION_EXTERNAL_IP}:22, retrying... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::error::SSH connectivity test failed — port 22 not reachable on ${BASTION_EXTERNAL_IP} within ${TIMEOUT}s"
+            exit 1
+          fi
+
+          echo ""
+          echo "============================================="
+          echo "  VCF 9 Bastion VM — Deployment Complete"
+          echo "============================================="
+          echo "  VM Name:       ${VM_NAME}"
+          echo "  Internal IP:   ${VM_IP}"
+          echo "  External IP:   ${BASTION_EXTERNAL_IP}"
+          echo "  SSH Command:   ssh rackadmin@${BASTION_EXTERNAL_IP}"
+          echo "  Allowed IPs:   ${ALLOWED_SSH_SOURCES}"
+          echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
+          echo "============================================="
+          echo ""
