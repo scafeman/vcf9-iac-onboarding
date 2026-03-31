@@ -385,3 +385,58 @@ jobs:
           echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
           echo "============================================="
           echo ""
+
+      # Step 7: Write Job Summary
+      - name: Write Job Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ Bastion VM Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | VM Name | \`${VM_NAME}\` |
+          | Internal IP | \`${VM_IP}\` |
+          | External IP | \`${{ steps.expose-ssh.outputs.bastion_external_ip }}\` |
+          | SSH Command | \`ssh rackadmin@${{ steps.expose-ssh.outputs.bastion_external_ip }}\` |
+          | Allowed Source IPs | \`${ALLOWED_SSH_SOURCES}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+
+          ### Resources Created
+          | Resource | Kind | Name |
+          |---|---|---|
+          | Cloud-Init Secret | \`Secret\` | \`${VM_NAME}-cloud-init\` |
+          | Bastion VM | \`VirtualMachine\` | \`${VM_NAME}\` |
+          | SSH LoadBalancer | \`VirtualMachineService\` | \`${VM_NAME}-ssh\` |
+
+          ### VM Configuration
+          | Setting | Value |
+          |---|---|
+          | VM Class | \`${VM_CLASS}\` |
+          | VM Image | \`${VM_IMAGE}\` |
+          | Storage Class | \`${STORAGE_CLASS}\` |
+          | OS User | \`rackadmin\` |
+          | SSH Auth | ed25519 public key (password auth disabled) |
+          EOF
+
+      # Step 8: Write Failure Summary
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ Bastion VM Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | VM Name | \`${VM_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | Allowed Source IPs | \`${ALLOWED_SSH_SOURCES}\` |
+          | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Verify the supervisor namespace exists and is accessible
+          3. Check that the VM image is available in the content library
+          4. Verify the NSX load balancer has capacity for a new external IP
+          5. Ensure the runner's outbound IP is in \`ALLOWED_SSH_SOURCES\` for the SSH connectivity test
+          6. Re-run the workflow — all steps are idempotent and will skip already-completed work
+          EOF
