@@ -42,6 +42,7 @@ declare -A RESOURCE_STATUS
 RESOURCE_STATUS=(
   ["vmservice"]="not attempted"
   ["virtualmachine"]="not attempted"
+  ["data-pvc"]="not attempted"
   ["cloud-init-secret"]="not attempted"
 )
 
@@ -191,10 +192,34 @@ else
 fi
 
 ###############################################################################
-# Phase 3: Delete Cloud-Init Secret
+# Phase 3: Delete Data Disk PVC (if exists)
 ###############################################################################
 
-log_step 3 "Deleting cloud-init Secret '${VM_NAME}-cloud-init' in namespace '${SUPERVISOR_NAMESPACE}'"
+DATA_PVC_NAME="${VM_NAME}-data"
+
+log_step 3 "Deleting data disk PVC '${DATA_PVC_NAME}' in namespace '${SUPERVISOR_NAMESPACE}'"
+
+if kubectl get pvc "${DATA_PVC_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+  # Strip finalizer if stuck
+  kubectl patch pvc "${DATA_PVC_NAME}" -n "${SUPERVISOR_NAMESPACE}" \
+    --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+  if kubectl delete pvc "${DATA_PVC_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
+    log_success "PVC '${DATA_PVC_NAME}' deleted"
+    RESOURCE_STATUS["data-pvc"]="deleted"
+  else
+    log_warn "Failed to delete PVC '${DATA_PVC_NAME}' — continuing"
+    RESOURCE_STATUS["data-pvc"]="failed"
+  fi
+else
+  log_success "PVC '${DATA_PVC_NAME}' does not exist, already absent"
+  RESOURCE_STATUS["data-pvc"]="already absent"
+fi
+
+###############################################################################
+# Phase 4: Delete Cloud-Init Secret
+###############################################################################
+
+log_step 4 "Deleting cloud-init Secret '${VM_NAME}-cloud-init' in namespace '${SUPERVISOR_NAMESPACE}'"
 
 if kubectl get secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
   if kubectl delete secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
@@ -221,6 +246,7 @@ echo "  VM Name:            ${VM_NAME}"
 echo "  Namespace:          ${SUPERVISOR_NAMESPACE}"
 echo "  VMService:          ${VMSERVICE_NAME} (${RESOURCE_STATUS["vmservice"]})"
 echo "  VirtualMachine:     ${VM_NAME} (${RESOURCE_STATUS["virtualmachine"]})"
+echo "  Data Disk PVC:      ${VM_NAME}-data (${RESOURCE_STATUS["data-pvc"]})"
 echo "  Cloud-Init Secret:  ${VM_NAME}-cloud-init (${RESOURCE_STATUS["cloud-init-secret"]})"
 echo "============================================="
 echo ""

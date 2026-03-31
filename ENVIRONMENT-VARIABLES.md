@@ -95,6 +95,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `STORAGE_CLASS` | No | Storage class for the VM disk (default: `nfs`) |
 | `SSH_USERNAME` | No | SSH username for the bastion VM (default: `rackadmin`) |
 | `SSH_PUBLIC_KEY` | No | SSH public key for the bastion VM user (default: ed25519 key) |
+| `BOOT_DISK_SIZE` | No | Boot disk size override, e.g. `50Gi` (default: image default) |
+| `DATA_DISK_SIZE` | No | Additional data disk size, e.g. `100Gi` (default: none) |
 | `VM_TIMEOUT` | No | Seconds to wait for VM PoweredOn (default: `600`) |
 | `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
 | `SSH_TIMEOUT` | No | Seconds to wait for SSH connectivity (default: `120`) |

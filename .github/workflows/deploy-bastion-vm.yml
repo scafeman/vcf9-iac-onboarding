@@ -63,6 +63,16 @@ on:
         required: false
         type: string
         default: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair"
+      boot_disk_size:
+        description: "Boot disk size override (e.g., 50Gi). Leave empty for image default."
+        required: false
+        type: string
+        default: ""
+      data_disk_size:
+        description: "Additional data disk size (e.g., 100Gi). Leave empty for no data disk."
+        required: false
+        type: string
+        default: ""
 
   repository_dispatch:
     types: [deploy-bastion-vm]
@@ -87,6 +97,8 @@ jobs:
       STORAGE_CLASS: ${{ github.event.inputs.storage_class || github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
       SSH_USERNAME: ${{ github.event.inputs.ssh_username || github.event.client_payload.ssh_username || secrets.SSH_USERNAME || 'rackadmin' }}
       SSH_PUBLIC_KEY: ${{ github.event.inputs.ssh_public_key || github.event.client_payload.ssh_public_key || secrets.SSH_PUBLIC_KEY || 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair' }}
+      BOOT_DISK_SIZE: ${{ github.event.inputs.boot_disk_size || github.event.client_payload.boot_disk_size || '' }}
+      DATA_DISK_SIZE: ${{ github.event.inputs.data_disk_size || github.event.client_payload.data_disk_size || '' }}
       VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
       LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
       SSH_TIMEOUT: ${{ github.event.client_payload.ssh_timeout || secrets.SSH_TIMEOUT || '120' }}
@@ -212,6 +224,27 @@ jobs:
               --from-literal=user-data="${CLOUD_INIT_USERDATA}"
             echo "Cloud-init Secret '${VM_NAME}-cloud-init' created"
 
+            # Build optional advanced spec for boot disk resize
+            ADVANCED_SPEC=""
+            if [ -n "${BOOT_DISK_SIZE}" ]; then
+              ADVANCED_SPEC="  advanced:
+              bootDiskCapacity: ${BOOT_DISK_SIZE}"
+              echo "Boot disk will be resized to ${BOOT_DISK_SIZE}"
+            fi
+
+            # Build optional volumes spec for data disk
+            VOLUMES_SPEC=""
+            if [ -n "${DATA_DISK_SIZE}" ]; then
+              VOLUMES_SPEC="  volumes:
+            - name: data-disk
+              persistentVolumeClaim:
+                claimName: ${VM_NAME}-data
+                instanceVolumeClaim:
+                  size: ${DATA_DISK_SIZE}
+                  storageClass: ${STORAGE_CLASS}"
+              echo "Data disk will be provisioned at ${DATA_DISK_SIZE}"
+            fi
+
             # Apply VirtualMachine manifest with app label for VirtualMachineService selector
             if ! cat <<EOF | kubectl apply -f -
           apiVersion: vmoperator.vmware.com/v1alpha3
@@ -226,11 +259,13 @@ jobs:
             imageName: ${VM_IMAGE}
             storageClass: ${STORAGE_CLASS}
             powerState: PoweredOn
+          ${ADVANCED_SPEC:+${ADVANCED_SPEC}}
             bootstrap:
               cloudInit:
                 rawCloudConfig:
                   name: ${VM_NAME}-cloud-init
                   key: user-data
+          ${VOLUMES_SPEC:+${VOLUMES_SPEC}}
           EOF
             then
               echo "::error::Failed to apply VirtualMachine manifest for '${VM_NAME}'"
@@ -426,6 +461,8 @@ jobs:
           | VM Class | \`${VM_CLASS}\` |
           | VM Image | \`${VM_IMAGE}\` |
           | Storage Class | \`${STORAGE_CLASS}\` |
+          | Boot Disk | \`${BOOT_DISK_SIZE:-image default}\` |
+          | Data Disk | \`${DATA_DISK_SIZE:-none}\` |
           | OS User | \`${SSH_USERNAME}\` |
           | SSH Auth | ed25519 public key (password auth disabled) |
           EOF

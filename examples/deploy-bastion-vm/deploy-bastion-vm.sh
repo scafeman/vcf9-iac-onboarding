@@ -54,6 +54,10 @@ STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
 SSH_USERNAME="${SSH_USERNAME:-rackadmin}"
 SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair}"
 
+# --- Disk Configuration ---
+BOOT_DISK_SIZE="${BOOT_DISK_SIZE:-}"
+DATA_DISK_SIZE="${DATA_DISK_SIZE:-}"
+
 # --- Timeouts and Polling ---
 VM_TIMEOUT="${VM_TIMEOUT:-600}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
@@ -189,6 +193,27 @@ CLOUDINIT_INNER
     --from-literal=user-data="${CLOUD_INIT_USERDATA}"
   log_success "Cloud-init Secret '${VM_NAME}-cloud-init' created"
 
+  # Build optional advanced spec for boot disk resize
+  ADVANCED_SPEC=""
+  if [[ -n "${BOOT_DISK_SIZE}" ]]; then
+    ADVANCED_SPEC="  advanced:
+    bootDiskCapacity: ${BOOT_DISK_SIZE}"
+    log_success "Boot disk will be resized to ${BOOT_DISK_SIZE}"
+  fi
+
+  # Build optional volumes spec for data disk
+  VOLUMES_SPEC=""
+  if [[ -n "${DATA_DISK_SIZE}" ]]; then
+    VOLUMES_SPEC="  volumes:
+  - name: data-disk
+    persistentVolumeClaim:
+      claimName: ${VM_NAME}-data
+      instanceVolumeClaim:
+        size: ${DATA_DISK_SIZE}
+        storageClass: ${STORAGE_CLASS}"
+    log_success "Data disk will be provisioned at ${DATA_DISK_SIZE}"
+  fi
+
   # Apply VirtualMachine manifest with app label for VirtualMachineService selector
   if ! cat <<EOF | kubectl apply -f -
 apiVersion: vmoperator.vmware.com/v1alpha3
@@ -203,11 +228,13 @@ spec:
   imageName: ${VM_IMAGE}
   storageClass: ${STORAGE_CLASS}
   powerState: PoweredOn
+${ADVANCED_SPEC:+${ADVANCED_SPEC}}
   bootstrap:
     cloudInit:
       rawCloudConfig:
         name: ${VM_NAME}-cloud-init
         key: user-data
+${VOLUMES_SPEC:+${VOLUMES_SPEC}}
 EOF
   then
     log_error "Failed to apply VirtualMachine manifest for '${VM_NAME}'"
@@ -360,6 +387,8 @@ echo "  Internal IP:   ${VM_IP}"
 echo "  External IP:   ${BASTION_EXTERNAL_IP}"
 echo "  SSH Command:   ssh ${SSH_USERNAME}@${BASTION_EXTERNAL_IP}"
 echo "  Allowed IPs:   ${ALLOWED_SSH_SOURCES}"
+echo "  Boot Disk:     ${BOOT_DISK_SIZE:-image default}"
+echo "  Data Disk:     ${DATA_DISK_SIZE:-none}"
 echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
 echo "============================================="
 echo ""

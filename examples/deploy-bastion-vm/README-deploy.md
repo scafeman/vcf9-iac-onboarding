@@ -74,6 +74,8 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `STORAGE_CLASS` | No | `nfs` | Storage class for VM |
 | `SSH_USERNAME` | No | `rackadmin` | SSH username for the bastion VM |
 | `SSH_PUBLIC_KEY` | No | *(ed25519 key)* | SSH public key for the bastion VM user |
+| `BOOT_DISK_SIZE` | No | *(image default)* | Boot disk size override (e.g., `50Gi`). Leave empty for image default. |
+| `DATA_DISK_SIZE` | No | *(none)* | Additional data disk size (e.g., `100Gi`). Leave empty for no data disk. |
 | `VM_TIMEOUT` | No | `600` | Seconds to wait for VM PoweredOn |
 | `LB_TIMEOUT` | No | `300` | Seconds to wait for LoadBalancer external IP |
 | `SSH_TIMEOUT` | No | `120` | Seconds to wait for SSH connectivity |
