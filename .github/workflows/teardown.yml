@@ -733,32 +733,51 @@ jobs:
           VM_DELETE_TIMEOUT=300
           POLL_INTERVAL=15
 
-          # Unset guest cluster kubeconfig
+          # Unset guest cluster kubeconfig so kubectl uses VCF CLI context
           unset KUBECONFIG
 
-          # Switch to supervisor namespace context
-          PROJECT_NAME=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
-          if [ -n "${DYNAMIC_NS_NAME:-}" ]; then
-            vcf context use "${CONTEXT_NAME}:${DYNAMIC_NS_NAME}:${PROJECT_NAME}" 2>/dev/null || true
+          # Establish VCF CLI context for supervisor operations
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current
+
+          # Discover the namespace context from the cluster name
+          PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+
+          if [ -z "$NAMESPACE_CONTEXT" ]; then
+            echo "::warning::Could not find namespace context for project pattern '${PROJECT_PATTERN}'. Bastion VM teardown skipped."
+            exit 0
           fi
 
+          echo "Found namespace context: $NAMESPACE_CONTEXT"
+          vcf context use "$NAMESPACE_CONTEXT"
+
+          # Extract the namespace name from the context (format: context:namespace:project)
+          NS_NAME=$(echo "$NAMESPACE_CONTEXT" | cut -d: -f2)
+          echo "Targeting supervisor namespace: $NS_NAME"
+
           # Delete VirtualMachineService (releases LoadBalancer IP)
-          if kubectl get virtualmachineservice "$VMSERVICE_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
-            kubectl delete virtualmachineservice "$VMSERVICE_NAME" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found
+          if kubectl get virtualmachineservice "$VMSERVICE_NAME" -n "$NS_NAME" >/dev/null 2>&1; then
+            kubectl delete virtualmachineservice "$VMSERVICE_NAME" -n "$NS_NAME" --ignore-not-found
             echo "VirtualMachineService '$VMSERVICE_NAME' deleted"
           else
             echo "VirtualMachineService '$VMSERVICE_NAME' does not exist, skipping"
           fi
 
           # Delete VirtualMachine
-          if kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
-            kubectl delete virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found
+          if kubectl get virtualmachine "$VM_NAME" -n "$NS_NAME" >/dev/null 2>&1; then
+            kubectl delete virtualmachine "$VM_NAME" -n "$NS_NAME" --ignore-not-found
             echo "VirtualMachine '$VM_NAME' delete command issued"
 
             # Wait for VM termination
             ELAPSED=0
             while [ "$ELAPSED" -lt "$VM_DELETE_TIMEOUT" ]; do
-              if ! kubectl get virtualmachine "$VM_NAME" -n "${DYNAMIC_NS_NAME:-}" >/dev/null 2>&1; then
+              if ! kubectl get virtualmachine "$VM_NAME" -n "$NS_NAME" >/dev/null 2>&1; then
                 echo "VirtualMachine '$VM_NAME' fully terminated"
                 break
               fi
@@ -766,12 +785,16 @@ jobs:
               sleep "$POLL_INTERVAL"
               ELAPSED=$((ELAPSED + POLL_INTERVAL))
             done
+
+            if [ "$ELAPSED" -ge "$VM_DELETE_TIMEOUT" ]; then
+              echo "::warning::VirtualMachine '$VM_NAME' was not fully terminated within ${VM_DELETE_TIMEOUT}s"
+            fi
           else
             echo "VirtualMachine '$VM_NAME' does not exist, skipping"
           fi
 
           # Delete cloud-init Secret
-          kubectl delete secret "${VM_NAME}-cloud-init" -n "${DYNAMIC_NS_NAME:-}" --ignore-not-found 2>/dev/null || true
+          kubectl delete secret "${VM_NAME}-cloud-init" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
           echo "Bastion VM resources cleaned up"
 
       # =====================================================================
