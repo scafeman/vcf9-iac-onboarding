@@ -83,6 +83,22 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 
 ---
 
+## Deploy Bastion VM — SSH Jump Host
+
+| Variable | Required | Description |
+|---|---|---|
+| `SUPERVISOR_NAMESPACE` | Yes | Supervisor namespace where the bastion VM will be provisioned |
+| `ALLOWED_SSH_SOURCES` | No | Comma-separated allowed SSH source IPs (default: `136.62.85.50`) |
+| `VM_CLASS` | No | VM Service compute class (default: `best-effort-medium`) |
+| `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
+| `VM_NAME` | No | VirtualMachine resource name (default: `bastion-vm`) |
+| `STORAGE_CLASS` | No | Storage class for the VM disk (default: `nfs`) |
+| `VM_TIMEOUT` | No | Seconds to wait for VM PoweredOn (default: `600`) |
+| `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
+| `SSH_TIMEOUT` | No | Seconds to wait for SSH connectivity (default: `120`) |
+
+---
+
 ## GitHub Actions Runner
 
 | Variable | Required | Description |

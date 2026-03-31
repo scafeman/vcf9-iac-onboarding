@@ -541,3 +541,48 @@ def hybrid_app_trigger_script_text() -> str:
     """Return the raw text of scripts/trigger-deploy-hybrid-app.sh."""
     with open(HYBRID_APP_TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Deploy Bastion VM Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def bastion_deploy_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-bastion-vm', 'deploy-bastion-vm.sh')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def bastion_teardown_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-bastion-vm', 'teardown-bastion-vm.sh')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def bastion_workflow_yaml_text():
+    path = os.path.join(os.path.dirname(__file__), '..', '.github', 'workflows', 'deploy-bastion-vm.yml')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def bastion_workflow_yaml(bastion_workflow_yaml_text):
+    return yaml.safe_load(bastion_workflow_yaml_text)
+
+@pytest.fixture(scope="session")
+def bastion_trigger_script_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'trigger-deploy-bastion-vm.sh')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def bastion_readme_deploy_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-bastion-vm', 'README-deploy.md')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def bastion_readme_teardown_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-bastion-vm', 'README-teardown.md')
+    with open(path) as f:
+        return f.read()
