@@ -18,6 +18,7 @@ ARG KUBECTL_VERSION=v1.33.0
 # Install VCF CLI and kubectl on top of the runner image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install kubectl
