@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains five GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains six GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
@@ -10,6 +10,7 @@ This repository contains five GitHub Actions workflows that automate the end-to-
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
 | Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
+| Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
@@ -20,7 +21,8 @@ Deploy Cluster must complete successfully before Deploy Metrics or Deploy GitOps
 Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Metrics (deploy-vks-metrics.yml)
     ├── Deploy GitOps (deploy-argocd.yml)
-    └── Deploy Hybrid App (deploy-hybrid-app.yml)
+    ├── Deploy Hybrid App (deploy-hybrid-app.yml)
+    └── Deploy Secrets Demo (deploy-secrets-demo.yml)
 
 Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase A: GitOps Stack Teardown
@@ -728,6 +730,91 @@ curl -X POST \
 - Verify Docker is running on the self-hosted runner
 - Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set
 - Check that the Dockerfiles at `examples/deploy-hybrid-app/api/Dockerfile` and `examples/deploy-hybrid-app/dashboard/Dockerfile` are valid
+
+---
+
+# Deploy Secrets Demo — VCF Secret Store (`deploy-secrets-demo.yml`)
+
+## Overview
+
+Demonstrates VCF Secret Store Service integration with a VKS guest cluster. Creates KeyValueSecrets in the supervisor namespace, installs the vault-injector VKS standard package, deploys Redis and PostgreSQL with vault-injected credentials, and runs a Next.js dashboard that verifies connectivity using secrets read from mounted files. This is the VCF equivalent of AWS Secrets Manager.
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Deploy Secrets Demo"** → **"Run workflow"**
+2. Fill in: **cluster_name** (required), optionally **environment**
+
+### Trigger Script (repository_dispatch)
+
+```bash
+./scripts/trigger-deploy-secrets-demo.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01
+```
+
+**Required:** `--repo`, `--token`, `--cluster-name`
+
+**Optional:** `--environment`, `--secret-store-ip`, `--supervisor-namespace`, `--redis-password`, `--postgres-user`, `--postgres-password`, `--postgres-db`, `--namespace`, `--container-registry`, `--image-name`, `--image-tag`, `--vcfa-endpoint`, `--tenant-name`
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `ENVIRONMENT` | `environment` | `demo` | Environment label |
+| `SECRET_STORE_IP` | `secret_store_ip` | (from secret) | External IP of the VCF Secret Store service |
+| `REDIS_PASSWORD` | `redis_password` | (auto-generated) | Redis authentication password |
+| `POSTGRES_USER` | `postgres_user` | `secretsadmin` | PostgreSQL username |
+| `POSTGRES_PASSWORD` | `postgres_password` | (auto-generated) | PostgreSQL password |
+| `POSTGRES_DB` | `postgres_db` | `secretsdb` | PostgreSQL database name |
+| `NAMESPACE` | `namespace` | `secrets-demo` | Kubernetes namespace in the guest cluster |
+| `CONTAINER_REGISTRY` | `container_registry` | `scafeman` | Docker registry prefix |
+| `IMAGE_NAME` | `image_name` | `secrets-dashboard` | Dashboard container image name |
+| `IMAGE_TAG` | `image_tag` | `latest` | Container image tag |
+
+## Workflow Steps
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| 2 | **Setup Kubeconfig** | Retrieves the admin kubeconfig via VCF CLI, discovers the supervisor namespace |
+| 3 | **Install VCF Secret Plugin** | Installs the `vcf secret` CLI plugin if not present |
+| 4 | **Create KeyValueSecrets** | Creates `redis-creds` and `postgres-creds` KeyValueSecrets in the supervisor namespace |
+| 5 | **Create ServiceAccount and Token** | Creates `internal-app` ServiceAccount and long-lived token in the supervisor namespace |
+| 6 | **Create Namespace, Copy Token, Install Vault-Injector** | Creates `secrets-demo` namespace, copies supervisor token, installs vault-injector VKS standard package |
+| 7 | **Deploy Redis and PostgreSQL** | Deploys Redis 7 and PostgreSQL 16 with vault-injected credentials |
+| 8 | **Build and Push Dashboard Image** | Builds and pushes the Next.js dashboard container image |
+| 9 | **Deploy Dashboard with Vault Annotations** | Deploys the dashboard with vault annotations for secret injection, mounts supervisor token |
+| 10 | **Wait for LoadBalancer and Verify HTTP** | Waits for external IP, verifies HTTP 200 |
+| 11 | **Write Job Summary** | Writes deployment summary with service endpoints |
+
+## Key Concepts
+
+- **KeyValueSecret** — secrets are created via `vcf secret create -f` using `secretstore.vmware.com/v1alpha1` API with array-format `spec.data`
+- **vault-injector package** — installed via `vcf package install vault-injector` (VKS standard package), handles all TLS, RBAC, and webhook configuration
+- **Token volume mount** — pods must mount the supervisor `internal-app-token` at `/var/run/secrets/kubernetes.io/serviceaccount` to authenticate with the Secret Store
+- **Secret file format** — vault-injector mounts secrets as files at `/vault/secrets/` in Go map format: `data: map[key1:value1 key2:value2]`
+
+## Troubleshooting
+
+### "namespace not authorized"
+
+The pod is mounting the wrong service account token. Ensure the Deployment mounts `internal-app-token` (supervisor token), not `test-service-account-token` (guest cluster token).
+
+### "http: server gave HTTP response to HTTPS client"
+
+The vault-injector `agentInjectVaultAddr` must be `http://secret-store-service:8200` (not `https://`).
+
+### Password mismatch (Redis/PostgreSQL auth fails)
+
+The vault secrets contain passwords from a previous run. Delete and recreate the KeyValueSecrets to match the current deployment's passwords.
+
+### vault-agent-init stuck in Init:0/1
+
+Check vault-agent-init logs: `kubectl logs <pod> -c vault-agent-init -n secrets-demo`. Common causes: wrong token, unreachable Secret Store IP, TLS mismatch.
 
 ---
 
