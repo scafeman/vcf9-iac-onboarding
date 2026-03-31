@@ -947,7 +947,7 @@ jobs:
           | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Hybrid App Stack | $([ "$TEARDOWN_HYBRID_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
-          | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down (\`${BASTION_VM_NAME}\`)" || echo "⏭️ Skipped") |
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
