@@ -1,0 +1,209 @@
+# =============================================================================
+# Sample PostgresCluster Manifest — VCF Database Service Manager (DSM)
+# =============================================================================
+#
+# This manifest creates a managed PostgreSQL instance via the VCF Database
+# Service Manager (DSM) — the VCF equivalent of AWS RDS. DSM provisions and
+# manages the PostgreSQL lifecycle (patching, backups, scaling) through the
+# PostgresCluster CRD.
+#
+# Instead of manually provisioning a VM and installing PostgreSQL (as in the
+# deploy-hybrid-app example), DSM handles all infrastructure concerns:
+#   - VM provisioning and OS management
+#   - PostgreSQL installation and configuration
+#   - Automated maintenance windows
+#   - Connection endpoint management
+#
+# AWS RDS equivalent mapping:
+#   AWS RDS Instance          → DSM PostgresCluster
+#   RDS Instance Class        → vmClass (e.g., best-effort-medium)
+#   RDS Allocated Storage     → storageSpace (e.g., 20Gi)
+#   RDS Storage Type          → storagePolicyName (vSphere storage policy)
+#   RDS Multi-AZ              → replicas (1 = single, 2+ = HA)
+#   RDS Maintenance Window    → maintenanceWindow (day + time + duration)
+#   RDS Master Password       → adminPasswordRef (Kubernetes Secret)
+#   RDS Security Group        → NSX VPC network isolation (automatic)
+#   RDS Endpoint              → status.connection.host:port (after Ready)
+#   RDS Parameter Group       → requestedSharedMemorySize + PostgreSQL defaults
+#
+# Prerequisites:
+#   - VCF CLI context scoped to the target Supervisor Namespace
+#   - A DSM infrastructure policy configured in the namespace
+#   - A vSphere storage policy available for DSM
+#   - Verify available VM classes:       kubectl get virtualmachineclasses
+#   - Verify available storage policies: kubectl get storagepolicies
+#   - Verify DSM infrastructure policies are configured via the VCFA UI
+#     (Infrastructure → Database Service Manager → Infrastructure Policies)
+#
+# Usage:
+#   1. Create the admin password Secret first (see Step 1 below).
+#   2. Apply this manifest (creates the PostgresCluster).
+#   3. Wait for the PostgresCluster to reach Ready status.
+#   4. Extract connection details from status.connection.
+#
+# After the PostgresCluster reaches Ready status, DSM automatically creates
+# a secret named pg-<cluster-name> (e.g., pg-sample-postgres-cluster)
+# containing the admin password. Use this secret to connect applications.
+#
+# To check status:
+#   kubectl get postgrescluster sample-postgres-cluster -n <NAMESPACE> -o yaml
+#
+# To extract connection details:
+#   kubectl get postgrescluster sample-postgres-cluster -n <NAMESPACE> \
+#     -o jsonpath='{.status.connection}'
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Step 1: Admin Password Secret
+# -----------------------------------------------------------------------------
+# The admin password must be stored as a Kubernetes Secret BEFORE creating the
+# PostgresCluster. The PostgresCluster references this Secret via
+# spec.adminPasswordRef.name and the label dsm.vmware.com/admin-password-name.
+#
+# Create with:
+#   kubectl create secret generic postgres-admin-password \
+#     -n sample-vcf-project-01-ns-xxxxx \
+#     --from-literal=password='YourSecurePassword123!'
+#
+# NOTE: The password must meet PostgreSQL password requirements. Use a strong
+#       password with mixed case, numbers, and special characters.
+#
+# AWS RDS equivalent: This is similar to setting the Master Password when
+# creating an RDS instance, except the password is stored in a Kubernetes
+# Secret rather than passed as a CLI parameter.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Step 2: PostgresCluster
+# -----------------------------------------------------------------------------
+# The PostgresCluster manifest provisions a managed PostgreSQL instance via DSM.
+# DSM handles VM provisioning, PostgreSQL installation, configuration, and
+# ongoing maintenance automatically.
+#
+# Key spec fields:
+#   adminUsername          — Database admin user (like RDS master username)
+#   adminPasswordRef      — Reference to the password Secret created in Step 1
+#   databaseName          — Initial database to create (like RDS initial DB)
+#   infrastructurePolicy  — DSM policy governing compute/storage/networking
+#   version               — PostgreSQL version string
+#   replicas              — Number of instances (1=single, 2+=HA like RDS Multi-AZ)
+#   vmClass               — Compute class for the DB VM (like RDS instance class)
+#   storagePolicyName     — vSphere storage policy (like RDS storage type)
+#   storageSpace          — Disk allocation (like RDS allocated storage)
+#   maintenanceWindow     — Automated maintenance schedule (like RDS maintenance window)
+# -----------------------------------------------------------------------------
+apiVersion: databases.dataservices.vmware.com/v1alpha1
+kind: PostgresCluster
+metadata:
+  # CHANGE: Replace with your PostgresCluster name.
+  name: sample-postgres-cluster  # CHANGE: Replace with your cluster name
+  # CHANGE: Replace with your supervisor namespace.
+  namespace: sample-vcf-project-01-ns-xxxxx  # CHANGE: Replace with your namespace
+  labels:
+    # --- Required DSM Labels ---
+    # These labels are required by DSM for policy binding and resource management.
+
+    # CHANGE: Replace with your DSM infrastructure policy name.
+    # The infrastructure policy defines compute, storage, and networking constraints.
+    # AWS equivalent: There is no direct equivalent — RDS uses instance classes and
+    # subnet groups. DSM bundles these into a single infrastructure policy.
+    dsm.vmware.com/infra-policy: "sample-infra-policy"  # CHANGE: Replace with your DSM infra policy
+
+    # CHANGE: Replace with your desired VM class for the database instance.
+    # Defines CPU and memory allocation for the PostgreSQL VM.
+    # AWS equivalent: RDS Instance Class (e.g., db.m5.large → best-effort-medium)
+    # Discover available classes: kubectl get virtualmachineclasses
+    dsm.vmware.com/vm-class: "medium"  # CHANGE: Replace with your VM class
+
+    # CHANGE: Must match the Secret name created in Step 1.
+    # Links the PostgresCluster to its admin password Secret.
+    dsm.vmware.com/admin-password-name: "postgres-admin-password"  # CHANGE: Replace with your Secret name
+
+    # CHANGE: Replace with the namespace where your application pods will run.
+    # DSM uses this to configure network access from the consumption namespace
+    # to the managed PostgreSQL instance.
+    dsm.vmware.com/consumption-namespace: "managed-db-app"  # CHANGE: Replace with your app namespace
+spec:
+  # --- Admin Credentials ---
+  # The database superuser account. Applications should use this account or
+  # create additional roles after the cluster is ready.
+  # AWS equivalent: RDS Master Username
+  adminUsername: pgadmin
+
+  # Reference to the Kubernetes Secret containing the admin password.
+  # The Secret must exist in the same namespace before applying this manifest.
+  # AWS equivalent: RDS Master Password (stored in Secrets Manager or passed at creation)
+  adminPasswordRef:
+    # CHANGE: Must match the Secret name created in Step 1.
+    name: postgres-admin-password  # CHANGE: Replace with your Secret name
+
+  # --- Database Configuration ---
+  # The initial database created when the cluster is provisioned.
+  # AWS equivalent: RDS "Initial database name" option
+  # CHANGE: Replace with your desired database name.
+  databaseName: assetdb  # CHANGE: Replace with your database name
+
+  # --- Infrastructure Policy ---
+  # References the DSM infrastructure policy that governs compute, storage,
+  # and networking for this PostgresCluster.
+  # AWS equivalent: Combination of RDS Subnet Group + Parameter Group + Option Group
+  infrastructurePolicy:
+    # CHANGE: Must match the dsm.vmware.com/infra-policy label above.
+    name: sample-infra-policy  # CHANGE: Replace with your DSM infra policy
+
+  # --- PostgreSQL Version ---
+  # The PostgreSQL version to deploy. DSM manages the full version string
+  # including VMware patches.
+  # AWS equivalent: RDS Engine Version (e.g., "16.3")
+  # CHANGE: Replace with your desired PostgreSQL version.
+  version: "16"  # CHANGE: Replace with your PostgreSQL version
+
+  # --- High Availability ---
+  # Number of PostgreSQL replicas. Set to 1 for a single instance (dev/test)
+  # or 2+ for high availability with streaming replication.
+  # AWS equivalent: RDS Multi-AZ (1 = Single-AZ, 2 = Multi-AZ)
+  replicas: 1
+
+  # --- Compute Class ---
+  # VM class defining CPU and memory for the database instance.
+  # AWS equivalent: RDS Instance Class (e.g., db.t3.medium, db.m5.large)
+  # Discover available classes: kubectl get virtualmachineclasses
+  vmClass:
+    # CHANGE: Replace with your desired VM class.
+    name: medium  # CHANGE: Replace with your VM class
+
+  # --- Storage ---
+  # vSphere storage policy for the database volumes.
+  # AWS equivalent: RDS Storage Type (gp3, io1, etc.)
+  # Discover available policies: kubectl get storagepolicies
+  # CHANGE: Replace with your vSphere storage policy name.
+  storagePolicyName: nfs  # CHANGE: Replace with your storage policy
+
+  # Disk space allocated for the database.
+  # AWS equivalent: RDS Allocated Storage (e.g., 20 GiB)
+  # CHANGE: Replace with your desired storage size.
+  storageSpace: 20Gi  # CHANGE: Replace with your storage size
+
+  # --- Maintenance Window ---
+  # Schedule for automated maintenance operations (patching, minor upgrades).
+  # DSM performs maintenance during this window to minimize disruption.
+  # AWS equivalent: RDS Maintenance Window (e.g., "sun:22:00-sun:22:30")
+  maintenanceWindow:
+    # CHANGE: Replace with your preferred maintenance day and time.
+    startDay: SATURDAY       # Day of the week (MONDAY–SUNDAY)
+    startTime: "04:59"       # Start time in HH:MM format (UTC)
+    duration: 6h0m0s         # Duration of the maintenance window
+
+  # --- Shared Memory ---
+  # Requested shared memory size for PostgreSQL. Maps to the shared_buffers
+  # PostgreSQL configuration parameter.
+  # AWS equivalent: RDS Parameter Group shared_buffers setting
+  # CHANGE: Adjust based on your workload requirements.
+  requestedSharedMemorySize: 64Mi  # CHANGE: Replace with your shared memory size
+
+  # --- Connection Control ---
+  # When true, blocks all client connections to the database. Useful during
+  # maintenance or migration operations.
+  # AWS equivalent: No direct equivalent — RDS uses Security Groups for access control
+  blockDatabaseConnections: false
