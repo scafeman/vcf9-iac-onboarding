@@ -22,7 +22,8 @@ The VPC must exist before creating the Project and Supervisor Namespace, because
 4. sample-create-project-ns.yaml   → Project + RBAC + Supervisor Namespace   (Phase 4)
 5. sample-nat-rules.yaml           → SNAT / DNAT rules                       (Phase 3, optional — advanced)
 6. sample-create-cluster.yaml      → VKS Cluster                             (Phase 6)
-7. sample-vks-functional-test.yaml → Functional validation workload           (Phase 7)
+7. sample-create-vm.yaml           → VirtualMachine on private SubnetSet      (VM Service)
+8. sample-vks-functional-test.yaml → Functional validation workload           (Phase 7)
 ```
 
 > **Already have a VPC?** If your tenant already has a VPC provisioned (e.g., a default VPC), you can skip steps 1–3 entirely. Just set the `vpcName` field in `sample-create-project-ns.yaml` to your existing VPC name (find it with `kubectl get vpcs`) and start at step 4.
@@ -148,6 +149,35 @@ Contains two **VPCNATRule** examples — one SNAT rule (outbound traffic transla
 | DNAT `namespace` | `sample-vcf-project-01` | Your project name |
 | DNAT `translatedNetwork` | *(your internal IP)* | Internal IP to forward traffic to |
 | DNAT `sourceNetwork` | *(your external CIDR)* | External source CIDR |
+
+---
+
+### `sample-create-vm.yaml`
+
+Creates a **VirtualMachine** on a private NSX SubnetSet with no public IP — suitable for internal workloads (app servers, databases, web servers) that only need outbound internet access via the VPC's default SNAT rule. Demonstrates boot disk resize, data disk attachment via PVC, cloud-init bootstrap, and SubnetSet network selection.
+
+| | |
+|---|---|
+| API | `vmoperator.vmware.com/v1alpha3` |
+| Kinds | `PersistentVolumeClaim`, `VirtualMachine` |
+| Apply command | `kubectl apply -f sample-create-vm.yaml` |
+| Prerequisite | Cloud-init Secret created, SubnetSet exists in namespace |
+
+> **Three-step process:** (1) Create the cloud-init Secret via `kubectl create secret generic`, (2) apply the manifest which creates the data disk PVC and VirtualMachine together. The cloud-init Secret must exist before the VM is created.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `namespace` | `sample-vcf-project-01-ns-xxxxx` | Your supervisor namespace |
+| VM `name` | `sample-vm` | Your VM name |
+| `className` | `best-effort-medium` | From `kubectl get virtualmachineclasses` |
+| `imageName` | `ubuntu-24.04-server-cloudimg-amd64` | From `kubectl get virtualmachineimages` |
+| `storageClass` | `nfs` | From `kubectl get storageclasses` |
+| `bootDiskCapacity` | `50Gi` | Boot disk size (must include unit: Mi, Gi, Ti) |
+| `network.name` | `inside-subnet` | From `kubectl get subnetsets` |
+| PVC `storage` | `50Gi` | Data disk size |
+| `rawCloudConfig.name` | `sample-vm-cloud-init` | Your cloud-init Secret name |
 
 ---
 

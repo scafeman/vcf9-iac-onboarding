@@ -1,0 +1,210 @@
+# =============================================================================
+# Sample VirtualMachine Manifest — VCF VM Service (vmoperator)
+# =============================================================================
+#
+# This manifest creates an Ubuntu 24.04 VM on a private NSX SubnetSet with
+# no public IP — suitable for internal workloads such as application servers,
+# databases, or web servers that only need outbound internet access (via the
+# VPC's default SNAT rule).
+#
+# The VM is provisioned via the VCF VM Service using the vmoperator CRD.
+# Cloud-init configures the OS user, SSH key, and packages at first boot.
+# The cloud-init user data is stored in a Kubernetes Secret and referenced
+# by the VirtualMachine manifest.
+#
+# Key features demonstrated:
+#   - Deploying a VM to a specific NSX SubnetSet (private network)
+#   - Resizing the boot disk beyond the image default
+#   - Attaching an additional data disk via PersistentVolumeClaim
+#   - Cloud-init for user creation, SSH key injection, and package install
+#   - Labels for VirtualMachineService selector (if SSH exposure is needed)
+#
+# Prerequisites:
+#   - VCF CLI context scoped to the target Supervisor Namespace
+#   - The SubnetSet must already exist in the namespace (create via VCFA UI
+#     or NSX manager: Build & Deploy → Networking → Networks → Create)
+#   - The VM image must be available in the content library
+#   - Verify available images:  kubectl get virtualmachineimages
+#   - Verify available classes: kubectl get virtualmachineclasses
+#   - Verify available SubnetSets: kubectl get subnetsets
+#
+# Usage:
+#   1. Create the cloud-init Secret first (see below).
+#   2. Create the data disk PVC (if using an additional disk).
+#   3. Apply the VirtualMachine manifest.
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Step 1: Cloud-Init Secret
+# -----------------------------------------------------------------------------
+# The cloud-init user data is stored as a Kubernetes Secret. The VM references
+# this Secret in spec.bootstrap.cloudInit.rawCloudConfig.
+#
+# Create with:
+#   kubectl create secret generic sample-vm-cloud-init \
+#     -n <SUPERVISOR_NAMESPACE> \
+#     --from-file=user-data=cloud-init.yaml
+#
+# Or inline (replace the user-data value with your cloud-init YAML):
+#   kubectl create secret generic sample-vm-cloud-init \
+#     -n <SUPERVISOR_NAMESPACE> \
+#     --from-literal=user-data="$(cat <<'EOF'
+#   #cloud-config
+#   package_update: true
+#   packages:
+#     - openssh-server
+#   users:
+#     - default
+#     - name: rackadmin
+#       groups: sudo
+#       shell: /bin/bash
+#       sudo: ALL=(ALL) NOPASSWD:ALL
+#       ssh_authorized_keys:
+#         - ssh-ed25519 AAAA... your-key-here
+#   runcmd:
+#     - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+#     - systemctl restart sshd
+#     - systemctl enable ssh
+#   EOF
+#   )"
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Step 2: Data Disk PVC (Optional)
+# -----------------------------------------------------------------------------
+# If you want an additional data disk attached to the VM, create a PVC first.
+# The VM references this PVC by name in spec.volumes[].persistentVolumeClaim.
+#
+# NOTE: The PVC must be created BEFORE the VirtualMachine manifest is applied.
+#       Instance storage volume claims (instanceVolumeClaim) are not supported
+#       by the vmoperator webhook — use a standalone PVC instead.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  # CHANGE: Replace with your PVC name. Convention: <vm-name>-data
+  name: sample-vm-data  # CHANGE: Replace with your PVC name
+  # CHANGE: Replace with your supervisor namespace.
+  namespace: sample-vcf-project-01-ns-xxxxx  # CHANGE: Replace with your namespace
+  labels:
+    # Label to associate this PVC with the VM (for identification only)
+    vm-selector: sample-vm  # CHANGE: Replace with your VM name
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      # CHANGE: Replace with your desired data disk size.
+      # Must include a unit suffix: Mi, Gi, or Ti.
+      storage: 50Gi  # CHANGE: Replace with your data disk size
+  # CHANGE: Replace with your storage class.
+  # Discover available storage classes with: kubectl get storageclasses
+  storageClassName: nfs  # CHANGE: Replace with your storage class
+---
+# -----------------------------------------------------------------------------
+# Step 3: VirtualMachine
+# -----------------------------------------------------------------------------
+# The VirtualMachine manifest provisions the VM via the VCF VM Service.
+# It references the cloud-init Secret for bootstrap configuration and
+# optionally attaches the data disk PVC.
+#
+# Key spec fields:
+#   className     — VM compute class (CPU/memory). List with: kubectl get virtualmachineclasses
+#   imageName     — Content library image. List with: kubectl get virtualmachineimages
+#   storageClass  — Storage class for the boot disk. List with: kubectl get storageclasses
+#   advanced.bootDiskCapacity — Override the image's default boot disk size
+#   network.interfaces[].network.name — NSX SubnetSet to deploy the VM into
+#   volumes[]     — Additional disks via PVC references
+# -----------------------------------------------------------------------------
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachine
+metadata:
+  # CHANGE: Replace with your VM name.
+  name: sample-vm  # CHANGE: Replace with your VM name
+  # CHANGE: Replace with your supervisor namespace.
+  namespace: sample-vcf-project-01-ns-xxxxx  # CHANGE: Replace with your namespace
+  labels:
+    # The 'app' label is used by VirtualMachineService selectors if you later
+    # need to expose this VM via a LoadBalancer (e.g., for SSH or HTTP).
+    app: sample-vm  # CHANGE: Replace with your VM name
+spec:
+  # --- Compute Class ---
+  # Defines the CPU and memory allocation for the VM.
+  # Discover available classes with: kubectl get virtualmachineclasses
+  className: best-effort-medium  # CHANGE: Replace with your desired VM class
+
+  # --- OS Image ---
+  # The content library image to deploy. This is the base OS template.
+  # Discover available images with: kubectl get virtualmachineimages
+  imageName: ubuntu-24.04-server-cloudimg-amd64  # CHANGE: Replace with your image name
+
+  # --- Storage ---
+  # Storage class for the boot disk.
+  # Discover available storage classes with: kubectl get storageclasses
+  storageClass: nfs  # CHANGE: Replace with your storage class
+
+  # --- Power State ---
+  # Set to PoweredOn to start the VM immediately after creation.
+  powerState: PoweredOn
+
+  # --- Advanced Options ---
+  advanced:
+    # Boot disk capacity override. Resizes the image's default root disk to
+    # the specified size. Must include a unit suffix (Mi, Gi, Ti).
+    # Leave this section out entirely to use the image's default disk size.
+    #
+    # WARNING: Do not reduce below the image default — this may corrupt the
+    # filesystem. Only increase. Cannot be changed after VM creation.
+    bootDiskCapacity: 50Gi  # CHANGE: Replace with your desired boot disk size
+
+    # Volume provisioning mode for managed disks.
+    # Options: Thin (default), Thick, ThickEagerZero
+    # Thin = allocate on demand (saves space), Thick = pre-allocate full size
+    # defaultVolumeProvisioningMode: Thin
+
+  # --- Network ---
+  # Deploy the VM to a specific NSX SubnetSet (private network segment).
+  # If this section is omitted, the VM is placed on the VPC's default network.
+  #
+  # To list available SubnetSets in your namespace:
+  #   kubectl get subnetsets
+  #
+  # Common patterns:
+  #   - "inside-subnet" — private network for internal workloads (app/db/web)
+  #   - "" (empty or omit) — VPC default network (has outbound SNAT by default)
+  network:
+    interfaces:
+    - name: eth0
+      network:
+        apiVersion: crd.nsx.vmware.com/v1alpha1
+        kind: SubnetSet
+        # CHANGE: Replace with your SubnetSet name.
+        # Use "inside-subnet" for a private network, or leave empty for default.
+        name: inside-subnet  # CHANGE: Replace with your SubnetSet name
+
+  # --- Bootstrap (Cloud-Init) ---
+  # References the Kubernetes Secret containing cloud-init user data.
+  # The Secret must exist in the same namespace before applying this manifest.
+  bootstrap:
+    cloudInit:
+      rawCloudConfig:
+        # CHANGE: Replace with your cloud-init Secret name.
+        name: sample-vm-cloud-init  # CHANGE: Replace with your Secret name
+        key: user-data
+
+  # --- Additional Volumes (Optional) ---
+  # Attach pre-created PVCs as additional disks. Each volume gets a device
+  # inside the VM (e.g., /dev/sdb) that you can partition and mount via
+  # cloud-init runcmd or manually after boot.
+  #
+  # NOTE: Volumes can only be specified at VM creation time. You cannot add
+  # or modify volumes on an existing VM — the vmoperator webhook will reject
+  # the change. To add a disk, delete and recreate the VM.
+  #
+  # Remove this section entirely if you don't need an additional data disk.
+  volumes:
+  - name: data-disk
+    persistentVolumeClaim:
+      # CHANGE: Must match the PVC name created in Step 2 above.
+      claimName: sample-vm-data  # CHANGE: Replace with your PVC name
