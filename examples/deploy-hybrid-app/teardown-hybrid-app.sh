@@ -125,6 +125,39 @@ wait_for_deletion() {
 validate_variables
 
 ###############################################################################
+# VCF CLI Context Setup
+###############################################################################
+
+log_step 0 "Creating VCF CLI context and switching to supervisor namespace"
+
+vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+
+if ! vcf context create "${CONTEXT_NAME}" \
+  --endpoint "https://${VCFA_ENDPOINT}" \
+  --type cci \
+  --tenant-name "${TENANT_NAME}" \
+  --api-token "${VCF_API_TOKEN}" \
+  --set-current; then
+  log_error "Failed to create VCF CLI context '${CONTEXT_NAME}' for endpoint '${VCFA_ENDPOINT}'. Verify your endpoint URL, tenant name, and API token."
+  exit 1
+fi
+
+# Switch to the namespace context for the supervisor namespace
+NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+if [[ -z "${NS_CTX}" ]]; then
+  PROJECT_PATTERN=$(echo "${CLUSTER_NAME}" | sed 's/-clus-[0-9]*$//')
+  NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+fi
+
+if [[ -n "${NS_CTX}" ]]; then
+  vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  log_success "VCF CLI context '${CONTEXT_NAME}' created, switched to namespace context '${NS_CTX}'"
+else
+  log_warn "Could not find namespace context for '${SUPERVISOR_NAMESPACE}' — supervisor operations may fail"
+  log_success "VCF CLI context '${CONTEXT_NAME}' created"
+fi
+
+###############################################################################
 # Phase 1: Delete Application Namespace in Guest Cluster
 #   (deletes Frontend + API Deployments, Services, and namespace)
 ###############################################################################
@@ -132,23 +165,9 @@ validate_variables
 log_step 1 "Deleting application namespace '${APP_NAMESPACE}' in guest cluster"
 
 # If kubeconfig doesn't exist, try to retrieve it via VCF CLI
-if [[ ! -f "${KUBECONFIG_FILE}" ]] && [[ -n "${CLUSTER_NAME}" ]] && [[ -n "${VCFA_ENDPOINT}" ]]; then
+if [[ ! -f "${KUBECONFIG_FILE}" ]] && [[ -n "${CLUSTER_NAME}" ]]; then
   log_warn "Kubeconfig not found at '${KUBECONFIG_FILE}', attempting retrieval via VCF CLI..."
-  vcf context delete teardown-ctx --yes 2>/dev/null || true
-  vcf context create teardown-ctx \
-    --endpoint "https://${VCFA_ENDPOINT}" \
-    --type cci \
-    --tenant-name "${TENANT_NAME}" \
-    --api-token "${VCF_API_TOKEN}" \
-    --set-current 2>/dev/null || true
-
-  if [[ -n "${SUPERVISOR_NAMESPACE}" ]]; then
-    NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "teardown-ctx:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-    if [[ -n "${NAMESPACE_CONTEXT}" ]]; then
-      vcf context use "${NAMESPACE_CONTEXT}" 2>/dev/null || true
-      vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null || true
-    fi
-  fi
+  vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null || true
 fi
 
 if [[ -f "${KUBECONFIG_FILE}" ]]; then
@@ -184,26 +203,8 @@ fi
 
 log_step 2 "Deleting VirtualMachine '${VM_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
-# Ensure VCF CLI context exists for supervisor operations
-if [[ -n "${CONTEXT_NAME}" ]]; then
-  if ! vcf context use "${CONTEXT_NAME}" 2>/dev/null; then
-    vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
-    vcf context create "${CONTEXT_NAME}" \
-      --endpoint "https://${VCFA_ENDPOINT}" \
-      --type cci \
-      --tenant-name "${TENANT_NAME}" \
-      --api-token "${VCF_API_TOKEN}" \
-      --set-current 2>/dev/null || true
-  fi
-
-  # Switch to the namespace-level context for supervisor operations
-  if [[ -n "${SUPERVISOR_NAMESPACE}" ]]; then
-    NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-    if [[ -n "${NAMESPACE_CONTEXT}" ]]; then
-      vcf context use "${NAMESPACE_CONTEXT}" 2>/dev/null || true
-    fi
-  fi
-fi
+# Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
+unset KUBECONFIG 2>/dev/null || true
 
 if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
   if kubectl delete virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
