@@ -171,7 +171,7 @@ spec:
   # --- PostgreSQL Version ---
   # The PostgreSQL version to deploy. DSM manages the full version string
   # including VMware patches. Use the full version string (not just the major).
-  # AWS equivalent: RDS Engine Version (e.g., "16.3")
+  # AWS equivalent: RDS Engine Version (e.g., "16.6")
   # Discover available versions via the VCFA UI:
   #   Infrastructure → Database Service Manager → Database Engines
   # CHANGE: Replace with your desired PostgreSQL version.
