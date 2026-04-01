@@ -119,27 +119,36 @@ wait_for_deletion() {
 validate_variables
 
 ###############################################################################
-# VCF CLI Context Setup for Supervisor Namespace Operations
+# VCF CLI Context Setup
 ###############################################################################
 
-if [[ -n "${CONTEXT_NAME}" ]]; then
-  if ! vcf context use "${CONTEXT_NAME}" 2>/dev/null; then
-    vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
-    vcf context create "${CONTEXT_NAME}" \
-      --endpoint "https://${VCFA_ENDPOINT}" \
-      --type cci \
-      --tenant-name "${TENANT_NAME}" \
-      --api-token "${VCF_API_TOKEN}" \
-      --set-current 2>/dev/null || true
-  fi
+log_step 0 "Creating VCF CLI context and switching to supervisor namespace"
 
-  # Switch to the namespace-level context for supervisor operations
-  if [[ -n "${SUPERVISOR_NAMESPACE}" ]]; then
-    NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-    if [[ -n "${NAMESPACE_CONTEXT}" ]]; then
-      vcf context use "${NAMESPACE_CONTEXT}" 2>/dev/null || true
-    fi
-  fi
+vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+
+if ! vcf context create "${CONTEXT_NAME}" \
+  --endpoint "https://${VCFA_ENDPOINT}" \
+  --type cci \
+  --tenant-name "${TENANT_NAME}" \
+  --api-token "${VCF_API_TOKEN}" \
+  --set-current; then
+  log_error "Failed to create VCF CLI context '${CONTEXT_NAME}' for endpoint '${VCFA_ENDPOINT}'. Verify your endpoint URL, tenant name, and API token."
+  exit 1
+fi
+
+# Switch to the namespace context for the supervisor namespace
+NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+if [[ -z "${NS_CTX}" ]]; then
+  PROJECT_PATTERN=$(echo "${CLUSTER_NAME:-${SUPERVISOR_NAMESPACE}}" | sed 's/-clus-[0-9]*$//')
+  NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+fi
+
+if [[ -n "${NS_CTX}" ]]; then
+  vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  log_success "VCF CLI context '${CONTEXT_NAME}' created, switched to namespace context '${NS_CTX}'"
+else
+  log_warn "Could not find namespace context for '${SUPERVISOR_NAMESPACE}' — supervisor operations may fail"
+  log_success "VCF CLI context '${CONTEXT_NAME}' created"
 fi
 
 ###############################################################################

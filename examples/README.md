@@ -23,7 +23,8 @@ The VPC must exist before creating the Project and Supervisor Namespace, because
 5. sample-nat-rules.yaml           → SNAT / DNAT rules                       (Phase 3, optional — advanced)
 6. sample-create-cluster.yaml      → VKS Cluster                             (Phase 6)
 7. sample-create-vm.yaml           → VirtualMachine on private SubnetSet      (VM Service)
-8. sample-vks-functional-test.yaml → Functional validation workload           (Phase 7)
+8. sample-create-postgres-cluster.yaml → DSM PostgresCluster                  (Database Service Manager)
+9. sample-vks-functional-test.yaml → Functional validation workload           (Phase 7)
 ```
 
 > **Already have a VPC?** If your tenant already has a VPC provisioned (e.g., a default VPC), you can skip steps 1–3 entirely. Just set the `vpcName` field in `sample-create-project-ns.yaml` to your existing VPC name (find it with `kubectl get vpcs`) and start at step 4.
@@ -212,6 +213,34 @@ Creates a **VKS cluster** via the Cluster API. Defines the cluster network CIDRs
 
 ---
 
+### `sample-create-postgres-cluster.yaml`
+
+Creates a **DSM PostgresCluster** — a fully managed PostgreSQL instance provisioned via the VCF Database Service Manager. This is the VCF equivalent of AWS RDS. DSM handles VM provisioning, PostgreSQL installation, patching, maintenance windows, and connection endpoint management.
+
+| | |
+|---|---|
+| API | `databases.dataservices.vmware.com/v1alpha1` |
+| Kind | `PostgresCluster` |
+| Apply command | `kubectl apply -f sample-create-postgres-cluster.yaml --validate=false` |
+| Prerequisite | Admin password Secret created, DSM infrastructure policy configured in supervisor namespace |
+
+> **Two-step process:** (1) Create the admin password Secret via `kubectl create secret generic`, (2) apply the manifest which creates the PostgresCluster. DSM automatically creates a `pg-<cluster-name>` secret with the admin password after provisioning.
+
+**Values to change for your environment:**
+
+| Field | Sample value | Description |
+|---|---|---|
+| `namespace` | `sample-vcf-project-01-ns-xxxxx` | Your supervisor namespace |
+| `name` | `sample-postgres-cluster` | Your PostgresCluster name |
+| `dsm.vmware.com/infra-policy` | `sample-infra-policy` | DSM infrastructure policy name |
+| `dsm.vmware.com/vm-class` | `best-effort-large` | VM class (Single Server requires 4 CPU min) |
+| `dsm.vmware.com/consumption-namespace` | `sample-vcf-project-01-ns-xxxxx` | Must be the supervisor namespace |
+| `replicas` | `0` | `0` = Single Server, `1` = Single-Zone HA |
+| `storagePolicyName` | `nfs` | From `kubectl get storagepolicies` |
+| `version` | `16` | PostgreSQL version |
+
+---
+
 ### `sample-vks-functional-test.yaml`
 
 Deploys a lightweight test workload to validate that storage, compute, and networking are all operational on a VKS cluster. Creates a **PersistentVolumeClaim** (validates CSI/storage), a **Deployment** (validates pod scheduling with a hardened security context), and a **LoadBalancer Service** (validates NSX load balancer ingress and external IP assignment).
@@ -258,10 +287,11 @@ Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
   ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
   ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
+  ├─► Deploy Managed DB App: DSM PostgresCluster Asset Tracker (managed database)
   └─► Deploy Bastion VM: SSH Jump Host (standalone VM — no VKS cluster required)
 ```
 
-Deploy Metrics, Deploy GitOps, and Deploy Hybrid App all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
+Deploy Metrics, Deploy GitOps, Deploy Hybrid App, and Deploy Managed DB App all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
 
 ---
 
@@ -323,5 +353,17 @@ Deploys a full-stack demo application demonstrating VM-to-container connectivity
 | Deploy | `bash examples/deploy-hybrid-app/deploy-hybrid-app.sh` |
 | Teardown | `bash examples/deploy-hybrid-app/teardown-hybrid-app.sh` |
 | Output | Next.js dashboard at LoadBalancer IP, PostgreSQL VM, Node.js API — all communicating over NSX VPC |
+
+## Deploy Managed DB App: DSM PostgresCluster Infrastructure Asset Tracker
+
+Deploys the same Infrastructure Asset Tracker application but backed by a VCF Database Service Manager (DSM) managed PostgresCluster instead of a manually provisioned VM. This is the VCF equivalent of AWS EKS + RDS — a fully managed PostgreSQL instance with automated maintenance, patching, and connection management.
+
+| | |
+|---|---|
+| Folder | [`deploy-managed-db-app/`](deploy-managed-db-app/) |
+| Depends on | Deploy Cluster (running VKS cluster) + DSM infrastructure policy configured in supervisor namespace |
+| Deploy | `bash examples/deploy-managed-db-app/deploy-managed-db-app.sh` |
+| Teardown | `bash examples/deploy-managed-db-app/teardown-managed-db-app.sh` |
+| Output | Next.js dashboard at LoadBalancer IP, DSM-managed PostgreSQL, Node.js API — all communicating over NSX VPC |
 
 ---

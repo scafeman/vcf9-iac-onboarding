@@ -1,0 +1,717 @@
+# =============================================================================
+# Deploy Managed DB App — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow deploys the VCF DSM PostgresCluster Infrastructure Asset Tracker
+# demo on an existing VKS cluster provisioned by Deploy Cluster. It provisions a
+# managed PostgresCluster via DSM, builds and pushes API and Frontend container
+# images, deploys them to the VKS guest cluster, and verifies end-to-end
+# connectivity.
+#
+# Prerequisites:
+#   - Deploy Cluster must have completed successfully — a running VKS cluster
+#     with a valid admin kubeconfig file is required.
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the VKS cluster API. All required tools (VCF CLI,
+#     kubectl, docker, jq) are baked into the runner via Dockerfile.runner.
+#   - A DSM infrastructure policy configured in the supervisor namespace.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-managed-db-app"
+#
+# =============================================================================
+
+name: Deploy Managed DB App
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      supervisor_namespace:
+        description: "Supervisor namespace where the PostgresCluster will be provisioned (e.g., my-project-ns-xxxxx)"
+        required: true
+        type: string
+      project_name:
+        description: "VCF Project name (e.g., my-dev-project-01)"
+        required: true
+        type: string
+      dsm_infra_policy:
+        description: "DSM infrastructure policy name"
+        required: true
+        type: string
+      dsm_storage_policy:
+        description: "vSphere storage policy name for DSM"
+        required: true
+        type: string
+      dsm_vm_class:
+        description: "VM class for DSM instances (default: best-effort-large)"
+        required: false
+        type: string
+        default: "best-effort-large"
+      dsm_storage_space:
+        description: "Storage allocation for DSM (default: 20Gi)"
+        required: false
+        type: string
+        default: "20Gi"
+      postgres_version:
+        description: "PostgreSQL version (default: 17.7+vmware.v9.0.2.0)"
+        required: false
+        type: string
+        default: "17.7+vmware.v9.0.2.0"
+
+  repository_dispatch:
+    types: [deploy-managed-db-app]
+
+jobs:
+  deploy:
+    name: Deploy Managed DB App
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
+      PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
+
+      # --- DSM-Specific Parameters ---
+      DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY }}
+      DSM_VM_CLASS: ${{ github.event.inputs.dsm_vm_class || github.event.client_payload.dsm_vm_class || secrets.DSM_VM_CLASS || 'best-effort-large' }}
+      DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
+      DSM_STORAGE_SPACE: ${{ github.event.inputs.dsm_storage_space || github.event.client_payload.dsm_storage_space || secrets.DSM_STORAGE_SPACE || '20Gi' }}
+      POSTGRES_VERSION: ${{ github.event.inputs.postgres_version || github.event.client_payload.postgres_version || secrets.POSTGRES_VERSION || '17.7+vmware.v9.0.2.0' }}
+      DSM_CLUSTER_NAME: ${{ github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'postgres-clus-01' }}
+      POSTGRES_REPLICAS: ${{ github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '0' }}
+      POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
+      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'postgres-admin-password' }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      DSM_MAINTENANCE_WINDOW_DAY: ${{ github.event.client_payload.dsm_maintenance_window_day || 'SATURDAY' }}
+      DSM_MAINTENANCE_WINDOW_TIME: ${{ github.event.client_payload.dsm_maintenance_window_time || '04:59' }}
+      DSM_MAINTENANCE_WINDOW_DURATION: ${{ github.event.client_payload.dsm_maintenance_window_duration || '6h0m0s' }}
+      DSM_SHARED_MEMORY: ${{ github.event.client_payload.dsm_shared_memory || '64Mi' }}
+
+      # --- Application Parameters ---
+      APP_NAMESPACE: ${{ github.event.client_payload.app_namespace || secrets.APP_NAMESPACE || 'managed-db-app' }}
+      CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
+      IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
+      API_PORT: ${{ github.event.client_payload.api_port || secrets.API_PORT || '3001' }}
+      FRONTEND_PORT: ${{ github.event.client_payload.frontend_port || secrets.FRONTEND_PORT || '3000' }}
+      DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || secrets.DSM_TIMEOUT || '1800' }}
+      POD_TIMEOUT: ${{ github.event.client_payload.pod_timeout || secrets.POD_TIMEOUT || '300' }}
+      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
+      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '30' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+      # --- DockerHub credentials for image push ---
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+      # --- Static Configuration ---
+      CONTEXT_NAME: managed-db-app-deploy
+
+    steps:
+      # Step 1: Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Step 2: Validate Inputs
+      - name: Validate Inputs
+        run: |
+          set -euo pipefail
+          # Trim leading/trailing whitespace from input parameters
+          CLUSTER_NAME="$(echo -n "$CLUSTER_NAME" | xargs)"
+          SUPERVISOR_NAMESPACE="$(echo -n "$SUPERVISOR_NAMESPACE" | xargs)"
+          PROJECT_NAME="$(echo -n "$PROJECT_NAME" | xargs)"
+          DSM_INFRA_POLICY="$(echo -n "$DSM_INFRA_POLICY" | xargs)"
+          DSM_STORAGE_POLICY="$(echo -n "$DSM_STORAGE_POLICY" | xargs)"
+          # Export trimmed values for subsequent steps
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+          echo "SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
+          echo "DSM_INFRA_POLICY=$DSM_INFRA_POLICY" >> "$GITHUB_ENV"
+          echo "DSM_STORAGE_POLICY=$DSM_STORAGE_POLICY" >> "$GITHUB_ENV"
+          MISSING=""
+          for var in CLUSTER_NAME SUPERVISOR_NAMESPACE PROJECT_NAME DSM_INFRA_POLICY DSM_STORAGE_POLICY VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME ADMIN_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              MISSING="${MISSING}  - ${var}\n"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required variables:"
+            echo -e "$MISSING"
+            exit 1
+          fi
+          echo "All required inputs validated successfully"
+          echo "  CLUSTER_NAME=$CLUSTER_NAME"
+          echo "  SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE"
+          echo "  PROJECT_NAME=$PROJECT_NAME"
+          echo "  DSM_INFRA_POLICY=$DSM_INFRA_POLICY"
+          echo "  DSM_STORAGE_POLICY=$DSM_STORAGE_POLICY"
+
+      # Step 3: Create VCF CLI Context
+      - name: Create VCF CLI Context
+        run: |
+          set -euo pipefail
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            exit 1
+          fi
+          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
+
+      # Step 4: Setup Kubeconfig
+      - name: Setup Kubeconfig
+        run: |
+          set -euo pipefail
+          KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
+
+          # If the kubeconfig file doesn't exist, retrieve it via VCF CLI
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+            vcf context create "$CONTEXT_NAME" \
+              --endpoint "https://$VCFA_ENDPOINT" \
+              --type cci \
+              --tenant-name "$TENANT_NAME" \
+              --api-token "$VCF_API_TOKEN" \
+              --set-current
+
+            # Find and switch to the namespace context matching the SUPERVISOR_NAMESPACE
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+              NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+            fi
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              echo "::error::Could not find a namespace context for supervisor namespace '${SUPERVISOR_NAMESPACE}' under context '${CONTEXT_NAME}'. Ensure Deploy Cluster has completed."
+              exit 1
+            fi
+            echo "Found namespace context: $NAMESPACE_CONTEXT"
+            vcf context use "$NAMESPACE_CONTEXT"
+
+            # Retrieve the admin kubeconfig
+            vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
+            echo "Kubeconfig retrieved via VCF CLI"
+          fi
+
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
+            exit 1
+          fi
+
+          # Save the kubeconfig path for later use (do NOT export KUBECONFIG yet — supervisor steps come first)
+          echo "KUBECONFIG_PATH=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+          echo "Kubeconfig saved to '$KUBECONFIG_PATH' (will be activated for guest cluster steps)"
+
+      # Step 5: Provision PostgresCluster
+      - name: Provision PostgresCluster
+        run: |
+          set -euo pipefail
+
+          # Ensure we are on the supervisor context (unset KUBECONFIG so kubectl uses VCF CLI context)
+          unset KUBECONFIG 2>/dev/null || true
+
+          # Re-establish VCF CLI context for supervisor operations
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current
+
+          # Switch to the namespace context for the supervisor namespace
+          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+          if [ -z "$NAMESPACE_CONTEXT" ]; then
+            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+          fi
+          if [ -n "$NAMESPACE_CONTEXT" ]; then
+            vcf context use "$NAMESPACE_CONTEXT"
+          fi
+
+          # Idempotency check — skip creation if PostgresCluster already exists
+          if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+            echo "PostgresCluster '${DSM_CLUSTER_NAME}' already exists in namespace '${SUPERVISOR_NAMESPACE}', skipping creation"
+          else
+            # Create admin password Secret (idempotent — skip if exists)
+            if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+              echo "Secret '${ADMIN_PASSWORD_SECRET_NAME}' already exists, skipping creation"
+            else
+              if ! kubectl create secret generic "${ADMIN_PASSWORD_SECRET_NAME}" \
+                -n "${SUPERVISOR_NAMESPACE}" \
+                --from-literal=password="${ADMIN_PASSWORD}"; then
+                echo "::error::Failed to create admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}'"
+                exit 1
+              fi
+              echo "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' created"
+            fi
+
+            # Apply PostgresCluster manifest
+            if ! cat <<EOF | kubectl apply --validate=false -f -
+          apiVersion: databases.dataservices.vmware.com/v1alpha1
+          kind: PostgresCluster
+          metadata:
+            name: ${DSM_CLUSTER_NAME}
+            namespace: ${SUPERVISOR_NAMESPACE}
+            labels:
+              dsm.vmware.com/infra-policy: "${DSM_INFRA_POLICY}"
+              dsm.vmware.com/infra-policy-type: "supervisor-managed"
+              dsm.vmware.com/vm-class: "${DSM_VM_CLASS}"
+              dsm.vmware.com/admin-password-name: "${ADMIN_PASSWORD_SECRET_NAME}"
+              dsm.vmware.com/consumption-namespace: "${SUPERVISOR_NAMESPACE}"
+              dsm.vmware.com/backup-loc-ns.namespace: ""
+              dsm.vmware.com/directory-service-name: ""
+              dsm.vmware.com/directory-service-namespace: ""
+          spec:
+            adminUsername: pgadmin
+            adminPasswordRef:
+              name: ${ADMIN_PASSWORD_SECRET_NAME}
+            databaseName: ${POSTGRES_DB}
+            infrastructurePolicy:
+              name: ${DSM_INFRA_POLICY}
+            version: "${POSTGRES_VERSION}"
+            replicas: ${POSTGRES_REPLICAS}
+            vmClass:
+              name: ${DSM_VM_CLASS}
+            storagePolicyName: ${DSM_STORAGE_POLICY}
+            storageSpace: ${DSM_STORAGE_SPACE}
+            maintenanceWindow:
+              duration: ${DSM_MAINTENANCE_WINDOW_DURATION}
+              startDay: ${DSM_MAINTENANCE_WINDOW_DAY}
+              startTime: "${DSM_MAINTENANCE_WINDOW_TIME}"
+            requestedSharedMemorySize: ${DSM_SHARED_MEMORY}
+            blockDatabaseConnections: false
+          EOF
+            then
+              echo "::error::Failed to apply PostgresCluster manifest for '${DSM_CLUSTER_NAME}'"
+              exit 1
+            fi
+
+            echo "PostgresCluster '${DSM_CLUSTER_NAME}' manifest applied to namespace '${SUPERVISOR_NAMESPACE}'"
+          fi
+
+          # Wait for PostgresCluster to be fully ready with connection details
+          echo "Waiting for PostgresCluster '${DSM_CLUSTER_NAME}' to reach Ready status with connection details..."
+          TIMEOUT="${DSM_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            DSM_HOST=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.host}' 2>/dev/null || true)
+            DSM_PORT=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.port}' 2>/dev/null || true)
+            if [ -n "$DSM_HOST" ] && [ "$DSM_PORT" != "0" ] && [ -n "$DSM_PORT" ]; then
+              echo "PostgresCluster '${DSM_CLUSTER_NAME}' is Ready"
+              break
+            fi
+            echo "PostgresCluster not yet Ready — waiting... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            DSM_STATUS=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.conditions}' 2>/dev/null || echo "unable to retrieve status")
+            echo "::error::PostgresCluster '${DSM_CLUSTER_NAME}' did not become ready within ${TIMEOUT}s. Current conditions: ${DSM_STATUS}"
+            exit 1
+          fi
+
+          # Extract remaining connection details
+          DSM_DBNAME=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.dbname}')
+          DSM_USERNAME=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.username}')
+
+          # Wait for DSM-created password secret pg-<cluster-name>
+          echo "Waiting for DSM password secret 'pg-${DSM_CLUSTER_NAME}'..."
+          PW_ELAPSED=0
+          DSM_PASSWORD=""
+          while [ "$PW_ELAPSED" -lt 120 ]; do
+            DSM_PASSWORD=$(kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+            if [ -n "$DSM_PASSWORD" ]; then
+              break
+            fi
+            echo "  Password secret not yet available — waiting... (${PW_ELAPSED}s/120s)"
+            sleep 10
+            PW_ELAPSED=$((PW_ELAPSED + 10))
+          done
+
+          if [ -z "${DSM_PASSWORD}" ]; then
+            echo "::error::Failed to read admin password from secret 'pg-${DSM_CLUSTER_NAME}'"
+            exit 1
+          fi
+
+          # Export connection details for subsequent steps
+          echo "DSM_HOST=$DSM_HOST" >> "$GITHUB_ENV"
+          echo "DSM_PORT=$DSM_PORT" >> "$GITHUB_ENV"
+          echo "DSM_DBNAME=$DSM_DBNAME" >> "$GITHUB_ENV"
+          echo "DSM_USERNAME=$DSM_USERNAME" >> "$GITHUB_ENV"
+          echo "DSM_PASSWORD=$DSM_PASSWORD" >> "$GITHUB_ENV"
+          echo "DSM PostgreSQL connection: ${DSM_HOST}:${DSM_PORT}/${DSM_DBNAME} (user: ${DSM_USERNAME})"
+
+      # Step 6: Build and Push API Image
+      - name: Build and Push API Image
+        run: |
+          set -euo pipefail
+          API_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}"
+
+          if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+            echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            echo "Logged in to DockerHub"
+          fi
+
+          if ! docker build -t "${API_IMAGE}" examples/deploy-hybrid-app/api/; then
+            echo "::error::Failed to build API container image '${API_IMAGE}'"
+            exit 1
+          fi
+          echo "API container image '${API_IMAGE}' built successfully"
+
+          if ! docker push "${API_IMAGE}"; then
+            echo "::error::Failed to push API container image '${API_IMAGE}'"
+            exit 1
+          fi
+          echo "API container image '${API_IMAGE}' pushed successfully"
+
+      # Step 7: Build and Push Frontend Image
+      - name: Build and Push Frontend Image
+        run: |
+          set -euo pipefail
+          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
+
+          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
+            echo "::error::Failed to build Frontend container image '${FRONTEND_IMAGE}'"
+            exit 1
+          fi
+          echo "Frontend container image '${FRONTEND_IMAGE}' built successfully"
+
+          if ! docker push "${FRONTEND_IMAGE}"; then
+            echo "::error::Failed to push Frontend container image '${FRONTEND_IMAGE}'"
+            exit 1
+          fi
+          echo "Frontend container image '${FRONTEND_IMAGE}' pushed successfully"
+
+      # Step 8: Setup Guest Cluster Kubeconfig
+      - name: Setup Guest Cluster Kubeconfig
+        run: |
+          set -euo pipefail
+          export KUBECONFIG="$KUBECONFIG_PATH"
+          echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+
+          # Switch to the admin context (the file may contain multiple contexts)
+          ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+          if kubectl config get-contexts "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1; then
+            kubectl config use-context "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH"
+            echo "Switched to admin context '$ADMIN_CONTEXT'"
+          else
+            kubectl config use-context "$(kubectl config get-contexts -o name --kubeconfig="$KUBECONFIG_PATH" | head -1)" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1 || true
+          fi
+
+          if ! kubectl get namespaces >/dev/null 2>&1; then
+            echo "::error::Unable to reach guest cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_PATH}'. Verify the cluster is running and the kubeconfig is valid."
+            exit 1
+          fi
+          echo "Guest cluster '${CLUSTER_NAME}' is reachable via '${KUBECONFIG_PATH}'"
+
+      # Step 9: Deploy API Service
+      - name: Deploy API Service
+        run: |
+          set -euo pipefail
+
+          # Create application namespace (idempotent)
+          if kubectl get ns "${APP_NAMESPACE}" >/dev/null 2>&1; then
+            echo "Namespace '${APP_NAMESPACE}' already exists, skipping creation"
+          else
+            kubectl create ns "${APP_NAMESPACE}"
+            echo "Namespace '${APP_NAMESPACE}' created"
+          fi
+
+          kubectl label ns "${APP_NAMESPACE}" \
+            pod-security.kubernetes.io/enforce=privileged \
+            --overwrite >/dev/null 2>&1 || true
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: managed-db-api
+            namespace: ${APP_NAMESPACE}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: managed-db-api
+            template:
+              metadata:
+                labels:
+                  app: managed-db-api
+              spec:
+                containers:
+                - name: api
+                  image: ${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}
+                  env:
+                  - name: POSTGRES_HOST
+                    value: "${DSM_HOST}"
+                  - name: POSTGRES_PORT
+                    value: "${DSM_PORT}"
+                  - name: POSTGRES_USER
+                    value: "${DSM_USERNAME}"
+                  - name: POSTGRES_PASSWORD
+                    value: "${DSM_PASSWORD}"
+                  - name: POSTGRES_DB
+                    value: "${DSM_DBNAME}"
+                  - name: POSTGRES_SSL
+                    value: "true"
+                  - name: API_PORT
+                    value: "${API_PORT}"
+                  ports:
+                  - containerPort: ${API_PORT}
+                  readinessProbe:
+                    httpGet:
+                      path: /healthz
+                      port: ${API_PORT}
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: managed-db-api
+            namespace: ${APP_NAMESPACE}
+          spec:
+            type: ClusterIP
+            selector:
+              app: managed-db-api
+            ports:
+            - port: ${API_PORT}
+              targetPort: ${API_PORT}
+              protocol: TCP
+          EOF
+          echo "API Deployment and ClusterIP Service applied on port ${API_PORT}"
+
+      # Step 10: Wait for API Pod Running
+      - name: Wait for API Pod Running
+        run: |
+          set -euo pipefail
+          TIMEOUT="${POD_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "API pod is running"
+              exit 0
+            fi
+            echo "Waiting for API pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::API pod did not reach Running state within ${TIMEOUT}s"
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 11: Deploy Frontend Service
+      - name: Deploy Frontend Service
+        run: |
+          set -euo pipefail
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: managed-db-dashboard
+            namespace: ${APP_NAMESPACE}
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: managed-db-dashboard
+            template:
+              metadata:
+                labels:
+                  app: managed-db-dashboard
+              spec:
+                containers:
+                - name: dashboard
+                  image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
+                  env:
+                  - name: API_HOST
+                    value: "managed-db-api.${APP_NAMESPACE}.svc.cluster.local"
+                  - name: API_PORT
+                    value: "${API_PORT}"
+                  ports:
+                  - containerPort: ${FRONTEND_PORT}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: managed-db-dashboard-lb
+            namespace: ${APP_NAMESPACE}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: managed-db-dashboard
+            ports:
+            - port: 80
+              targetPort: ${FRONTEND_PORT}
+              protocol: TCP
+          EOF
+          echo "Frontend Deployment and LoadBalancer Service applied (port 80 → ${FRONTEND_PORT})"
+
+      # Step 12: Wait for Frontend Pod Running
+      - name: Wait for Frontend Pod Running
+        run: |
+          set -euo pipefail
+          TIMEOUT="${POD_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-dashboard --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "Frontend pod is running"
+              exit 0
+            fi
+            echo "Waiting for Frontend pod to be running... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::Frontend pod did not reach Running state within ${TIMEOUT}s"
+          kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-dashboard -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 13: Wait for LoadBalancer IP
+      - name: Wait for LoadBalancer IP
+        id: get-lb-ip
+        run: |
+          set -euo pipefail
+          TIMEOUT="${LB_TIMEOUT}"
+          INTERVAL="${POLL_INTERVAL}"
+          ELAPSED=0
+          FRONTEND_IP=""
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            FRONTEND_IP=$(kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$FRONTEND_IP" ]; then
+              echo "LoadBalancer 'managed-db-dashboard-lb' assigned external IP: $FRONTEND_IP"
+              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+              echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::LoadBalancer 'managed-db-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
+          kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+          exit 1
+
+      # Step 14: HTTP Connectivity Test
+      - name: HTTP Connectivity Test
+        run: |
+          set -euo pipefail
+          FRONTEND_IP="${{ steps.get-lb-ip.outputs.frontend_ip }}"
+          RETRY_TIMEOUT=120
+          RETRY_INTERVAL=10
+
+          # Test frontend HTTP connectivity (with retries — Next.js may need a moment)
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+              break
+            fi
+            echo "Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+            sleep "$RETRY_INTERVAL"
+            ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+          done
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
+            exit 1
+          fi
+
+          # Test API health check via frontend (with retries — API may still be initializing schema)
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
+            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+            if [ "$HEALTH_STATUS" = "200" ]; then
+              echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+              break
+            fi
+            echo "API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
+            sleep "$RETRY_INTERVAL"
+            ELAPSED=$((ELAPSED + RETRY_INTERVAL))
+          done
+          if [ "$HEALTH_STATUS" != "200" ]; then
+            echo "::error::API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
+            exit 1
+          fi
+
+          echo "End-to-end connectivity verified"
+
+      # Step 15: Write Job Summary
+      - name: Write Job Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ Managed DB App Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | App Namespace | \`${APP_NAMESPACE}\` |
+          | DSM Host | \`${DSM_HOST}:${DSM_PORT}\` |
+          | Database | \`${DSM_DBNAME}\` |
+          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+
+          ### Deployed Services
+          | Service | Endpoint |
+          |---|---|
+          | DSM PostgreSQL | \`${DSM_HOST}:${DSM_PORT}\` |
+          | API | \`managed-db-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
+          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+
+          ### Container Images
+          | Image | Tag |
+          |---|---|
+          | \`${CONTAINER_REGISTRY}/hybrid-app-api\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/hybrid-app-dashboard\` | \`${IMAGE_TAG}\` |
+          EOF
+
+      # Step 16: Write Failure Summary
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ Managed DB App Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | App Namespace | \`${APP_NAMESPACE}\` |
+          | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
+          | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Verify the VKS cluster from Deploy Cluster is running and accessible
+          3. Check that the DSM infrastructure policy is configured in the supervisor namespace
+          4. Verify SUPERVISOR_NAMESPACE, PROJECT_NAME, DSM_INFRA_POLICY, and DSM_STORAGE_POLICY are set correctly
+          5. Re-run the workflow — most steps are idempotent and will skip already-completed work
+          EOF

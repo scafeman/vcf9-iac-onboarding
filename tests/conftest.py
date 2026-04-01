@@ -586,3 +586,91 @@ def bastion_readme_teardown_text():
     path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-bastion-vm', 'README-teardown.md')
     with open(path) as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Deploy Managed DB App Fixtures
+# ---------------------------------------------------------------------------
+
+MANAGED_DB_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-managed-db-app", "deploy-managed-db-app.sh"
+)
+
+MANAGED_DB_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-managed-db-app", "teardown-managed-db-app.sh"
+)
+
+MANAGED_DB_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-managed-db-app.yml"
+)
+
+MANAGED_DB_TRIGGER_SCRIPT_PATH = os.path.join(
+    PROJECT_ROOT, "scripts", "trigger-deploy-managed-db-app.sh"
+)
+
+MANAGED_DB_README_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-managed-db-app", "README-deploy.md"
+)
+
+MANAGED_DB_README_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-managed-db-app", "README-teardown.md"
+)
+
+MANAGED_DB_SAMPLE_MANIFEST_PATH = os.path.join(
+    PROJECT_ROOT, "examples", "sample-create-postgres-cluster.yaml"
+)
+
+
+@pytest.fixture(scope="session")
+def managed_db_deploy_text() -> str:
+    """Return the full text of the deploy-managed-db-app deploy script."""
+    with open(MANAGED_DB_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_teardown_text() -> str:
+    """Return the full text of the deploy-managed-db-app teardown script."""
+    with open(MANAGED_DB_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-managed-db-app.yml."""
+    with open(MANAGED_DB_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_workflow_yaml(managed_db_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the deploy-managed-db-app workflow file."""
+    return yaml.safe_load(managed_db_workflow_yaml_text)
+
+
+@pytest.fixture(scope="session")
+def managed_db_trigger_script_text() -> str:
+    """Return the raw text of scripts/trigger-deploy-managed-db-app.sh."""
+    with open(MANAGED_DB_TRIGGER_SCRIPT_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_readme_deploy_text() -> str:
+    """Return the raw text of examples/deploy-managed-db-app/README-deploy.md."""
+    with open(MANAGED_DB_README_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_readme_teardown_text() -> str:
+    """Return the raw text of examples/deploy-managed-db-app/README-teardown.md."""
+    with open(MANAGED_DB_README_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def managed_db_sample_manifest_text() -> str:
+    """Return the raw text of examples/sample-create-postgres-cluster.yaml."""
+    with open(MANAGED_DB_SAMPLE_MANIFEST_PATH, encoding="utf-8") as f:
+        return f.read()

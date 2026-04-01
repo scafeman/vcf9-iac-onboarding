@@ -13,6 +13,8 @@ services:
     volumes:
       # Mount the repo into the container
       - .:/workspace
+      # Mount Docker socket so scripts can build/push container images
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /workspace
     env_file:
       - .env

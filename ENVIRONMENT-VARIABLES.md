@@ -104,6 +104,39 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 
 ---
 
+## Deploy Managed DB App — DSM PostgresCluster Infrastructure Asset Tracker
+
+| Variable | Required | Description |
+|---|---|---|
+| `SUPERVISOR_NAMESPACE` | Yes | Supervisor namespace where the PostgresCluster will be provisioned |
+| `DSM_INFRA_POLICY` | Yes | DSM infrastructure policy name |
+| `DSM_STORAGE_POLICY` | Yes | vSphere storage policy name for DSM |
+| `ADMIN_PASSWORD` | Yes | Admin password for the PostgresCluster |
+| `DSM_CLUSTER_NAME` | No | PostgresCluster resource name (default: `postgres-clus-01`) |
+| `DSM_VM_CLASS` | No | VM class for DSM instances — Single Server requires 4 CPU minimum (default: `best-effort-large`) |
+| `DSM_STORAGE_SPACE` | No | Storage allocation (default: `20Gi`) |
+| `POSTGRES_VERSION` | No | PostgreSQL version (default: `17.7+vmware.v9.0.2.0`) |
+| `POSTGRES_REPLICAS` | No | Topology: `0` = Single Server, `1` = Single-Zone HA (default: `0`) |
+| `POSTGRES_DB` | No | Database name (default: `assetdb`) |
+| `ADMIN_PASSWORD_SECRET_NAME` | No | Name of the admin password Secret (default: `postgres-admin-password`) |
+| `DSM_MAINTENANCE_WINDOW_DAY` | No | Maintenance window day (default: `SATURDAY`) |
+| `DSM_MAINTENANCE_WINDOW_TIME` | No | Maintenance window start time (default: `04:59`) |
+| `DSM_MAINTENANCE_WINDOW_DURATION` | No | Maintenance window duration (default: `6h0m0s`) |
+| `DSM_SHARED_MEMORY` | No | Requested shared memory size (default: `64Mi`) |
+| `APP_NAMESPACE` | No | Kubernetes namespace for API + Frontend (default: `managed-db-app`) |
+| `CONTAINER_REGISTRY` | No | Docker registry prefix (default: `scafeman`) |
+| `IMAGE_TAG` | No | Container image tag (default: `latest`) |
+| `API_PORT` | No | API service port (default: `3001`) |
+| `FRONTEND_PORT` | No | Frontend container port (default: `3000`) |
+| `DSM_TIMEOUT` | No | Seconds to wait for PostgresCluster Ready (default: `1800`) |
+| `POD_TIMEOUT` | No | Seconds to wait for pod Running state (default: `300`) |
+| `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
+| `POLL_INTERVAL` | No | Seconds between polling attempts (default: `30`) |
+| `DOCKERHUB_USERNAME` | No | DockerHub username (for image push authentication) |
+| `DOCKERHUB_TOKEN` | No | DockerHub access token (for image push authentication) |
+
+---
+
 ## GitHub Actions Runner
 
 | Variable | Required | Description |

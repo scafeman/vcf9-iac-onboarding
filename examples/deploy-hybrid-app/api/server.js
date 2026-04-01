@@ -9,13 +9,20 @@ app.use(cors());
 app.use(express.json());
 
 // PostgreSQL connection pool
-const pool = new Pool({
+const poolConfig = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
   user: process.env.POSTGRES_USER || 'assetadmin',
   password: process.env.POSTGRES_PASSWORD || 'assetpass',
   database: process.env.POSTGRES_DB || 'assetdb',
-});
+};
+
+// Enable SSL for managed database connections (e.g., VCF DSM PostgresCluster)
+if (process.env.POSTGRES_SSL === 'true' || process.env.POSTGRES_SSL === '1') {
+  poolConfig.ssl = { rejectUnauthorized: false };
+}
+
+const pool = new Pool(poolConfig);
 
 // ---------------------------------------------------------------------------
 // Schema initialization and seed data

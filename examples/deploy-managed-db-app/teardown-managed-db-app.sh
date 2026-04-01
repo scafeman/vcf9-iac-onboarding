@@ -2,17 +2,18 @@
 set -euo pipefail
 
 ###############################################################################
-# VCF 9 Deploy Hybrid App — Infrastructure Asset Tracker Teardown Script
+# VCF 9 Deploy Managed DB App — Infrastructure Asset Tracker Teardown Script
 #
-# This script reverses the Hybrid App deployment, deleting all resources in the
-# correct reverse dependency order:
+# This script reverses the Managed DB App deployment, deleting all resources in
+# the correct reverse dependency order:
 #   Phase 1: Delete application namespace in guest cluster
 #            (removes Frontend + API Deployments, Services)
-#   Phase 2: Delete VirtualMachine in supervisor namespace
-#            (waits for VM termination within timeout)
+#   Phase 2: Delete PostgresCluster in supervisor namespace
+#            (waits for deletion within timeout)
+#   Phase 3: Delete admin password Secret in supervisor namespace
 #
 # Uses the same environment variables as the deploy script.
-# Run: bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
+# Run: bash examples/deploy-managed-db-app/teardown-managed-db-app.sh
 ###############################################################################
 
 ###############################################################################
@@ -32,14 +33,15 @@ CONTEXT_NAME="${CONTEXT_NAME:-}"
 # --- Supervisor Namespace ---
 SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 
-# --- VM Configuration ---
-VM_NAME="${VM_NAME:-postgresql-vm}"
+# --- DSM PostgresCluster Configuration ---
+DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-clus-01}"
+ADMIN_PASSWORD_SECRET_NAME="${ADMIN_PASSWORD_SECRET_NAME:-postgres-admin-password}"
 
 # --- Application Namespace ---
-APP_NAMESPACE="${APP_NAMESPACE:-hybrid-app}"
+APP_NAMESPACE="${APP_NAMESPACE:-managed-db-app}"
 
 # --- Timeouts and Polling ---
-VM_TIMEOUT="${VM_TIMEOUT:-600}"
+DSM_TIMEOUT="${DSM_TIMEOUT:-1800}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
 
 ###############################################################################
@@ -49,7 +51,8 @@ POLL_INTERVAL="${POLL_INTERVAL:-30}"
 declare -A RESOURCE_STATUS
 RESOURCE_STATUS=(
   ["namespace"]="not attempted"
-  ["virtualmachine"]="not attempted"
+  ["postgrescluster"]="not attempted"
+  ["admin-password-secret"]="not attempted"
 )
 
 ###############################################################################
@@ -198,40 +201,70 @@ else
 fi
 
 ###############################################################################
-# Phase 2: Delete VirtualMachine in Supervisor Namespace
+# Phase 2: Delete PostgresCluster in Supervisor Namespace
 ###############################################################################
 
-log_step 2 "Deleting VirtualMachine '${VM_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
+log_step 2 "Deleting PostgresCluster '${DSM_CLUSTER_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
 # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
 unset KUBECONFIG 2>/dev/null || true
 
-if kubectl get virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-  if kubectl delete virtualmachine "${VM_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
-    log_success "VirtualMachine '${VM_NAME}' delete command issued"
+if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+  # Issue delete (non-blocking with --wait=false to avoid hanging on finalizers)
+  if kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found --wait=false; then
+    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
 
-    # Wait for VM to be fully terminated
-    if wait_for_deletion "VirtualMachine '${VM_NAME}'" \
-      "${VM_TIMEOUT}" "${POLL_INTERVAL}" \
-      "kubectl get virtualmachine '${VM_NAME}' -n '${SUPERVISOR_NAMESPACE}'"; then
-      log_success "VirtualMachine '${VM_NAME}' fully terminated"
-      RESOURCE_STATUS["virtualmachine"]="deleted"
+    # Wait for PostgresCluster to be fully deleted
+    if wait_for_deletion "PostgresCluster '${DSM_CLUSTER_NAME}'" \
+      "${DSM_TIMEOUT}" "${POLL_INTERVAL}" \
+      "kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}'"; then
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
+      RESOURCE_STATUS["postgrescluster"]="deleted"
     else
-      log_warn "VirtualMachine '${VM_NAME}' was not fully terminated within ${VM_TIMEOUT}s — it may still be deleting"
-      RESOURCE_STATUS["virtualmachine"]="failed"
+      # Fallback: strip finalizer if deletion is stuck (e.g., PV cleanup failure)
+      log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' stuck in Deleting — stripping finalizer"
+      kubectl patch postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" \
+        --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      sleep 5
+      if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+        log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted after finalizer removal"
+        RESOURCE_STATUS["postgrescluster"]="deleted"
+      else
+        log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' still exists after finalizer removal"
+        RESOURCE_STATUS["postgrescluster"]="failed"
+      fi
     fi
   else
-    log_warn "Failed to delete VirtualMachine '${VM_NAME}' — continuing"
-    RESOURCE_STATUS["virtualmachine"]="failed"
+    log_warn "Failed to delete PostgresCluster '${DSM_CLUSTER_NAME}' — continuing"
+    RESOURCE_STATUS["postgrescluster"]="failed"
   fi
 else
-  log_success "VirtualMachine '${VM_NAME}' does not exist, already absent"
-  RESOURCE_STATUS["virtualmachine"]="already absent"
+  log_success "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, already absent"
+  RESOURCE_STATUS["postgrescluster"]="already absent"
 fi
 
-# Clean up cloud-init Secret
-kubectl delete secret "${VM_NAME}-cloud-init" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
-log_success "Cloud-init Secret '${VM_NAME}-cloud-init' cleaned up"
+###############################################################################
+# Phase 3: Delete Admin Password Secret in Supervisor Namespace
+###############################################################################
+
+log_step 3 "Deleting admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
+
+if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+  if kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
+    log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
+    RESOURCE_STATUS["admin-password-secret"]="deleted"
+  else
+    log_warn "Failed to delete admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' — continuing"
+    RESOURCE_STATUS["admin-password-secret"]="failed"
+  fi
+else
+  log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' does not exist, already absent"
+  RESOURCE_STATUS["admin-password-secret"]="already absent"
+fi
+
+# Clean up DSM-created password secret pg-<cluster-name>
+kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+log_success "DSM-created Secret 'pg-${DSM_CLUSTER_NAME}' cleaned up"
 
 ###############################################################################
 # Teardown Summary
@@ -239,11 +272,12 @@ log_success "Cloud-init Secret '${VM_NAME}-cloud-init' cleaned up"
 
 echo ""
 echo "============================================="
-echo "  VCF 9 Hybrid App — Teardown Complete"
+echo "  VCF 9 Managed DB App — Teardown Complete"
 echo "============================================="
-echo "  Cluster:        ${CLUSTER_NAME}"
-echo "  Namespace:      ${APP_NAMESPACE} (${RESOURCE_STATUS["namespace"]})"
-echo "  VirtualMachine: ${VM_NAME} (${RESOURCE_STATUS["virtualmachine"]})"
+echo "  Cluster:          ${CLUSTER_NAME}"
+echo "  Namespace:        ${APP_NAMESPACE} (${RESOURCE_STATUS["namespace"]})"
+echo "  PostgresCluster:  ${DSM_CLUSTER_NAME} (${RESOURCE_STATUS["postgrescluster"]})"
+echo "  Admin Secret:     ${ADMIN_PASSWORD_SECRET_NAME} (${RESOURCE_STATUS["admin-password-secret"]})"
 echo "============================================="
 echo ""
 

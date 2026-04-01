@@ -124,6 +124,18 @@ Typical deployment time: **4–12 minutes**. Requires a supervisor namespace wit
 
 See the [Deploy Bastion VM README](examples/deploy-bastion-vm/README-deploy.md) for details.
 
+### Deploy Managed DB App
+
+Provisions a DSM-managed PostgresCluster (the VCF equivalent of AWS RDS) and deploys a Next.js/Node.js application on VKS, demonstrating managed database connectivity over NSX VPC.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-managed-db-app/deploy-managed-db-app.sh
+```
+
+Typical deployment time: **14–35 minutes** (DSM provisioning takes 10–25 minutes). Requires a running VKS cluster from Deploy Cluster and a DSM infrastructure policy configured in the supervisor namespace.
+
+See the [Deploy Managed DB App README](examples/deploy-managed-db-app/README-deploy.md) for details.
+
 ## Teardown
 
 Each deployment has a corresponding teardown script. Teardown scripts are fully idempotent — safe to run multiple times.
@@ -143,6 +155,14 @@ docker exec vcf9-dev bash examples/deploy-bastion-vm/teardown-bastion-vm.sh
 ```
 
 Typical teardown time: **1–6 minutes**.
+
+### Teardown Managed DB App
+
+```bash
+docker exec vcf9-dev bash examples/deploy-managed-db-app/teardown-managed-db-app.sh
+```
+
+Typical teardown time: **2–11 minutes**.
 
 ### Teardown GitOps
 
