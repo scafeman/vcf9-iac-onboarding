@@ -76,12 +76,12 @@
 #
 # Create with:
 #   kubectl create secret generic sample-vm-cloud-init \
-#     -n <SUPERVISOR_NAMESPACE> \
+#     -n gh-actions-demo-01-ns-6dxm9 \
 #     --from-file=user-data=cloud-init.yaml
 #
 # Or inline (replace the user-data value with your cloud-init YAML):
 #   kubectl create secret generic sample-vm-cloud-init \
-#     -n <SUPERVISOR_NAMESPACE> \
+#     -n gh-actions-demo-01-ns-6dxm9 \
 #     --from-literal=user-data="$(cat <<'EOF'
 #   #cloud-config
 #   package_update: true
@@ -94,7 +94,7 @@
 #       shell: /bin/bash
 #       sudo: ALL=(ALL) NOPASSWD:ALL
 #       ssh_authorized_keys:
-#         - ssh-ed25519 AAAA... your-key-here
+#         - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair
 #   runcmd:
 #     - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 #     - systemctl restart sshd
@@ -130,7 +130,7 @@ spec:
     requests:
       # CHANGE: Replace with your desired data disk size.
       # Must include a unit suffix: Mi, Gi, or Ti.
-      storage: 50Gi  # CHANGE: Replace with your data disk size
+      storage: 10Gi  # CHANGE: Replace with your data disk size
   # CHANGE: Replace with your storage class.
   # Discover available storage classes with: kubectl get storageclasses
   storageClassName: nfs  # CHANGE: Replace with your storage class
@@ -189,7 +189,7 @@ spec:
     #
     # WARNING: Do not reduce below the image default — this may corrupt the
     # filesystem. Only increase. Cannot be changed after VM creation.
-    bootDiskCapacity: 50Gi  # CHANGE: Replace with your desired boot disk size
+    bootDiskCapacity: 30Gi  # CHANGE: Replace with your desired boot disk size
 
     # Volume provisioning mode for managed disks.
     # Options: Thin (default), Thick, ThickEagerZero
