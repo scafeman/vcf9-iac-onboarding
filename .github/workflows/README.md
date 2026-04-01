@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains six GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains eight GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
@@ -11,6 +11,8 @@ This repository contains six GitHub Actions workflows that automate the end-to-e
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
 | Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
 | Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
+| Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
+| Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
@@ -22,16 +24,21 @@ Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Metrics (deploy-vks-metrics.yml)
     ├── Deploy GitOps (deploy-argocd.yml)
     ├── Deploy Hybrid App (deploy-hybrid-app.yml)
-    └── Deploy Secrets Demo (deploy-secrets-demo.yml)
+    ├── Deploy Managed DB App (deploy-managed-db-app.yml)
+    ├── Deploy Secrets Demo (deploy-secrets-demo.yml)
+    └── Deploy Bastion VM (deploy-bastion-vm.yml)  ← no VKS cluster required
 
 Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase A: GitOps Stack Teardown
     ├── Phase B: Metrics Stack Teardown
     ├── Phase D: Hybrid App Stack Teardown
+    ├── Phase E: Secrets Demo Stack Teardown
+    ├── Phase F: Bastion VM Teardown
+    ├── Phase G: Managed DB App Teardown
     └── Phase C: Cluster Stack Teardown
 ```
 
-Deploy Metrics, Deploy GitOps, and Deploy Hybrid App share the same VKS cluster provisioned by Deploy Cluster. Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
+Deploy Metrics, Deploy GitOps, Deploy Hybrid App, and Deploy Managed DB App share the same VKS cluster provisioned by Deploy Cluster. Deploy Metrics and Deploy GitOps share common infrastructure (cert-manager, Contour, package repository, Envoy LoadBalancer, certificates) that is handled idempotently — whichever runs first installs the shared components, and the second skips them.
 
 ## Shared Configuration
 
@@ -818,11 +825,243 @@ Check vault-agent-init logs: `kubectl logs <pod> -c vault-agent-init -n secrets-
 
 ---
 
+# Deploy Bastion VM — SSH Jump Host (`deploy-bastion-vm.yml`)
+
+## Overview
+
+Deploys a minimal Ubuntu 24.04 bastion VM as a secure SSH jump host in a VCF 9 supervisor namespace. The VM is exposed via a VirtualMachineService LoadBalancer with `loadBalancerSourceRanges` to restrict SSH access to specific source IPs. Does not require a VKS cluster — only a supervisor namespace with VPC networking.
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Deploy Bastion VM"** → **"Run workflow"**
+2. Fill in: **supervisor_namespace** (required), and optionally **allowed_ssh_sources**, **vm_class**, **vm_image**, **vm_name**, **storage_class**, **ssh_username**, **ssh_public_key**, **boot_disk_size**, **data_disk_size**, **vm_network**
+
+### Trigger Script (repository_dispatch)
+
+```bash
+./scripts/trigger-deploy-bastion-vm.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --supervisor-namespace my-project-ns-xxxxx
+```
+
+**Required:** `--repo`, `--token`, `--supervisor-namespace`
+
+**Optional:** `--allowed-ssh-sources`, `--vm-class`, `--vm-image`, `--vm-name`, `--storage-class`, `--ssh-username`, `--ssh-public-key`, `--boot-disk-size`, `--data-disk-size`, `--vm-network`, `--vcfa-endpoint`, `--tenant-name`
+
+### Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-bastion-vm",
+    "client_payload": {
+      "supervisor_namespace": "my-project-ns-xxxxx",
+      "allowed_ssh_sources": "136.62.85.50"
+    }
+  }'
+```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `SUPERVISOR_NAMESPACE` | `supervisor_namespace` | (required) | Supervisor namespace where the bastion VM will be provisioned |
+| `ALLOWED_SSH_SOURCES` | `allowed_ssh_sources` | `136.62.85.50` | Comma-separated list of allowed SSH source IPs |
+| `VM_CLASS` | `vm_class` | `best-effort-medium` | VM Service compute class |
+| `VM_IMAGE` | `vm_image` | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
+| `VM_NAME` | `vm_name` | `bastion-vm` | Name for the VirtualMachine resource |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for VM disk |
+| `SSH_USERNAME` | `ssh_username` | `rackadmin` | SSH username for the bastion VM |
+| `SSH_PUBLIC_KEY` | `ssh_public_key` | ed25519 key | SSH public key for the bastion VM user |
+| `BOOT_DISK_SIZE` | `boot_disk_size` | (image default) | Boot disk size override (e.g., `30Gi`) |
+| `DATA_DISK_SIZE` | `data_disk_size` | (none) | Additional data disk size (e.g., `10Gi`) |
+| `VM_NETWORK` | `vm_network` | (VPC default) | NSX SubnetSet name (e.g., `inside-subnet`) |
+| `VM_TIMEOUT` | `vm_timeout` | `600` | Seconds to wait for VM PoweredOn |
+| `LB_TIMEOUT` | `lb_timeout` | `300` | Seconds to wait for LoadBalancer external IP |
+| `SSH_TIMEOUT` | `ssh_timeout` | `120` | Seconds to wait for SSH connectivity |
+| `POLL_INTERVAL` | `poll_interval` | `30` | Seconds between polling attempts |
+
+## Workflow Steps
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| 2 | **Validate Inputs** | Checks all required environment variables are set |
+| 3 | **Create VCF CLI Context** | Creates a VCF CLI context and switches to the supervisor namespace |
+| 4 | **Provision Bastion VM** | Creates cloud-init Secret and applies VirtualMachine manifest with optional boot disk resize, data disk PVC, and SubnetSet network selection |
+| 5 | **Wait for VM Ready** | Polls until the VM reaches PoweredOn state and an internal IP is assigned |
+| 6 | **Create VirtualMachineService** | Creates a LoadBalancer VirtualMachineService with `loadBalancerSourceRanges` restricting SSH to allowed IPs |
+| 7 | **Wait for LoadBalancer IP** | Polls until the VirtualMachineService receives an external IP |
+| 8 | **Verify SSH Connectivity** | Tests SSH connectivity via `nc` to the LoadBalancer IP on port 22 |
+| 9 | **Write Job Summary** | Writes deployment summary with VM name, internal IP, external IP, and SSH command |
+| 10 | **Write Failure Summary** | On failure, writes failure summary with troubleshooting steps |
+
+## Troubleshooting
+
+### VM does not reach PoweredOn state
+
+- Verify the `VM_IMAGE` exists in the content library
+- Verify the `VM_CLASS` is available: `kubectl get virtualmachineclasses`
+- Check VirtualMachine events: `kubectl describe virtualmachine bastion-vm -n <SUPERVISOR_NAMESPACE>`
+
+### No LoadBalancer IP assigned
+
+- Check NSX load balancer capacity and VPC configuration
+- Verify the VirtualMachineService exists: `kubectl get virtualmachineservice -n <SUPERVISOR_NAMESPACE>`
+
+### SSH connectivity test fails
+
+- Verify the source IP is in the `ALLOWED_SSH_SOURCES` list
+- Check that the VM's cloud-init completed (SSH key injection)
+- Try connecting manually: `ssh <SSH_USERNAME>@<EXTERNAL_IP>`
+
+---
+
+# Deploy Managed DB App — DSM PostgresCluster Asset Tracker (`deploy-managed-db-app.yml`)
+
+## Overview
+
+Deploys a full-stack Infrastructure Asset Tracker demo backed by a VCF Database Service Manager (DSM) managed PostgresCluster — the VCF equivalent of AWS EKS + RDS. Provisions a fully managed PostgreSQL instance via the PostgresCluster CRD, builds and pushes API and Frontend container images, deploys them to the VKS guest cluster, and verifies end-to-end connectivity. Supports both Single Server (replicas=0) and Single-Zone HA (replicas=1) topologies.
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Deploy Managed DB App"** → **"Run workflow"**
+2. Fill in: **cluster_name** (required), **supervisor_namespace** (required), **project_name** (required), and optionally **dsm_infra_policy**, **dsm_storage_policy**, **dsm_vm_class**, **dsm_storage_space**, **postgres_version**, **dsm_cluster_name**, **postgres_replicas**, **postgres_db**
+
+### Trigger Script (repository_dispatch)
+
+```bash
+./scripts/trigger-deploy-managed-db-app.sh \
+  --repo myorg/vcf9-iac \
+  --token ghp_xxxxxxxxxxxx \
+  --cluster-name my-project-01-clus-01 \
+  --supervisor-namespace my-project-ns-xxxxx \
+  --dsm-infra-policy shared-dsm-01 \
+  --dsm-storage-policy nfs
+```
+
+**Required:** `--repo`, `--token`, `--cluster-name`
+
+**Optional:** `--supervisor-namespace`, `--project-name`, `--dsm-infra-policy`, `--dsm-storage-policy`, `--dsm-vm-class`, `--dsm-storage-space`, `--postgres-version`, `--dsm-cluster-name`, `--postgres-replicas`, `--postgres-db`, `--vcfa-endpoint`, `--tenant-name`
+
+### Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-managed-db-app",
+    "client_payload": {
+      "cluster_name": "my-dev-project-01-clus-01",
+      "supervisor_namespace": "my-project-ns-xxxxx",
+      "dsm_infra_policy": "shared-dsm-01",
+      "dsm_storage_policy": "nfs"
+    }
+  }'
+```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `CLUSTER_NAME` | `cluster_name` | (required) | VKS cluster name |
+| `SUPERVISOR_NAMESPACE` | `supervisor_namespace` | (required) | Supervisor namespace for DSM provisioning |
+| `PROJECT_NAME` | `project_name` | (required) | VCF project name |
+| `DSM_INFRA_POLICY` | `dsm_infra_policy` | `shared-dsm-01` | DSM infrastructure policy name |
+| `DSM_STORAGE_POLICY` | `dsm_storage_policy` | `NFS` | vSphere storage policy name for DSM |
+| `DSM_VM_CLASS` | `dsm_vm_class` | `best-effort-large` | VM class for DSM instances (Single Server requires 4 CPU minimum) |
+| `DSM_STORAGE_SPACE` | `dsm_storage_space` | `20Gi` | Storage allocation |
+| `POSTGRES_VERSION` | `postgres_version` | `17.7+vmware.v9.0.2.0` | PostgreSQL version |
+| `DSM_CLUSTER_NAME` | `dsm_cluster_name` | `pg-clus-01` | PostgresCluster resource name |
+| `POSTGRES_REPLICAS` | `postgres_replicas` | `0` | Topology: `0` = Single Server, `1` = Single-Zone HA |
+| `POSTGRES_DB` | `postgres_db` | `assetdb` | Database name |
+| `ADMIN_PASSWORD_SECRET_NAME` | `admin_password_secret_name` | `postgres-admin-password` | Name of the admin password Secret |
+| `ADMIN_PASSWORD` | — | (secret only) | Admin password for the PostgresCluster |
+| `APP_NAMESPACE` | `app_namespace` | `managed-db-app` | Kubernetes namespace for API + Frontend |
+| `CONTAINER_REGISTRY` | `container_registry` | `scafeman` | Docker registry prefix |
+| `IMAGE_TAG` | `image_tag` | `latest` | Container image tag |
+| `API_PORT` | `api_port` | `3001` | API service port |
+| `FRONTEND_PORT` | `frontend_port` | `3000` | Frontend container port |
+| `DSM_TIMEOUT` | `dsm_timeout` | `1800` | Seconds to wait for PostgresCluster Ready |
+| `POD_TIMEOUT` | `pod_timeout` | `300` | Seconds to wait for pod Running state |
+| `LB_TIMEOUT` | `lb_timeout` | `300` | Seconds to wait for LoadBalancer external IP |
+| `POLL_INTERVAL` | `poll_interval` | `30` | Seconds between polling attempts |
+
+## Workflow Steps
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| 2 | **Validate Inputs** | Checks all required environment variables are set |
+| 3 | **Create VCF CLI Context** | Creates a VCF CLI context authenticated to the VCFA endpoint |
+| 4 | **Setup Kubeconfig** | Retrieves the admin kubeconfig for the VKS guest cluster via VCF CLI |
+| 5 | **Provision PostgresCluster** | Creates admin password Secret, applies PostgresCluster manifest with DSM labels, waits for connection details (host + port), extracts DSM password from `pg-<cluster-name>` secret |
+| 6 | **Build and Push API Image** | Builds and pushes the Node.js API container image to DockerHub |
+| 7 | **Build and Push Frontend Image** | Builds and pushes the Next.js dashboard container image to DockerHub |
+| 8 | **Setup Guest Cluster Kubeconfig** | Switches to the guest cluster kubeconfig and verifies connectivity |
+| 9 | **Deploy API Service** | Deploys the API Deployment (with `POSTGRES_SSL=true` and readiness probe on `/healthz`) and ClusterIP Service |
+| 10 | **Wait for API Pod Running** | Polls until the API pod reaches Running state |
+| 11 | **Deploy Frontend Service** | Deploys the Frontend Deployment and LoadBalancer Service (port 80 → 3000) |
+| 12 | **Wait for Frontend Pod Running** | Polls until the Frontend pod reaches Running state |
+| 13 | **Wait for LoadBalancer IP** | Polls until the LoadBalancer receives an external IP |
+| 14 | **HTTP Connectivity Test** | Curls the frontend IP for HTTP 200 and the `/api/healthz` endpoint for healthy database status |
+| 15 | **Write Job Summary** | Writes a Markdown summary with cluster details, DSM host, frontend IP, and container images |
+| 16 | **Write Failure Summary** | On failure, writes a failure summary with troubleshooting steps |
+
+## Key DSM Concepts
+
+| Concept | Description |
+|---|---|
+| `consumption-namespace` label | Must be the supervisor namespace (not the app namespace) |
+| `infra-policy-type` label | Must be `supervisor-managed` for shared DSM policies |
+| Secret naming | Secret names cannot start with `pg-` (reserved by DSM) |
+| Connection readiness | Wait for `status.connection.host` to be populated — more reliable than the Ready condition |
+| SSL requirement | DSM requires SSL for all connections — API deployment includes `POSTGRES_SSL=true` |
+| Single Server minimum | `replicas: 0` requires minimum `best-effort-large` VM class (4 CPU) |
+
+## Troubleshooting
+
+### PostgresCluster does not reach Ready status
+
+- Verify the DSM infrastructure policy exists in the supervisor namespace
+- Verify the `DSM_STORAGE_POLICY` is available: `kubectl get storagepolicies`
+- Verify the `DSM_VM_CLASS` is available: `kubectl get virtualmachineclasses`
+- Check PostgresCluster status: `kubectl get postgrescluster <name> -n <SUPERVISOR_NAMESPACE> -o yaml`
+- Increase `DSM_TIMEOUT` if the environment is slow (default: 1800s)
+
+### Admission webhook denies PostgresCluster creation
+
+- "already exists" — DSM has a stale record from a previous deployment. Use a different `DSM_CLUSTER_NAME`
+- "secret name cannot be 'pg-...'" — secret names starting with `pg-` are reserved by DSM. Change `ADMIN_PASSWORD_SECRET_NAME`
+
+### API pod in CrashLoopBackOff
+
+- Check pod logs: `kubectl logs -l app=managed-db-api -n managed-db-app`
+- Verify the DSM PostgreSQL endpoint is reachable from the guest cluster
+- Verify `POSTGRES_SSL=true` is set (DSM requires SSL)
+
+### Container image build/push fails
+
+- Verify Docker is running on the self-hosted runner
+- Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set
+
+---
+
 # Teardown — Teardown VCF Stacks (`teardown.yml`)
 
 ## Overview
 
-Selectively tears down the three VCF 9 deployment stacks (GitOps, Metrics, Cluster) in reverse dependency order. The workflow consolidates the logic from the three existing teardown shell scripts into inline workflow steps, following the same patterns as the deploy workflows. Boolean inputs control which stacks are torn down, enabling selective teardown (e.g., tear down only GitOps while keeping Metrics and the Cluster).
+Selectively tears down the VCF 9 deployment stacks (GitOps, Metrics, Hybrid App, Secrets Demo, Bastion VM, Managed DB App, and Cluster) in reverse dependency order. The workflow consolidates the logic from the three existing teardown shell scripts into inline workflow steps, following the same patterns as the deploy workflows. Boolean inputs control which stacks are torn down, enabling selective teardown (e.g., tear down only GitOps while keeping Metrics and the Cluster).
 
 ## Triggering the Workflow
 
@@ -884,6 +1123,14 @@ curl -X POST \
 | `TEARDOWN_METRICS` | `teardown_metrics` | boolean | `true` | Tear down the Metrics stack (Grafana, packages) |
 | `TEARDOWN_CLUSTER` | `teardown_cluster` | boolean | `true` | Tear down the VKS cluster and project |
 | `TEARDOWN_HYBRID_APP` | `teardown_hybrid_app` | boolean | `true` | Tear down the Hybrid App stack (PostgreSQL VM, API, Frontend) |
+| `TEARDOWN_SECRETS_DEMO` | `teardown_secrets_demo` | boolean | `true` | Tear down the Secrets Demo stack |
+| `TEARDOWN_BASTION_VM` | `teardown_bastion_vm` | boolean | `true` | Tear down the Bastion VM |
+| `TEARDOWN_MANAGED_DB_APP` | `teardown_managed_db_app` | boolean | `true` | Tear down the Managed DB App stack (DSM PostgresCluster, API, Frontend) |
+| `BASTION_VM_NAME` | `bastion_vm_name` | string | `bastion-vm` | Bastion VM name (must match the name used during deploy) |
+| `DSM_CLUSTER_NAME` | `dsm_cluster_name` | string | `pg-clus-01` | DSM PostgresCluster name |
+| `ADMIN_PASSWORD_SECRET_NAME` | `admin_password_secret_name` | string | `postgres-admin-password` | Admin password secret name |
+| `MANAGED_DB_APP_NAMESPACE` | `managed_db_app_namespace` | string | `managed-db-app` | Managed DB App namespace |
+| `DSM_TIMEOUT` | `dsm_timeout` | string | `1800` | Seconds to wait for PostgresCluster deletion |
 | `DOMAIN` | `domain` | string | `lab.local` | Domain suffix for service hostnames |
 | `KUBECONFIG_PATH` | `kubeconfig_path` | string | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
 | `PACKAGE_NAMESPACE` | `package_namespace` | string | `tkg-packages` | Namespace for VKS standard packages |
@@ -910,6 +1157,12 @@ curl -X POST \
 | B | **Clean Up Cluster-Scoped Resources** | Deletes ClusterRoles, ClusterRoleBindings, CRDs, webhooks left by packages |
 | D | **Delete Hybrid App Namespace** | Deletes the `hybrid-app` namespace in the guest cluster (removes API + Frontend Deployments and Services) |
 | D | **Delete PostgreSQL VM** | Switches to supervisor context, deletes the VirtualMachine resource, waits for termination, cleans up cloud-init Secret |
+| E | **Delete Secrets Demo Vault-Injector Package** | Deletes the vault-injector VKS standard package |
+| E | **Delete Secrets Demo Namespace** | Deletes the `secrets-demo` namespace and cluster-scoped resources |
+| E | **Delete Secrets Demo Supervisor Resources** | Deletes KeyValueSecrets, ServiceAccount, and token in supervisor namespace |
+| F | **Delete Bastion VM Resources** | Deletes VirtualMachineService, VirtualMachine, data disk PVC, and cloud-init Secret in supervisor namespace |
+| G | **Delete Managed DB App Namespace** | Deletes the `managed-db-app` namespace in the guest cluster (removes API + Frontend) |
+| G | **Delete DSM PostgresCluster** | Switches to supervisor context, deletes the PostgresCluster resource, waits for deletion, cleans up admin password and DSM-created secrets |
 | C | **Delete Guest Cluster Workloads** | Deletes vks-test-lb Service, vks-test-app Deployment, vks-test-pvc PVC |
 | C | **Delete VKS Cluster** | Deletes the VKS cluster resource and waits for deletion |
 | C | **Delete Supervisor Namespace and Project** | Deletes SupervisorNamespace, ProjectRoleBinding, and Project |
