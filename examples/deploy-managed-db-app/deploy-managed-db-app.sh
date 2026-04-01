@@ -159,6 +159,10 @@ wait_for_condition() {
   local elapsed=0
 
   while [[ "${elapsed}" -lt "${timeout}" ]]; do
+    # Refresh VCF CLI token every 5 minutes to prevent expiry during long waits
+    if [[ $((elapsed % 300)) -eq 0 ]] && [[ "${elapsed}" -gt 0 ]]; then
+      refresh_vcf_context
+    fi
     if eval "${check_command}" >/dev/null 2>&1; then
       return 0
     fi
@@ -169,6 +173,24 @@ wait_for_condition() {
 
   echo "  Timeout waiting for ${description} after ${elapsed}s"
   return 1
+}
+
+refresh_vcf_context() {
+  echo "  Refreshing VCF CLI token..."
+  vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+  vcf context create "${CONTEXT_NAME}" \
+    --endpoint "https://${VCFA_ENDPOINT}" \
+    --type cci \
+    --tenant-name "${TENANT_NAME}" \
+    --api-token "${VCF_API_TOKEN}" \
+    --set-current >/dev/null 2>&1 || true
+  # Switch to the namespace context
+  local ns_ctx
+  ns_ctx=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+  if [[ -n "${ns_ctx}" ]]; then
+    vcf context use "${ns_ctx}" >/dev/null 2>&1 || true
+  fi
+  echo "  Token refreshed"
 }
 
 ###############################################################################
