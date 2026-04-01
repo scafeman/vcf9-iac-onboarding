@@ -108,7 +108,7 @@ jobs:
       DSM_CLUSTER_NAME: ${{ github.event.inputs.dsm_cluster_name || github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'pg-clus-01' }}
       POSTGRES_REPLICAS: ${{ github.event.inputs.postgres_replicas || github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '0' }}
       POSTGRES_DB: ${{ github.event.inputs.postgres_db || github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
-      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'postgres-admin-password' }}
+      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'admin-pw-pg-clus-01' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       DSM_MAINTENANCE_WINDOW_DAY: ${{ github.event.client_payload.dsm_maintenance_window_day || 'SATURDAY' }}
       DSM_MAINTENANCE_WINDOW_TIME: ${{ github.event.client_payload.dsm_maintenance_window_time || '04:59' }}

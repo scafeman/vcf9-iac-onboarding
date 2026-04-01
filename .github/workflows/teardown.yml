@@ -104,7 +104,7 @@ jobs:
       BASTION_VM_NAME: ${{ github.event.inputs.bastion_vm_name || github.event.client_payload.bastion_vm_name || 'bastion-vm' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       DSM_CLUSTER_NAME: ${{ github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'postgres-clus-01' }}
-      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'postgres-admin-password' }}
+      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'admin-pw-pg-clus-01' }}
       MANAGED_DB_APP_NAMESPACE: ${{ github.event.client_payload.managed_db_app_namespace || 'managed-db-app' }}
       DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || '1800' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}

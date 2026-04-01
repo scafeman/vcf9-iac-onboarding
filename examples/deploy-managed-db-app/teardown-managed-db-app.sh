@@ -35,7 +35,7 @@ SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 
 # --- DSM PostgresCluster Configuration ---
 DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-clus-01}"
-ADMIN_PASSWORD_SECRET_NAME="${ADMIN_PASSWORD_SECRET_NAME:-postgres-admin-password}"
+ADMIN_PASSWORD_SECRET_NAME="${ADMIN_PASSWORD_SECRET_NAME:-admin-pw-pg-clus-01}"
 
 # --- Application Namespace ---
 APP_NAMESPACE="${APP_NAMESPACE:-managed-db-app}"
