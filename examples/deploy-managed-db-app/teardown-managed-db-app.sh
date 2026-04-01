@@ -34,7 +34,7 @@ CONTEXT_NAME="${CONTEXT_NAME:-}"
 SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 
 # --- DSM PostgresCluster Configuration ---
-DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-01}"
+DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-clus-01}"
 ADMIN_PASSWORD_SECRET_NAME="${ADMIN_PASSWORD_SECRET_NAME:-postgres-admin-password}"
 
 # --- Application Namespace ---
@@ -209,7 +209,8 @@ if [[ -n "${CONTEXT_NAME}" ]]; then
 fi
 
 if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-  if kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
+  # Issue delete (non-blocking with --wait=false to avoid hanging on finalizers)
+  if kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found --wait=false; then
     log_success "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
 
     # Wait for PostgresCluster to be fully deleted
@@ -219,8 +220,18 @@ if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}
       log_success "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
       RESOURCE_STATUS["postgrescluster"]="deleted"
     else
-      log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${DSM_TIMEOUT}s — it may still be deleting"
-      RESOURCE_STATUS["postgrescluster"]="failed"
+      # Fallback: strip finalizer if deletion is stuck (e.g., PV cleanup failure)
+      log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' stuck in Deleting — stripping finalizer"
+      kubectl patch postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" \
+        --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      sleep 5
+      if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+        log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted after finalizer removal"
+        RESOURCE_STATUS["postgrescluster"]="deleted"
+      else
+        log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' still exists after finalizer removal"
+        RESOURCE_STATUS["postgrescluster"]="failed"
+      fi
     fi
   else
     log_warn "Failed to delete PostgresCluster '${DSM_CLUSTER_NAME}' — continuing"

@@ -52,9 +52,9 @@ SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 PROJECT_NAME="${PROJECT_NAME:-}"
 
 # --- DSM PostgresCluster Configuration ---
-DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-01}"
+DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-clus-01}"
 DSM_INFRA_POLICY="${DSM_INFRA_POLICY:-}"
-DSM_VM_CLASS="${DSM_VM_CLASS:-medium}"
+DSM_VM_CLASS="${DSM_VM_CLASS:-best-effort-medium}"
 DSM_STORAGE_POLICY="${DSM_STORAGE_POLICY:-}"
 DSM_STORAGE_SPACE="${DSM_STORAGE_SPACE:-20Gi}"
 POSTGRES_VERSION="${POSTGRES_VERSION:-17.7+vmware.v9.0.2.0}"
@@ -82,7 +82,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 STORAGE_CLASS="${STORAGE_CLASS:-nfs}"
 
 # --- Timeouts and Polling ---
-DSM_TIMEOUT="${DSM_TIMEOUT:-900}"
+DSM_TIMEOUT="${DSM_TIMEOUT:-1800}"
 POD_TIMEOUT="${POD_TIMEOUT:-300}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
@@ -209,9 +209,13 @@ metadata:
   namespace: ${SUPERVISOR_NAMESPACE}
   labels:
     dsm.vmware.com/infra-policy: "${DSM_INFRA_POLICY}"
+    dsm.vmware.com/infra-policy-type: "supervisor-managed"
     dsm.vmware.com/vm-class: "${DSM_VM_CLASS}"
     dsm.vmware.com/admin-password-name: "${ADMIN_PASSWORD_SECRET_NAME}"
-    dsm.vmware.com/consumption-namespace: "${APP_NAMESPACE}"
+    dsm.vmware.com/consumption-namespace: "${SUPERVISOR_NAMESPACE}"
+    dsm.vmware.com/backup-loc-ns.namespace: ""
+    dsm.vmware.com/directory-service-name: ""
+    dsm.vmware.com/directory-service-namespace: ""
 spec:
   adminUsername: pgadmin
   adminPasswordRef:
@@ -240,32 +244,43 @@ EOF
   log_success "PostgresCluster '${DSM_CLUSTER_NAME}' manifest applied to namespace '${SUPERVISOR_NAMESPACE}'"
 fi
 
-# Wait for PostgresCluster to reach Ready status
-log_step "1b" "Waiting for PostgresCluster '${DSM_CLUSTER_NAME}' to reach Ready status"
+# Wait for PostgresCluster to be fully ready with connection details
+log_step "1b" "Waiting for PostgresCluster '${DSM_CLUSTER_NAME}' to reach Ready status with connection details"
 
-if ! wait_for_condition "PostgresCluster '${DSM_CLUSTER_NAME}' to be Ready" \
+if ! wait_for_condition "PostgresCluster '${DSM_CLUSTER_NAME}' connection details" \
   "${DSM_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}' -o jsonpath='{.status.conditions}' 2>/dev/null | grep -q '\"type\":\"Ready\"' && kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}' -o jsonpath='{.status.conditions}' 2>/dev/null | grep -q '\"status\":\"True\"'"; then
-  DSM_STATUS=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status}' 2>/dev/null || echo "unable to retrieve status")
-  log_error "PostgresCluster '${DSM_CLUSTER_NAME}' did not reach Ready status within ${DSM_TIMEOUT}s. Current status: ${DSM_STATUS}"
+  "[[ -n \$(kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}' -o jsonpath='{.status.connection.host}' 2>/dev/null) ]] && [[ \$(kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}' -o jsonpath='{.status.connection.port}' 2>/dev/null) != '0' ]]"; then
+  DSM_STATUS=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.conditions}' 2>/dev/null || echo "unable to retrieve status")
+  log_error "PostgresCluster '${DSM_CLUSTER_NAME}' did not become ready within ${DSM_TIMEOUT}s. Current conditions: ${DSM_STATUS}"
   exit 2
 fi
 
 log_success "PostgresCluster '${DSM_CLUSTER_NAME}' is Ready"
 
-# Extract connection details from status.connection
+# Extract connection details
 DSM_HOST=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.host}')
 DSM_PORT=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.port}')
 DSM_DBNAME=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.dbname}')
 DSM_USERNAME=$(kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.connection.username}')
 
-if [[ -z "${DSM_HOST}" ]] || [[ -z "${DSM_PORT}" ]]; then
+if [[ -z "${DSM_HOST}" ]] || [[ "${DSM_PORT}" == "0" ]] || [[ -z "${DSM_PORT}" ]]; then
   log_error "Failed to extract connection details from PostgresCluster '${DSM_CLUSTER_NAME}' status"
   exit 2
 fi
 
-# Read admin password from DSM-created secret pg-<cluster-name>
-DSM_PASSWORD=$(kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.data.password}' | base64 -d)
+# Wait for DSM-created password secret pg-<cluster-name>
+echo "Waiting for DSM password secret 'pg-${DSM_CLUSTER_NAME}'..."
+DSM_PASSWORD=""
+PW_ELAPSED=0
+while [[ "${PW_ELAPSED}" -lt 120 ]]; do
+  DSM_PASSWORD=$(kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [[ -n "${DSM_PASSWORD}" ]]; then
+    break
+  fi
+  echo "  Password secret not yet available — waiting... (${PW_ELAPSED}s/120s)"
+  sleep 10
+  PW_ELAPSED=$((PW_ELAPSED + 10))
+done
 
 if [[ -z "${DSM_PASSWORD}" ]]; then
   log_error "Failed to read admin password from secret 'pg-${DSM_CLUSTER_NAME}'"
