@@ -84,7 +84,7 @@ jobs:
 
       # --- DSM-Specific Parameters ---
       DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY }}
-      DSM_VM_CLASS: ${{ github.event.inputs.dsm_vm_class || github.event.client_payload.dsm_vm_class || secrets.DSM_VM_CLASS || 'best-effort-medium' }}
+      DSM_VM_CLASS: ${{ github.event.inputs.dsm_vm_class || github.event.client_payload.dsm_vm_class || secrets.DSM_VM_CLASS || 'best-effort-large' }}
       DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
       DSM_STORAGE_SPACE: ${{ github.event.inputs.dsm_storage_space || github.event.client_payload.dsm_storage_space || secrets.DSM_STORAGE_SPACE || '20Gi' }}
       POSTGRES_VERSION: ${{ github.event.inputs.postgres_version || github.event.client_payload.postgres_version || secrets.POSTGRES_VERSION || '17.7+vmware.v9.0.2.0' }}
