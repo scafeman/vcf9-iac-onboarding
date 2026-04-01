@@ -799,6 +799,16 @@ jobs:
             echo "VirtualMachine '$VM_NAME' does not exist, skipping"
           fi
 
+          # Delete data disk PVC (strip finalizer first to avoid stuck deletion)
+          if kubectl get pvc "${VM_NAME}-data" -n "$NS_NAME" >/dev/null 2>&1; then
+            kubectl patch pvc "${VM_NAME}-data" -n "$NS_NAME" \
+              --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+            kubectl delete pvc "${VM_NAME}-data" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+            echo "PVC '${VM_NAME}-data' deleted"
+          else
+            echo "PVC '${VM_NAME}-data' does not exist, skipping"
+          fi
+
           # Delete cloud-init Secret
           kubectl delete secret "${VM_NAME}-cloud-init" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
           echo "Bastion VM resources cleaned up"
