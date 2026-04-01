@@ -200,6 +200,40 @@ refresh_vcf_context() {
 validate_variables
 
 ###############################################################################
+# VCF CLI Context Setup
+###############################################################################
+
+log_step 0 "Creating VCF CLI context and switching to supervisor namespace"
+
+vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+
+if ! vcf context create "${CONTEXT_NAME}" \
+  --endpoint "https://${VCFA_ENDPOINT}" \
+  --type cci \
+  --tenant-name "${TENANT_NAME}" \
+  --api-token "${VCF_API_TOKEN}" \
+  --set-current; then
+  log_error "Failed to create VCF CLI context '${CONTEXT_NAME}' for endpoint '${VCFA_ENDPOINT}'. Verify your endpoint URL, tenant name, and API token."
+  exit 1
+fi
+
+# Switch to the namespace context for the supervisor namespace
+NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+if [[ -z "${NS_CTX}" ]]; then
+  # Fallback: try matching by project pattern
+  PROJECT_PATTERN=$(echo "${CLUSTER_NAME}" | sed 's/-clus-[0-9]*$//')
+  NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+fi
+
+if [[ -n "${NS_CTX}" ]]; then
+  vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  log_success "VCF CLI context '${CONTEXT_NAME}' created, switched to namespace context '${NS_CTX}'"
+else
+  log_warn "Could not find namespace context for '${SUPERVISOR_NAMESPACE}' — kubectl commands may fail"
+  log_success "VCF CLI context '${CONTEXT_NAME}' created"
+fi
+
+###############################################################################
 # Phase 1: Provision DSM PostgresCluster
 ###############################################################################
 
