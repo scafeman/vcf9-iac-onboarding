@@ -8,7 +8,8 @@ set -euo pipefail
 # correct reverse dependency order:
 #   Phase 1: Delete VirtualMachineService (releases LoadBalancer IP)
 #   Phase 2: Delete VirtualMachine (wait for termination)
-#   Phase 3: Delete cloud-init Secret
+#   Phase 3: Delete Data Disk PVC (if exists)
+#   Phase 4: Delete cloud-init Secret
 #
 # Uses the same environment variables as the deploy script.
 # Run: bash examples/deploy-bastion-vm/teardown-bastion-vm.sh

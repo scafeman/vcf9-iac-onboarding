@@ -33,7 +33,7 @@ Creates a Kubernetes Secret (`bastion-vm-cloud-init`) containing cloud-init user
 - Creates the configured SSH user (default: `rackadmin`) with sudo privileges and the configured SSH public key
 - Disables password authentication via `sshd_config`
 
-Applies a `VirtualMachine` manifest (`vmoperator.vmware.com/v1alpha3`) to the supervisor namespace referencing the cloud-init Secret. The VM is created with an `app: bastion-vm` label used by the VirtualMachineService selector. Waits for the VM to reach `PoweredOn` power state (timeout: 600s, polling every 30s), then extracts the VM internal IP address from the VirtualMachine status.
+Applies a `VirtualMachine` manifest (`vmoperator.vmware.com/v1alpha3`) to the supervisor namespace referencing the cloud-init Secret. The VM is created with an `app: bastion-vm` label used by the VirtualMachineService selector. If `BOOT_DISK_SIZE` is set, the boot disk is resized from the image default. If `DATA_DISK_SIZE` is set, a separate PVC is created and attached as an additional data disk. Waits for the VM to reach `PoweredOn` power state (timeout: 600s, polling every 30s), then extracts the VM internal IP address from the VirtualMachine status.
 
 An idempotency check skips VM creation if the VirtualMachine resource already exists.
 
