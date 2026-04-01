@@ -9,8 +9,8 @@ Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EK
 - A Dockerized development environment with VCF CLI, kubectl, and all tooling pre-installed
 - Declarative YAML manifests for VCF 9 resources (Projects, Namespaces, VKS Clusters, functional test workloads)
 - Property-based and content-presence test suites validating manifest correctness and guide accuracy
-- GitHub Actions workflows for automated deployment of all four deployments via CI/CD
-- A hybrid VM+container demo (Infrastructure Asset Tracker) showcasing VCF VM Service with PostgreSQL on a VM and a Next.js/Node.js app on VKS — proving VM-to-container connectivity over NSX VPC
+- GitHub Actions workflows for automated deployment of all deployments via CI/CD
+- A managed database demo (Infrastructure Asset Tracker) showcasing VCF Data Services Manager (DSM) with a fully managed PostgresCluster and a Next.js/Node.js app on VKS — the VCF equivalent of AWS EKS + RDS, deployed in minutes with zero database administration
 - Companion trigger scripts for dispatching workflows from the command line
 - A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS
@@ -99,15 +99,15 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 
 Each deployment has its own deploy script, teardown script, and README documentation. See the [Examples Overview](examples/README.md) for details.
 
-### Showcase: Hybrid VM+Container Demo
+### Showcase: Managed Database App (EKS + RDS → VKS + DSM)
 
-The Deploy Hybrid App deployment proves the power of the NSX VPC by connecting workloads across both compute models in the same VCF namespace:
+The Deploy Managed DB App deployment demonstrates that VCF can deliver the same managed database experience as AWS RDS — fully automated, no DBA required:
 
-- **Data Tier** — PostgreSQL 16 running on a traditional VM, provisioned via VCF VM Service with cloud-init
-- **App Tier** — Next.js frontend and Node.js API running as containerized workloads on VKS
-- **Connectivity** — Seamless Layer 3 routing between VM and pods over the NSX VPC network, no manual firewall rules
+- **Data Tier** — PostgreSQL 17 provisioned as a fully managed DSM PostgresCluster. DSM handles VM provisioning, PostgreSQL installation, patching, maintenance windows, and connection endpoint management. You define the topology (Single Server or HA), VM class, and storage — DSM does the rest.
+- **App Tier** — Next.js frontend and Node.js API running as containerized workloads on VKS, connecting to the DSM-managed PostgreSQL endpoint over SSL
+- **Zero Admin** — No SSH, no `apt install`, no `pg_hba.conf` editing. The PostgresCluster CRD is the single interface — same declarative model as every other Kubernetes resource
 
-This is the scenario most teams struggle with when moving off public cloud — proving that VMs and containers can coexist and communicate on the same platform.
+This is the deployment that resonates most with teams migrating from AWS. If you're running EKS + RDS today, this proves VCF can deliver the same pattern on private cloud infrastructure.
 
 ## Key VCF 9 Concepts
 
