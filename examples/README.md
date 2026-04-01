@@ -236,8 +236,8 @@ Creates a **DSM PostgresCluster** — a fully managed PostgreSQL instance provis
 | `dsm.vmware.com/vm-class` | `best-effort-large` | VM class (Single Server requires 4 CPU min) |
 | `dsm.vmware.com/consumption-namespace` | `sample-vcf-project-01-ns-xxxxx` | Must be the supervisor namespace |
 | `replicas` | `0` | `0` = Single Server, `1` = Single-Zone HA |
-| `storagePolicyName` | `nfs` | From `kubectl get storagepolicies` |
-| `version` | `16` | PostgreSQL version |
+| `storagePolicyName` | `NFS` | From `kubectl get storagepolicies` (case-sensitive) |
+| `version` | `17.7+vmware.v9.0.2.0` | PostgreSQL version (full DSM version string) |
 
 ---
 

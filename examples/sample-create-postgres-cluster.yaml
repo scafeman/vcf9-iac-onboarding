@@ -16,7 +16,7 @@
 #
 # AWS RDS equivalent mapping:
 #   AWS RDS Instance          → DSM PostgresCluster
-#   RDS Instance Class        → vmClass (e.g., best-effort-medium)
+#   RDS Instance Class        → vmClass (e.g., best-effort-large)
 #   RDS Allocated Storage     → storageSpace (e.g., 20Gi)
 #   RDS Storage Type          → storagePolicyName (vSphere storage policy)
 #   RDS Multi-AZ              → replicas (0 = Single Server, 1 = Single-Zone HA)
@@ -68,6 +68,12 @@
 #
 # NOTE: The password must meet PostgreSQL password requirements. Use a strong
 #       password with mixed case, numbers, and special characters.
+#
+# IMPORTANT: Secret names CANNOT start with "pg-" — DSM reserves that prefix
+#       for its own secrets (e.g., pg-<cluster-name>). Also, DSM tracks which
+#       secret is bound to which cluster — if you delete a PostgresCluster and
+#       recreate it, you may need a new secret name to avoid "cannot use one
+#       password secret for more than one cluster" errors.
 #
 # AWS RDS equivalent: This is similar to setting the Master Password when
 # creating an RDS instance, except the password is stored in a Kubernetes
@@ -164,10 +170,12 @@ spec:
 
   # --- PostgreSQL Version ---
   # The PostgreSQL version to deploy. DSM manages the full version string
-  # including VMware patches.
+  # including VMware patches. Use the full version string (not just the major).
   # AWS equivalent: RDS Engine Version (e.g., "16.3")
+  # Discover available versions via the VCFA UI:
+  #   Infrastructure → Database Service Manager → Database Engines
   # CHANGE: Replace with your desired PostgreSQL version.
-  version: "16"  # CHANGE: Replace with your PostgreSQL version
+  version: "17.7+vmware.v9.0.2.0"  # CHANGE: Replace with your PostgreSQL version
 
   # --- High Availability ---
   # Topology selection:
@@ -190,7 +198,7 @@ spec:
   # AWS equivalent: RDS Storage Type (gp3, io1, etc.)
   # Discover available policies: kubectl get storagepolicies
   # CHANGE: Replace with your vSphere storage policy name.
-  storagePolicyName: nfs  # CHANGE: Replace with your storage policy
+  storagePolicyName: NFS  # CHANGE: Replace with your storage policy (case-sensitive)
 
   # Disk space allocated for the database.
   # AWS equivalent: RDS Allocated Storage (e.g., 20 GiB)
