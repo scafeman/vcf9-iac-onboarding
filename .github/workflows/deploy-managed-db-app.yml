@@ -48,10 +48,10 @@ on:
         required: true
         type: string
       dsm_vm_class:
-        description: "VM class for DSM instances (default: medium)"
+        description: "VM class for DSM instances (default: best-effort-large)"
         required: false
         type: string
-        default: "medium"
+        default: "best-effort-large"
       dsm_storage_space:
         description: "Storage allocation for DSM (default: 20Gi)"
         required: false
@@ -88,8 +88,8 @@ jobs:
       DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
       DSM_STORAGE_SPACE: ${{ github.event.inputs.dsm_storage_space || github.event.client_payload.dsm_storage_space || secrets.DSM_STORAGE_SPACE || '20Gi' }}
       POSTGRES_VERSION: ${{ github.event.inputs.postgres_version || github.event.client_payload.postgres_version || secrets.POSTGRES_VERSION || '17.7+vmware.v9.0.2.0' }}
-      DSM_CLUSTER_NAME: ${{ github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'postgres-01' }}
-      POSTGRES_REPLICAS: ${{ github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '1' }}
+      DSM_CLUSTER_NAME: ${{ github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'postgres-clus-01' }}
+      POSTGRES_REPLICAS: ${{ github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '0' }}
       POSTGRES_DB: ${{ github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
       ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'postgres-admin-password' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
@@ -473,6 +473,8 @@ jobs:
                     value: "${DSM_PASSWORD}"
                   - name: POSTGRES_DB
                     value: "${DSM_DBNAME}"
+                  - name: POSTGRES_SSL
+                    value: "true"
                   - name: API_PORT
                     value: "${API_PORT}"
                   ports:

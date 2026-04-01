@@ -34,7 +34,9 @@ Creates an admin password Secret in the supervisor namespace, then applies a `da
 - Four required DSM labels (`dsm.vmware.com/infra-policy`, `dsm.vmware.com/vm-class`, `dsm.vmware.com/admin-password-name`, `dsm.vmware.com/consumption-namespace`)
 - All spec fields: `adminUsername`, `adminPasswordRef`, `databaseName`, `infrastructurePolicy`, `version`, `replicas`, `vmClass`, `storagePolicyName`, `storageSpace`, `maintenanceWindow`, `requestedSharedMemorySize`, `blockDatabaseConnections`
 
-After applying the manifest, the script waits for the PostgresCluster to reach Ready status (timeout: 900s, polling every 30s), then extracts the connection host, port, database name, and username from `status.connection`. The admin password is read from the DSM-created secret `pg-<cluster-name>`.
+After applying the manifest, the script waits for the PostgresCluster's `status.connection.host` to be populated and `status.connection.port` to be non-zero (timeout: 1800s, polling every 30s). This connection-based check is more reliable than the Ready condition, which can lag behind actual availability. Once connection details are present, the script extracts the host, port, database name, and username from `status.connection`. The admin password is read from the DSM-created secret `pg-<cluster-name>`.
+
+> **Topology:** Set `POSTGRES_REPLICAS=0` for Single Server (dev/test, minimum `best-effort-large` VM class with 4 CPU) or `POSTGRES_REPLICAS=1` for Single-Zone HA (production). DSM requires SSL for all connections — the API deployment includes `POSTGRES_SSL=true` automatically.
 
 An idempotency check skips creation if the PostgresCluster resource already exists.
 
@@ -88,7 +90,7 @@ Prints a deployment summary with the Frontend LoadBalancer IP, DSM PostgreSQL ho
 | RDS Instance Class (e.g., `db.m5.large`) | `vmClass` label + spec field | `kubectl get virtualmachineclasses` to list |
 | RDS Allocated Storage | `storageSpace` (e.g., `20Gi`) | Spec field on PostgresCluster |
 | RDS Storage Type (gp3, io1) | `storagePolicyName` | vSphere storage policy name |
-| RDS Multi-AZ | `replicas` (1 = single, 2+ = HA) | Spec field on PostgresCluster |
+| RDS Multi-AZ | `replicas` (0 = Single Server, 1 = Single-Zone HA) | Spec field on PostgresCluster |
 | RDS Maintenance Window | `maintenanceWindow` (day + time + duration) | Spec field on PostgresCluster |
 | RDS Security Group | NSX VPC network isolation | Automatic — no manual config needed |
 | RDS Endpoint | `status.connection.host:port` | Populated after PostgresCluster reaches Ready |
@@ -115,11 +117,11 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `TENANT_NAME` | Yes | — | SSO tenant/organization |
 | `CONTEXT_NAME` | Yes | — | Local VCF CLI context name |
 | `KUBECONFIG_FILE` | No | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to guest cluster admin kubeconfig |
-| `DSM_CLUSTER_NAME` | No | `postgres-01` | PostgresCluster resource name |
-| `DSM_VM_CLASS` | No | `medium` | VM class for DSM instances |
+| `DSM_CLUSTER_NAME` | No | `postgres-clus-01` | PostgresCluster resource name |
+| `DSM_VM_CLASS` | No | `best-effort-large` | VM class for DSM instances (Single Server requires 4 CPU minimum) |
 | `DSM_STORAGE_SPACE` | No | `20Gi` | Storage allocation |
 | `POSTGRES_VERSION` | No | `17.7+vmware.v9.0.2.0` | PostgreSQL version |
-| `POSTGRES_REPLICAS` | No | `1` | Number of PostgreSQL replicas |
+| `POSTGRES_REPLICAS` | No | `0` | Topology: `0` = Single Server, `1` = Single-Zone HA |
 | `POSTGRES_DB` | No | `assetdb` | Database name |
 | `ADMIN_PASSWORD_SECRET_NAME` | No | `postgres-admin-password` | Name of the admin password Secret |
 | `DSM_MAINTENANCE_WINDOW_DAY` | No | `SATURDAY` | Maintenance window day |
@@ -131,7 +133,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `IMAGE_TAG` | No | `latest` | Container image tag |
 | `API_PORT` | No | `3001` | API service port |
 | `FRONTEND_PORT` | No | `3000` | Frontend container port |
-| `DSM_TIMEOUT` | No | `900` | Seconds to wait for PostgresCluster Ready |
+| `DSM_TIMEOUT` | No | `1800` | Seconds to wait for PostgresCluster Ready |
 | `POD_TIMEOUT` | No | `300` | Seconds to wait for pod Running state |
 | `LB_TIMEOUT` | No | `300` | Seconds to wait for LoadBalancer external IP |
 | `POLL_INTERVAL` | No | `30` | Seconds between polling attempts |
@@ -189,15 +191,15 @@ curl -X POST \
 A successful run produces output like this:
 
 ```
-[Step 1] Provisioning DSM PostgresCluster 'postgres-01' in supervisor namespace 'my-project-ns'...
+[Step 1] Provisioning DSM PostgresCluster 'postgres-clus-01' in supervisor namespace 'my-project-ns'...
 ✓ Admin password Secret 'postgres-admin-password' created
-✓ PostgresCluster 'postgres-01' manifest applied to namespace 'my-project-ns'
-[Step 1b] Waiting for PostgresCluster 'postgres-01' to reach Ready status...
-  Waiting for PostgresCluster 'postgres-01' to be Ready... (0s/900s elapsed)
-  Waiting for PostgresCluster 'postgres-01' to be Ready... (30s/900s elapsed)
-✓ PostgresCluster 'postgres-01' is Ready
+✓ PostgresCluster 'postgres-clus-01' manifest applied to namespace 'my-project-ns'
+[Step 1b] Waiting for PostgresCluster 'postgres-clus-01' to reach Ready status...
+  Waiting for PostgresCluster 'postgres-clus-01' connection details... (0s/1800s elapsed)
+  Waiting for PostgresCluster 'postgres-clus-01' connection details... (30s/1800s elapsed)
+✓ PostgresCluster 'postgres-clus-01' is Ready
 ✓ DSM PostgreSQL connection: 10.0.2.50:5432/assetdb (user: pgadmin)
-✓ Phase 1 complete — DSM PostgresCluster 'postgres-01' provisioned
+✓ Phase 1 complete — DSM PostgresCluster 'postgres-clus-01' provisioned
 [Step 2] Building and pushing container images...
 ✓ API container image 'scafeman/hybrid-app-api:latest' built successfully
 ✓ Frontend container image 'scafeman/hybrid-app-dashboard:latest' built successfully
@@ -239,12 +241,12 @@ A successful run produces output like this:
 
 | Phase | Duration |
 |---|---|
-| Phase 1 (DSM PostgresCluster provisioning) | 5–15 min |
+| Phase 1 (DSM PostgresCluster provisioning) | 10–25 min |
 | Phase 2 (Image build & push) | 2–5 min |
 | Phase 3 (API deployment) | 1–2 min |
 | Phase 4 (Frontend deployment + LB IP) | 1–3 min |
 | Phase 5 (Connectivity verification) | ~10s |
-| **Total** | **~9–25 min** |
+| **Total** | **~14–35 min** |
 
 ---
 
@@ -269,8 +271,8 @@ A successful run produces output like this:
 - Verify the DSM infrastructure policy exists and is configured in the supervisor namespace
 - Verify the `DSM_STORAGE_POLICY` is available: `kubectl get storagepolicies`
 - Verify the `DSM_VM_CLASS` is available: `kubectl get virtualmachineclasses`
-- Check PostgresCluster events: `kubectl describe postgrescluster postgres-01 -n <SUPERVISOR_NAMESPACE>`
-- Check PostgresCluster status: `kubectl get postgrescluster postgres-01 -n <SUPERVISOR_NAMESPACE> -o yaml`
+- Check PostgresCluster events: `kubectl describe postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE>`
+- Check PostgresCluster status: `kubectl get postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE> -o yaml`
 - Increase `DSM_TIMEOUT` if the environment is slow to provision managed databases
 
 ### Container image build/push fails (exit 3)

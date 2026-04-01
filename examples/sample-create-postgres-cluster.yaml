@@ -19,7 +19,7 @@
 #   RDS Instance Class        → vmClass (e.g., best-effort-medium)
 #   RDS Allocated Storage     → storageSpace (e.g., 20Gi)
 #   RDS Storage Type          → storagePolicyName (vSphere storage policy)
-#   RDS Multi-AZ              → replicas (1 = single, 2+ = HA)
+#   RDS Multi-AZ              → replicas (0 = Single Server, 1 = Single-Zone HA)
 #   RDS Maintenance Window    → maintenanceWindow (day + time + duration)
 #   RDS Master Password       → adminPasswordRef (Kubernetes Secret)
 #   RDS Security Group        → NSX VPC network isolation (automatic)
@@ -87,7 +87,7 @@
 #   databaseName          — Initial database to create (like RDS initial DB)
 #   infrastructurePolicy  — DSM policy governing compute/storage/networking
 #   version               — PostgreSQL version string
-#   replicas              — Number of instances (1=single, 2+=HA like RDS Multi-AZ)
+#   replicas              — Topology: 0=Single Server, 1=Single-Zone HA (like RDS Multi-AZ)
 #   vmClass               — Compute class for the DB VM (like RDS instance class)
 #   storagePolicyName     — vSphere storage policy (like RDS storage type)
 #   storageSpace          — Disk allocation (like RDS allocated storage)
@@ -110,20 +110,30 @@ metadata:
     # subnet groups. DSM bundles these into a single infrastructure policy.
     dsm.vmware.com/infra-policy: "sample-infra-policy"  # CHANGE: Replace with your DSM infra policy
 
+    # Infrastructure policy type — must be "supervisor-managed" for shared DSM policies.
+    dsm.vmware.com/infra-policy-type: "supervisor-managed"
+
     # CHANGE: Replace with your desired VM class for the database instance.
     # Defines CPU and memory allocation for the PostgreSQL VM.
-    # AWS equivalent: RDS Instance Class (e.g., db.m5.large → best-effort-medium)
+    # AWS equivalent: RDS Instance Class (e.g., db.m5.large → best-effort-large)
+    # NOTE: Single Server topology (replicas: 0) requires minimum best-effort-large (4 CPU).
     # Discover available classes: kubectl get virtualmachineclasses
-    dsm.vmware.com/vm-class: "medium"  # CHANGE: Replace with your VM class
+    dsm.vmware.com/vm-class: "best-effort-large"  # CHANGE: Replace with your VM class
 
     # CHANGE: Must match the Secret name created in Step 1.
     # Links the PostgresCluster to its admin password Secret.
     dsm.vmware.com/admin-password-name: "postgres-admin-password"  # CHANGE: Replace with your Secret name
 
-    # CHANGE: Replace with the namespace where your application pods will run.
+    # CHANGE: Replace with your SUPERVISOR NAMESPACE name (not the app namespace).
+    # This must be the namespace where the PostgresCluster is provisioned.
     # DSM uses this to configure network access from the consumption namespace
     # to the managed PostgreSQL instance.
-    dsm.vmware.com/consumption-namespace: "managed-db-app"  # CHANGE: Replace with your app namespace
+    dsm.vmware.com/consumption-namespace: "sample-vcf-project-01-ns-xxxxx"  # CHANGE: Replace with your supervisor namespace
+
+    # --- Additional DSM Labels (required by DSM but can be empty) ---
+    dsm.vmware.com/backup-loc-ns.namespace: ""
+    dsm.vmware.com/directory-service-name: ""
+    dsm.vmware.com/directory-service-namespace: ""
 spec:
   # --- Admin Credentials ---
   # The database superuser account. Applications should use this account or
@@ -160,18 +170,20 @@ spec:
   version: "16"  # CHANGE: Replace with your PostgreSQL version
 
   # --- High Availability ---
-  # Number of PostgreSQL replicas. Set to 1 for a single instance (dev/test)
-  # or 2+ for high availability with streaming replication.
-  # AWS equivalent: RDS Multi-AZ (1 = Single-AZ, 2 = Multi-AZ)
-  replicas: 1
+  # Topology selection:
+  #   replicas: 0  → Single Server (dev/test — requires minimum best-effort-large / 4 CPU)
+  #   replicas: 1  → Single-Zone HA (production — streaming replication)
+  # AWS equivalent: RDS Multi-AZ (0 = Single-AZ, 1 = Multi-AZ)
+  replicas: 0  # CHANGE: 0 = Single Server, 1 = Single-Zone HA
 
   # --- Compute Class ---
   # VM class defining CPU and memory for the database instance.
   # AWS equivalent: RDS Instance Class (e.g., db.t3.medium, db.m5.large)
+  # NOTE: Single Server (replicas: 0) requires minimum best-effort-large (4 CPU).
   # Discover available classes: kubectl get virtualmachineclasses
   vmClass:
     # CHANGE: Replace with your desired VM class.
-    name: medium  # CHANGE: Replace with your VM class
+    name: best-effort-large  # CHANGE: Replace with your VM class
 
   # --- Storage ---
   # vSphere storage policy for the database volumes.

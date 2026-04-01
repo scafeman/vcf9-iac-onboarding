@@ -26,10 +26,10 @@ If the kubeconfig file is not found (e.g., the cluster was already torn down), t
 Ensures the VCF CLI context is active, then deletes the PostgresCluster resource from the supervisor namespace:
 
 ```
-kubectl delete postgrescluster postgres-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
+kubectl delete postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
 ```
 
-Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 900s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time.
+Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 1800s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time.
 
 If the PostgresCluster does not exist, this phase is skipped.
 
@@ -39,7 +39,7 @@ Deletes the admin password Secret and the DSM-created password secret (`pg-<clus
 
 ```
 kubectl delete secret postgres-admin-password -n <SUPERVISOR_NAMESPACE> --ignore-not-found
-kubectl delete secret pg-postgres-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
+kubectl delete secret pg-postgres-clus-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
 ```
 
 If the secrets do not exist, this phase is skipped.
@@ -67,7 +67,7 @@ The teardown script uses a subset of the deploy script's variables:
 | `TENANT_NAME` | SSO tenant/organization | `org-rax-01` |
 | `CONTEXT_NAME` | Local VCF CLI context name | `my-dev-automation` |
 
-Optional: `DSM_CLUSTER_NAME` (default: `postgres-01`), `ADMIN_PASSWORD_SECRET_NAME` (default: `postgres-admin-password`), `APP_NAMESPACE` (default: `managed-db-app`), `DSM_TIMEOUT` (default: `900`), `POLL_INTERVAL` (default: `30`), `KUBECONFIG_FILE` (default: `./kubeconfig-<CLUSTER_NAME>.yaml`).
+Optional: `DSM_CLUSTER_NAME` (default: `postgres-clus-01`), `ADMIN_PASSWORD_SECRET_NAME` (default: `postgres-admin-password`), `APP_NAMESPACE` (default: `managed-db-app`), `DSM_TIMEOUT` (default: `1800`), `POLL_INTERVAL` (default: `30`), `KUBECONFIG_FILE` (default: `./kubeconfig-<CLUSTER_NAME>.yaml`).
 
 ---
 
@@ -118,21 +118,21 @@ A successful run produces output like this:
 ```
 [Step 1] Deleting application namespace 'managed-db-app' in guest cluster...
 ✓ Namespace 'managed-db-app' deleted (includes Frontend + API Deployments and Services)
-[Step 2] Deleting PostgresCluster 'postgres-01' in supervisor namespace 'my-project-ns'...
-✓ PostgresCluster 'postgres-01' delete command issued
-  Waiting for PostgresCluster 'postgres-01' to be deleted... (0s/900s elapsed)
-  Waiting for PostgresCluster 'postgres-01' to be deleted... (30s/900s elapsed)
-✓ PostgresCluster 'postgres-01' fully deleted
+[Step 2] Deleting PostgresCluster 'postgres-clus-01' in supervisor namespace 'my-project-ns'...
+✓ PostgresCluster 'postgres-clus-01' delete command issued
+  Waiting for PostgresCluster 'postgres-clus-01' to be deleted... (0s/1800s elapsed)
+  Waiting for PostgresCluster 'postgres-clus-01' to be deleted... (30s/1800s elapsed)
+✓ PostgresCluster 'postgres-clus-01' fully deleted
 [Step 3] Deleting admin password Secret 'postgres-admin-password' in supervisor namespace 'my-project-ns'...
 ✓ Admin password Secret 'postgres-admin-password' deleted
-✓ DSM-created Secret 'pg-postgres-01' cleaned up
+✓ DSM-created Secret 'pg-postgres-clus-01' cleaned up
 
 =============================================
   VCF 9 Managed DB App — Teardown Complete
 =============================================
   Cluster:          my-project-01-clus-01
   Namespace:        managed-db-app (deleted)
-  PostgresCluster:  postgres-01 (deleted)
+  PostgresCluster:  postgres-clus-01 (deleted)
   Admin Secret:     postgres-admin-password (deleted)
 =============================================
 ```
