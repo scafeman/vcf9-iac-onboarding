@@ -29,6 +29,7 @@ Coming from AWS EKS? Here's how the core concepts map to VCF 9 and where this to
 | ECR | Harbor (self-hosted) | Deployed via `examples/deploy-gitops/` with Helm |
 | CodePipeline / CodeBuild | GitLab CI + ArgoCD | Full GitOps stack in `examples/deploy-gitops/` |
 | Secrets Manager | VCF Secret Store Service | Demonstrated in `examples/deploy-secrets-demo/` |
+| RDS (PostgreSQL) | Data Services Manager (DSM) | Fully managed PostgresCluster via DSM CRD in `examples/deploy-managed-db-app/` |
 
 See the [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) for a full pass/fail validation checklist.
 
