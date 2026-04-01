@@ -424,6 +424,8 @@ spec:
           value: "${DSM_PASSWORD}"
         - name: POSTGRES_DB
           value: "${DSM_DBNAME}"
+        - name: POSTGRES_SSL
+          value: "true"
         - name: API_PORT
           value: "${API_PORT}"
         ports:
