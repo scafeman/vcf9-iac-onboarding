@@ -30,6 +30,7 @@ Optional (override workflow defaults):
   --ssh-public-key             SSH public key for the bastion VM user
   --boot-disk-size             Boot disk size override (e.g., 50Gi)
   --data-disk-size             Additional data disk size (e.g., 100Gi)
+  --vm-network                 NSX SubnetSet name for the VM network (e.g., inside-subnet)
   --vcfa-endpoint              VCF Automation endpoint
   --tenant-name                VCF tenant name
 
@@ -55,6 +56,7 @@ SSH_USERNAME=""
 SSH_PUBLIC_KEY=""
 BOOT_DISK_SIZE=""
 DATA_DISK_SIZE=""
+VM_NETWORK=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -72,6 +74,7 @@ while [[ $# -gt 0 ]]; do
     --ssh-public-key)             SSH_PUBLIC_KEY="$2"; shift 2 ;;
     --boot-disk-size)             BOOT_DISK_SIZE="$2"; shift 2 ;;
     --data-disk-size)             DATA_DISK_SIZE="$2"; shift 2 ;;
+    --vm-network)                 VM_NETWORK="$2"; shift 2 ;;
     --vcfa-endpoint)              VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)                TENANT_NAME="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
@@ -119,6 +122,7 @@ add_field "ssh_username"           "$SSH_USERNAME"
 add_field "ssh_public_key"         "$SSH_PUBLIC_KEY"
 add_field "boot_disk_size"         "$BOOT_DISK_SIZE"
 add_field "data_disk_size"         "$DATA_DISK_SIZE"
+add_field "vm_network"             "$VM_NETWORK"
 add_field "vcfa_endpoint"          "$VCFA_ENDPOINT"
 add_field "tenant_name"            "$TENANT_NAME"
 

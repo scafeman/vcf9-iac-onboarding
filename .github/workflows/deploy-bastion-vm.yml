@@ -73,6 +73,11 @@ on:
         required: false
         type: string
         default: ""
+      vm_network:
+        description: "NSX SubnetSet name for the VM network (e.g., inside-subnet). Leave empty for default network."
+        required: false
+        type: string
+        default: ""
 
   repository_dispatch:
     types: [deploy-bastion-vm]
@@ -99,6 +104,7 @@ jobs:
       SSH_PUBLIC_KEY: ${{ github.event.inputs.ssh_public_key || github.event.client_payload.ssh_public_key || secrets.SSH_PUBLIC_KEY || 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlcYpqwlI/LkXpbHE6pl63UR+LqqZ+PTMnQLB GitLab SSH Pair' }}
       BOOT_DISK_SIZE: ${{ github.event.inputs.boot_disk_size || github.event.client_payload.boot_disk_size || '' }}
       DATA_DISK_SIZE: ${{ github.event.inputs.data_disk_size || github.event.client_payload.data_disk_size || '' }}
+      VM_NETWORK: ${{ github.event.inputs.vm_network || github.event.client_payload.vm_network || '' }}
       VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
       LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
       SSH_TIMEOUT: ${{ github.event.client_payload.ssh_timeout || secrets.SSH_TIMEOUT || '120' }}
@@ -280,6 +286,19 @@ jobs:
               echo "Data disk will be attached at ${DATA_DISK_SIZE}"
             fi
 
+            # Build optional network spec for SubnetSet selection
+            NETWORK_SPEC=""
+            if [ -n "${VM_NETWORK}" ]; then
+              NETWORK_SPEC="  network:
+              interfaces:
+              - name: eth0
+                network:
+                  apiVersion: crd.nsx.vmware.com/v1alpha1
+                  kind: SubnetSet
+                  name: ${VM_NETWORK}"
+              echo "VM will be deployed on network '${VM_NETWORK}'"
+            fi
+
             # Apply VirtualMachine manifest with app label for VirtualMachineService selector
             if ! cat <<EOF | kubectl apply -f -
           apiVersion: vmoperator.vmware.com/v1alpha3
@@ -295,6 +314,7 @@ jobs:
             storageClass: ${STORAGE_CLASS}
             powerState: PoweredOn
           ${ADVANCED_SPEC:+${ADVANCED_SPEC}}
+          ${NETWORK_SPEC:+${NETWORK_SPEC}}
             bootstrap:
               cloudInit:
                 rawCloudConfig:
@@ -498,6 +518,7 @@ jobs:
           | Storage Class | \`${STORAGE_CLASS}\` |
           | Boot Disk | \`${BOOT_DISK_SIZE:-image default}\` |
           | Data Disk | \`${DATA_DISK_SIZE:-none}\` |
+          | Network | \`${VM_NETWORK:-default}\` |
           | OS User | \`${SSH_USERNAME}\` |
           | SSH Auth | ed25519 public key (password auth disabled) |
           EOF

@@ -97,6 +97,7 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `SSH_PUBLIC_KEY` | No | SSH public key for the bastion VM user (default: ed25519 key) |
 | `BOOT_DISK_SIZE` | No | Boot disk size override, e.g. `50Gi` (default: image default) |
 | `DATA_DISK_SIZE` | No | Additional data disk size, e.g. `100Gi` (default: none) |
+| `VM_NETWORK` | No | NSX SubnetSet name, e.g. `inside-subnet` (default: VPC default network) |
 | `VM_TIMEOUT` | No | Seconds to wait for VM PoweredOn (default: `600`) |
 | `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
 | `SSH_TIMEOUT` | No | Seconds to wait for SSH connectivity (default: `120`) |

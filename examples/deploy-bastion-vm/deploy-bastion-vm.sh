@@ -58,6 +58,9 @@ SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY:-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHkSxDwLlc
 BOOT_DISK_SIZE="${BOOT_DISK_SIZE:-}"
 DATA_DISK_SIZE="${DATA_DISK_SIZE:-}"
 
+# --- Network Configuration ---
+VM_NETWORK="${VM_NETWORK:-}"
+
 # --- Timeouts and Polling ---
 VM_TIMEOUT="${VM_TIMEOUT:-600}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
@@ -249,6 +252,19 @@ PVCEOF
     log_success "Data disk will be attached at ${DATA_DISK_SIZE}"
   fi
 
+  # Build optional network spec for SubnetSet selection
+  NETWORK_SPEC=""
+  if [[ -n "${VM_NETWORK}" ]]; then
+    NETWORK_SPEC="  network:
+    interfaces:
+    - name: eth0
+      network:
+        apiVersion: crd.nsx.vmware.com/v1alpha1
+        kind: SubnetSet
+        name: ${VM_NETWORK}"
+    log_success "VM will be deployed on network '${VM_NETWORK}'"
+  fi
+
   # Apply VirtualMachine manifest with app label for VirtualMachineService selector
   if ! cat <<EOF | kubectl apply -f -
 apiVersion: vmoperator.vmware.com/v1alpha3
@@ -264,6 +280,7 @@ spec:
   storageClass: ${STORAGE_CLASS}
   powerState: PoweredOn
 ${ADVANCED_SPEC:+${ADVANCED_SPEC}}
+${NETWORK_SPEC:+${NETWORK_SPEC}}
   bootstrap:
     cloudInit:
       rawCloudConfig:
@@ -424,6 +441,7 @@ echo "  SSH Command:   ssh ${SSH_USERNAME}@${BASTION_EXTERNAL_IP}"
 echo "  Allowed IPs:   ${ALLOWED_SSH_SOURCES}"
 echo "  Boot Disk:     ${BOOT_DISK_SIZE:-image default}"
 echo "  Data Disk:     ${DATA_DISK_SIZE:-none}"
+echo "  Network:       ${VM_NETWORK:-default}"
 echo "  Namespace:     ${SUPERVISOR_NAMESPACE}"
 echo "============================================="
 echo ""
