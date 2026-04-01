@@ -7,6 +7,17 @@
 # databases, or web servers that only need outbound internet access (via the
 # VPC's default SNAT rule).
 #
+# SSH is exposed internally via a ClusterIP VirtualMachineService so the VM
+# is reachable from other workloads in the namespace (e.g., a bastion VM).
+# There is no LoadBalancer — the VM is not directly accessible from the
+# internet. Access it by SSH-hopping through a bastion VM that has a public IP.
+#
+# Typical access pattern:
+#   1. SSH into the bastion VM (public LoadBalancer IP)
+#   2. From the bastion, SSH to this VM's internal IP
+#
+#   ssh -J rackadmin@<BASTION_EXTERNAL_IP> rackadmin@<VM_INTERNAL_IP>
+#
 # The VM is provisioned via the VCF VM Service using the vmoperator CRD.
 # Cloud-init configures the OS user, SSH key, and packages at first boot.
 # The cloud-init user data is stored in a Kubernetes Secret and referenced
@@ -17,21 +28,24 @@
 #   - Resizing the boot disk beyond the image default
 #   - Attaching an additional data disk via PersistentVolumeClaim
 #   - Cloud-init for user creation, SSH key injection, and package install
-#   - Labels for VirtualMachineService selector (if SSH exposure is needed)
+#   - ClusterIP VirtualMachineService for internal SSH access
+#   - Bastion hop pattern for secure access from external networks
 #
 # Prerequisites:
 #   - VCF CLI context scoped to the target Supervisor Namespace
 #   - The SubnetSet must already exist in the namespace (create via VCFA UI
 #     or NSX manager: Build & Deploy → Networking → Networks → Create)
 #   - The VM image must be available in the content library
+#   - A bastion VM with a public IP for SSH access (see deploy-bastion-vm)
 #   - Verify available images:  kubectl get virtualmachineimages
 #   - Verify available classes: kubectl get virtualmachineclasses
 #   - Verify available SubnetSets: kubectl get subnetsets
 #
 # Usage:
 #   1. Create the cloud-init Secret first (see below).
-#   2. Create the data disk PVC (if using an additional disk).
-#   3. Apply the VirtualMachine manifest.
+#   2. Apply this manifest (creates PVC, VirtualMachine, and VirtualMachineService).
+#   3. Wait for the VM to reach PoweredOn and get an internal IP.
+#   4. SSH via bastion: ssh -J rackadmin@<BASTION_IP> rackadmin@<VM_IP>
 #
 # =============================================================================
 
@@ -208,3 +222,50 @@ spec:
     persistentVolumeClaim:
       # CHANGE: Must match the PVC name created in Step 2 above.
       claimName: sample-vm-data  # CHANGE: Replace with your PVC name
+---
+# -----------------------------------------------------------------------------
+# Step 4: VirtualMachineService — Internal SSH Access
+# -----------------------------------------------------------------------------
+# Exposes SSH (port 22) on the VM's internal network via a ClusterIP service.
+# This gives the VM a stable internal service endpoint and makes it reachable
+# from other workloads in the namespace (e.g., a bastion VM).
+#
+# This is NOT a LoadBalancer — there is no public IP assigned. The VM is only
+# accessible from within the VPC or via a bastion hop.
+#
+# Access pattern (from your workstation):
+#   ssh -J rackadmin@<BASTION_EXTERNAL_IP> rackadmin@<VM_INTERNAL_IP>
+#
+# Or configure ~/.ssh/config for a persistent jump host:
+#   Host bastion
+#     HostName <BASTION_EXTERNAL_IP>
+#     User rackadmin
+#     IdentityFile ~/.ssh/id_ed25519
+#
+#   Host sample-vm
+#     HostName <VM_INTERNAL_IP>
+#     User rackadmin
+#     IdentityFile ~/.ssh/id_ed25519
+#     ProxyJump bastion
+#
+# Then simply: ssh sample-vm
+# -----------------------------------------------------------------------------
+apiVersion: vmoperator.vmware.com/v1alpha3
+kind: VirtualMachineService
+metadata:
+  # CHANGE: Replace with your service name. Convention: <vm-name>-ssh
+  name: sample-vm-ssh  # CHANGE: Replace with your service name
+  # CHANGE: Replace with your supervisor namespace.
+  namespace: sample-vcf-project-01-ns-xxxxx  # CHANGE: Replace with your namespace
+spec:
+  # ClusterIP — internal only, no public IP. Use LoadBalancer if you need
+  # direct external access (see deploy-bastion-vm for that pattern).
+  type: ClusterIP
+  # Selector must match the 'app' label on the VirtualMachine above.
+  selector:
+    app: sample-vm  # CHANGE: Replace with your VM name (must match VM label)
+  ports:
+  - name: ssh
+    port: 22
+    protocol: TCP
+    targetPort: 22
