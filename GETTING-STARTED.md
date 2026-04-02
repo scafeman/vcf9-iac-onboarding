@@ -50,6 +50,9 @@ PACKAGE_REPO_URL=projects.packages.broadcom.com/vsphere/supervisor/vks-standard-
 RUNNER_TOKEN=<your-runner-registration-token>
 REPO_URL=https://github.com/<OWNER>/<REPO>
 GITHUB_PAT=<your-github-personal-access-token>
+
+# --- Secret Store (for Deploy Managed DB App vault-injector) ---
+SECRET_STORE_IP=<secret-store-ip>
 ```
 
 Replace all `<placeholder>` values with your environment-specific settings. See the [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) for the full variable reference including optional variables with defaults.
@@ -132,7 +135,7 @@ Provisions a DSM-managed PostgresCluster (the VCF equivalent of AWS RDS) and dep
 docker exec vcf9-dev bash examples/deploy-managed-db-app/deploy-managed-db-app.sh
 ```
 
-Typical deployment time: **14–35 minutes** (DSM provisioning takes 10–25 minutes). Requires a running VKS cluster from Deploy Cluster and a DSM infrastructure policy configured in the supervisor namespace.
+Typical deployment time: **14–35 minutes** (DSM provisioning takes 10–25 minutes). Requires a running VKS cluster from Deploy Cluster, a DSM infrastructure policy configured in the supervisor namespace, and `SECRET_STORE_IP` set for vault-injector credential injection.
 
 See the [Deploy Managed DB App README](examples/deploy-managed-db-app/README-deploy.md) for details.
 

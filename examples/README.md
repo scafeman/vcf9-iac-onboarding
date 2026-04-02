@@ -356,7 +356,7 @@ Deploys a full-stack demo application demonstrating VM-to-container connectivity
 
 ## Deploy Managed DB App: DSM PostgresCluster Infrastructure Asset Tracker
 
-Deploys the same Infrastructure Asset Tracker application but backed by a VCF Database Service Manager (DSM) managed PostgresCluster instead of a manually provisioned VM. This is the VCF equivalent of AWS EKS + RDS — a fully managed PostgreSQL instance with automated maintenance, patching, and connection management.
+Deploys the same Infrastructure Asset Tracker application but backed by a VCF Database Service Manager (DSM) managed PostgresCluster instead of a manually provisioned VM. This is the VCF equivalent of AWS EKS + RDS — a fully managed PostgreSQL instance with automated maintenance, patching, and connection management. Credentials are securely stored in the VCF Secret Store and injected via vault-agent sidecar.
 
 | | |
 |---|---|

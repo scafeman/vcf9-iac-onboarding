@@ -44,6 +44,14 @@ kubectl delete secret pg-postgres-clus-01 -n <SUPERVISOR_NAMESPACE> --ignore-not
 
 If the secrets do not exist, this phase is skipped.
 
+### Phase 3b: Delete DSM Credentials KeyValueSecret
+
+Deletes the `dsm-pg-creds` KeyValueSecret from the supervisor namespace via `vcf secret delete`.
+
+### Phase 3c: Delete ServiceAccount and Token
+
+Deletes the `internal-app` ServiceAccount and `internal-app-token` Secret from the supervisor namespace. The vault-injector package is NOT deleted because it is shared with the secrets-demo deployment.
+
 ---
 
 ## Prerequisites
@@ -126,6 +134,11 @@ A successful run produces output like this:
 [Step 3] Deleting admin password Secret 'postgres-admin-password' in supervisor namespace 'my-project-ns'...
 ✓ Admin password Secret 'postgres-admin-password' deleted
 ✓ DSM-created Secret 'pg-postgres-clus-01' cleaned up
+[Step 3b] Deleting DSM credentials KeyValueSecret 'dsm-pg-creds' in supervisor namespace 'my-project-ns'...
+✓ KeyValueSecret 'dsm-pg-creds' deleted
+[Step 3c] Deleting ServiceAccount and token in supervisor namespace 'my-project-ns'...
+✓ ServiceAccount 'internal-app' deleted
+✓ Secret 'internal-app-token' deleted
 
 =============================================
   VCF 9 Managed DB App — Teardown Complete
@@ -134,6 +147,9 @@ A successful run produces output like this:
   Namespace:        managed-db-app (deleted)
   PostgresCluster:  postgres-clus-01 (deleted)
   Admin Secret:     postgres-admin-password (deleted)
+  KeyValueSecret:   dsm-pg-creds (deleted)
+  ServiceAccount:   internal-app (deleted)
+  SA Token:         internal-app-token (deleted)
 =============================================
 ```
 
@@ -146,6 +162,8 @@ A successful run produces output like this:
 | Phase 1 (Namespace deletion) | 10–30s |
 | Phase 2 (PostgresCluster termination) | 2–10 min |
 | Phase 3 (Secret deletion) | ~5s |
+| Phase 3b (KeyValueSecret deletion) | ~5s |
+| Phase 3c (ServiceAccount + token deletion) | ~5s |
 | **Total** | **~2–11 min** |
 
 ---
@@ -158,6 +176,8 @@ The teardown script is safe to run multiple times. If resources are already dele
 - Missing namespace → logs "already absent", continues
 - Missing PostgresCluster → logs "already absent", continues
 - Missing admin password Secret → logs "already absent", continues
+- Missing KeyValueSecret → logs "already absent", continues
+- Missing ServiceAccount or token → logs "already absent", continues
 - Deletion failures → logs a warning and continues to the next resource (does not abort)
 - `--ignore-not-found` flag on all `kubectl delete` commands prevents errors on re-runs
 

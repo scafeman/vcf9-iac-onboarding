@@ -112,6 +112,7 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `DSM_INFRA_POLICY` | Yes | DSM infrastructure policy name |
 | `DSM_STORAGE_POLICY` | Yes | vSphere storage policy name for DSM |
 | `ADMIN_PASSWORD` | Yes | Admin password for the PostgresCluster |
+| `SECRET_STORE_IP` | Yes | VCF Secret Store IP address for vault-injector configuration |
 | `DSM_CLUSTER_NAME` | No | PostgresCluster resource name (default: `postgres-clus-01`) |
 | `DSM_VM_CLASS` | No | VM class for DSM instances — Single Server requires 4 CPU minimum (default: `best-effort-large`) |
 | `DSM_STORAGE_SPACE` | No | Storage allocation (default: `20Gi`) |
