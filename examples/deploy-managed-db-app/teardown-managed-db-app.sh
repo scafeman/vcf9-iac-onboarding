@@ -6,11 +6,14 @@ set -euo pipefail
 #
 # This script reverses the Managed DB App deployment, deleting all resources in
 # the correct reverse dependency order:
+#   Phase 0: Delete vault token from guest cluster app namespace
 #   Phase 1: Delete application namespace in guest cluster
 #            (removes Frontend + API Deployments, Services)
 #   Phase 2: Delete PostgresCluster in supervisor namespace
 #            (waits for deletion within timeout)
 #   Phase 3: Delete admin password Secret in supervisor namespace
+#   Phase 3b: Delete dsm-pg-creds KeyValueSecret via vcf secret delete
+#   Phase 3c: Delete ServiceAccount and token from supervisor namespace
 #
 # Uses the same environment variables as the deploy script.
 # Run: bash examples/deploy-managed-db-app/teardown-managed-db-app.sh
@@ -50,9 +53,12 @@ POLL_INTERVAL="${POLL_INTERVAL:-30}"
 
 declare -A RESOURCE_STATUS
 RESOURCE_STATUS=(
+  ["vault-token-guest"]="not attempted"
   ["namespace"]="not attempted"
   ["postgrescluster"]="not attempted"
   ["admin-password-secret"]="not attempted"
+  ["dsm-pg-creds"]="not attempted"
+  ["vault-sa-token"]="not attempted"
 )
 
 ###############################################################################
@@ -158,6 +164,36 @@ if [[ -n "${NS_CTX}" ]]; then
 else
   log_warn "Could not find namespace context for '${SUPERVISOR_NAMESPACE}' — supervisor operations may fail"
   log_success "VCF CLI context '${CONTEXT_NAME}' created"
+fi
+
+###############################################################################
+# Phase 0: Delete Vault Token from Guest Cluster App Namespace
+###############################################################################
+
+log_step 0b "Deleting vault token from guest cluster app namespace"
+
+if [[ ! -f "${KUBECONFIG_FILE}" ]] && [[ -n "${CLUSTER_NAME}" ]]; then
+  vcf cluster kubeconfig get "${CLUSTER_NAME}" --admin --export-file "${KUBECONFIG_FILE}" 2>/dev/null || true
+fi
+
+if [[ -f "${KUBECONFIG_FILE}" ]]; then
+  export KUBECONFIG="${KUBECONFIG_FILE}"
+  ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+  kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" 2>/dev/null || true
+
+  if kubectl get secret internal-app-token -n "${APP_NAMESPACE}" >/dev/null 2>&1; then
+    kubectl delete secret internal-app-token -n "${APP_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    log_success "Vault token 'internal-app-token' deleted from namespace '${APP_NAMESPACE}'"
+    RESOURCE_STATUS["vault-token-guest"]="deleted"
+  else
+    log_success "Vault token 'internal-app-token' not found in namespace '${APP_NAMESPACE}', already absent"
+    RESOURCE_STATUS["vault-token-guest"]="already absent"
+  fi
+
+  unset KUBECONFIG
+else
+  log_warn "Guest cluster kubeconfig not found — skipping vault token cleanup"
+  RESOURCE_STATUS["vault-token-guest"]="skipped"
 fi
 
 ###############################################################################
@@ -267,6 +303,37 @@ kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ig
 log_success "DSM-created Secret 'pg-${DSM_CLUSTER_NAME}' cleaned up"
 
 ###############################################################################
+# Phase 3b: Delete dsm-pg-creds KeyValueSecret
+###############################################################################
+
+log_step "3b" "Deleting KeyValueSecret 'dsm-pg-creds' from supervisor namespace"
+
+# Install secret plugin if needed
+vcf plugin install secret 2>/dev/null || true
+
+if vcf secret list 2>/dev/null | grep -q "dsm-pg-creds"; then
+  echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
+  log_success "KeyValueSecret 'dsm-pg-creds' deleted"
+  RESOURCE_STATUS["dsm-pg-creds"]="deleted"
+else
+  log_success "KeyValueSecret 'dsm-pg-creds' does not exist, already absent"
+  RESOURCE_STATUS["dsm-pg-creds"]="already absent"
+fi
+
+###############################################################################
+# Phase 3c: Delete ServiceAccount and Token from Supervisor Namespace
+###############################################################################
+
+log_step "3c" "Deleting ServiceAccount 'internal-app' and token from supervisor namespace"
+
+kubectl delete sa internal-app --ignore-not-found 2>/dev/null || true
+kubectl delete secret internal-app-token --ignore-not-found 2>/dev/null || true
+log_success "ServiceAccount 'internal-app' and token cleaned up"
+RESOURCE_STATUS["vault-sa-token"]="deleted"
+
+# NOTE: vault-injector package is NOT deleted — it is shared with secrets-demo
+
+###############################################################################
 # Teardown Summary
 ###############################################################################
 
@@ -278,6 +345,8 @@ echo "  Cluster:          ${CLUSTER_NAME}"
 echo "  Namespace:        ${APP_NAMESPACE} (${RESOURCE_STATUS["namespace"]})"
 echo "  PostgresCluster:  ${DSM_CLUSTER_NAME} (${RESOURCE_STATUS["postgrescluster"]})"
 echo "  Admin Secret:     ${ADMIN_PASSWORD_SECRET_NAME} (${RESOURCE_STATUS["admin-password-secret"]})"
+echo "  DSM Creds KVS:    dsm-pg-creds (${RESOURCE_STATUS["dsm-pg-creds"]})"
+echo "  Vault SA/Token:   internal-app (${RESOURCE_STATUS["vault-sa-token"]})"
 echo "============================================="
 echo ""
 

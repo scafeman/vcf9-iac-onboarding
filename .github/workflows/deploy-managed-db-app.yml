@@ -79,6 +79,10 @@ on:
         required: false
         type: string
         default: "assetdb"
+      secret_store_ip:
+        description: "VCF Secret Store IP address for vault-injector"
+        required: false
+        type: string
 
   repository_dispatch:
     types: [deploy-managed-db-app]
@@ -134,6 +138,9 @@ jobs:
       # --- DockerHub credentials for image push ---
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+      # --- Secret Store (vault-injector) ---
+      SECRET_STORE_IP: ${{ github.event.inputs.secret_store_ip || github.event.client_payload.secret_store_ip || secrets.SECRET_STORE_IP }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: managed-db-app-deploy
@@ -380,6 +387,99 @@ jobs:
           echo "DSM_PASSWORD=$DSM_PASSWORD" >> "$GITHUB_ENV"
           echo "DSM PostgreSQL connection: ${DSM_HOST}:${DSM_PORT}/${DSM_DBNAME} (user: ${DSM_USERNAME})"
 
+      # Step 5b: Create dsm-pg-creds KeyValueSecret
+      - name: Create DSM Credentials KeyValueSecret
+        run: |
+          set -euo pipefail
+          unset KUBECONFIG 2>/dev/null || true
+
+          # Install secret plugin if needed
+          vcf plugin install secret 2>/dev/null || true
+
+          if vcf secret list 2>/dev/null | grep -q "dsm-pg-creds"; then
+            echo "KeyValueSecret 'dsm-pg-creds' already exists, skipping creation"
+          else
+            DSM_CREDS_FILE=$(mktemp /tmp/dsm-pg-creds-XXXXXX.yaml)
+            cat > "${DSM_CREDS_FILE}" <<EOF
+          apiVersion: secretstore.vmware.com/v1alpha1
+          kind: KeyValueSecret
+          metadata:
+            name: dsm-pg-creds
+          spec:
+            data:
+            - key: host
+              value: ${DSM_HOST}
+            - key: port
+              value: "${DSM_PORT}"
+            - key: username
+              value: ${DSM_USERNAME}
+            - key: password
+              value: ${DSM_PASSWORD}
+            - key: database
+              value: ${DSM_DBNAME}
+          EOF
+
+            if ! vcf secret create -f "${DSM_CREDS_FILE}"; then
+              echo "::error::Failed to create KeyValueSecret 'dsm-pg-creds'"
+              rm -f "${DSM_CREDS_FILE}"
+              exit 1
+            fi
+            rm -f "${DSM_CREDS_FILE}"
+            echo "KeyValueSecret 'dsm-pg-creds' created"
+          fi
+
+      # Step 5c: Create ServiceAccount and Token
+      - name: Create ServiceAccount and Token
+        run: |
+          set -euo pipefail
+          unset KUBECONFIG 2>/dev/null || true
+
+          # Create ServiceAccount
+          if kubectl get serviceaccount internal-app >/dev/null 2>&1; then
+            echo "ServiceAccount 'internal-app' already exists, skipping"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: internal-app
+          EOF
+            echo "ServiceAccount 'internal-app' created"
+          fi
+
+          # Create token Secret
+          if kubectl get secret internal-app-token >/dev/null 2>&1; then
+            echo "Secret 'internal-app-token' already exists, skipping"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: internal-app-token
+            annotations:
+              kubernetes.io/service-account.name: internal-app
+          type: kubernetes.io/service-account-token
+          EOF
+            echo "Secret 'internal-app-token' created"
+          fi
+
+          # Wait for token to be populated
+          ELAPSED=0
+          while [ "$ELAPSED" -lt 120 ]; do
+            TOKEN=$(kubectl get secret internal-app-token -o jsonpath='{.data.token}' 2>/dev/null || true)
+            if [ -n "$TOKEN" ]; then
+              echo "Token populated in 'internal-app-token'"
+              break
+            fi
+            echo "Waiting for token... (${ELAPSED}s/120s)"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::Token not populated within 120s"
+            exit 1
+          fi
+
       # Step 6: Build and Push API Image
       - name: Build and Push API Image
         run: |
@@ -443,7 +543,7 @@ jobs:
           fi
           echo "Guest cluster '${CLUSTER_NAME}' is reachable via '${KUBECONFIG_PATH}'"
 
-      # Step 9: Deploy API Service
+      # Step 9: Deploy API Service (with vault-injected credentials)
       - name: Deploy API Service
         run: |
           set -euo pipefail
@@ -460,6 +560,64 @@ jobs:
             pod-security.kubernetes.io/enforce=privileged \
             --overwrite >/dev/null 2>&1 || true
 
+          # Copy supervisor token into guest cluster namespace
+          if kubectl get secret internal-app-token -n "${APP_NAMESPACE}" >/dev/null 2>&1; then
+            echo "Secret 'internal-app-token' already exists in '${APP_NAMESPACE}', skipping copy"
+          else
+            SAVED_KUBECONFIG="${KUBECONFIG}"
+            unset KUBECONFIG
+            SA_TOKEN=$(kubectl get secret internal-app-token -o jsonpath='{.data.token}')
+            SA_CA_CRT=$(kubectl get secret internal-app-token -o jsonpath='{.data.ca\.crt}')
+            export KUBECONFIG="${SAVED_KUBECONFIG}"
+
+            cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: internal-app-token
+            namespace: ${APP_NAMESPACE}
+          type: Opaque
+          data:
+            token: ${SA_TOKEN}
+            ca.crt: ${SA_CA_CRT}
+          EOF
+            echo "Supervisor token copied into '${APP_NAMESPACE}'"
+          fi
+
+          # Install vault-injector (idempotent — shared with secrets-demo)
+          if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+            echo "vault-injector package already installed, skipping"
+          else
+            VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
+            cat > "${VAULT_VALUES_FILE}" <<VALEOF
+          externalIP: "${SECRET_STORE_IP}"
+          namespace: "${APP_NAMESPACE}"
+          agentInjectVaultAddr: "http://secret-store-service:8200"
+          agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
+          VALEOF
+
+            vcf package install vault-injector \
+              -p vault-injector.kubernetes.vmware.com \
+              --version 1.6.2+vmware.1-vks.1 \
+              --values-file "${VAULT_VALUES_FILE}" \
+              -n tkg-packages || true
+            rm -f "${VAULT_VALUES_FILE}"
+            echo "vault-injector package installed"
+          fi
+
+          # Wait for vault-injector pod
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "${POD_TIMEOUT}" ]; do
+            if kubectl get pods -A -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "vault-injector pod is running"
+              break
+            fi
+            echo "Waiting for vault-injector pod... (${ELAPSED}s/${POD_TIMEOUT}s)"
+            sleep "${POLL_INTERVAL}"
+            ELAPSED=$((ELAPSED + POLL_INTERVAL))
+          done
+
+          # Deploy API with vault annotations
           cat <<EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -475,6 +633,11 @@ jobs:
               metadata:
                 labels:
                   app: managed-db-api
+                annotations:
+                  vault.hashicorp.com/agent-inject: "true"
+                  vault.hashicorp.com/role: "${SUPERVISOR_NAMESPACE}"
+                  vault.hashicorp.com/agent-inject-secret-dsm-pg-creds: "secret/data/${SUPERVISOR_NAMESPACE}/dsm-pg-creds"
+                  vault.hashicorp.com/tls-skip-verify: "true"
               spec:
                 containers:
                 - name: api
@@ -486,12 +649,12 @@ jobs:
                     value: "${DSM_PORT}"
                   - name: POSTGRES_USER
                     value: "${DSM_USERNAME}"
-                  - name: POSTGRES_PASSWORD
-                    value: "${DSM_PASSWORD}"
                   - name: POSTGRES_DB
                     value: "${DSM_DBNAME}"
                   - name: POSTGRES_SSL
                     value: "true"
+                  - name: VAULT_SECRETS_PATH
+                    value: "/vault/secrets/dsm-pg-creds"
                   - name: API_PORT
                     value: "${API_PORT}"
                   ports:
@@ -502,6 +665,13 @@ jobs:
                       port: ${API_PORT}
                     initialDelaySeconds: 10
                     periodSeconds: 5
+                  volumeMounts:
+                  - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+                    name: vault-token
+                volumes:
+                - name: vault-token
+                  secret:
+                    secretName: internal-app-token
           ---
           apiVersion: v1
           kind: Service

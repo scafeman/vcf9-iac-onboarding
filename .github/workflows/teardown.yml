@@ -910,6 +910,18 @@ jobs:
             # Delete admin password Secret and DSM-created secret
             kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
             kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+
+            # Delete dsm-pg-creds KeyValueSecret
+            vcf plugin install secret 2>/dev/null || true
+            echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
+            echo "KeyValueSecret 'dsm-pg-creds' cleaned up"
+
+            # Delete ServiceAccount and token (shared with secrets-demo — safe to delete)
+            kubectl delete sa internal-app --ignore-not-found 2>/dev/null || true
+            kubectl delete secret internal-app-token --ignore-not-found 2>/dev/null || true
+            echo "ServiceAccount 'internal-app' and token cleaned up"
+
+            # NOTE: vault-injector package is NOT deleted — shared with secrets-demo
             echo "Managed DB App supervisor resources cleaned up"
           fi
 
