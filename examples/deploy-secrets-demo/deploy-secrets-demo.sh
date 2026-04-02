@@ -341,7 +341,7 @@ else
   cat > "${VAULT_VALUES_FILE}" <<VALEOF
 externalIP: "${SECRET_STORE_IP}"
 namespace: "tkg-packages"
-agentInjectVaultAddr: "http://secret-store-service:8200"
+agentInjectVaultAddr: "http://secret-store-service.tkg-packages.svc.cluster.local:8200"
 agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
 VALEOF
 
