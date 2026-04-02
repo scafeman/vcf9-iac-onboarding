@@ -27,7 +27,7 @@ function parseVaultSecretsFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8').trim();
 
   // Try vault default map template format: data: map[k1:v1 k2:v2]
-  const mapMatch = content.match(/^data:\s*map\[(.+)\]$/);
+  const mapMatch = content.match(/^data:\s*map\[(.+)\]/m);
   if (mapMatch) {
     const pairs = {};
     // Split on spaces, then split each pair on first colon
