@@ -361,7 +361,83 @@ Common causes: NSX Edge cluster at capacity, VPC connectivity profile blocks ext
 
 ---
 
-## Phase 10: End-to-End Summary
+## Phase 10: Application Deployment Patterns
+
+Once the VKS cluster passes Phases 1–9, you can deploy application workloads using the toolkit's deployment patterns. Each pattern validates a different VCF capability.
+
+### Deploy Hybrid App — VM-to-Container Connectivity
+
+**EKS Equivalent:** EC2 instance + EKS pods in the same VPC
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.1 | PostgreSQL VM provisioned | `kubectl get virtualmachines -n <SUPERVISOR_NS>` | VM shows `PoweredOn` with an assigned IP |
+| 10.2 | API pod running | `kubectl get pods -n hybrid-app -l app=hybrid-app-api` | Pod shows `Running` with `1/1` ready |
+| 10.3 | Frontend LoadBalancer IP | `kubectl get svc hybrid-app-dashboard-lb -n hybrid-app` | `EXTERNAL-IP` assigned |
+| 10.4 | HTTP connectivity | `curl http://<FRONTEND_IP>` | Returns HTTP 200 |
+| 10.5 | API health check | `curl http://<FRONTEND_IP>/api/healthz` | Returns `{"status":"ok","database":"connected"}` |
+
+### Deploy Managed DB App — DSM Managed Database + Vault Credentials
+
+**EKS Equivalent:** EKS + RDS + Secrets Manager
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.6 | DSM PostgresCluster provisioned | `kubectl get postgrescluster -n <SUPERVISOR_NS>` | Status shows `Ready` with connection details |
+| 10.7 | Connection details available | `kubectl get postgrescluster <NAME> -n <NS> -o jsonpath='{.status.connection}'` | Returns host, port, dbname, username |
+| 10.8 | KeyValueSecret created | `vcf secret list` | `dsm-pg-creds` appears in the list |
+| 10.9 | Vault-injector running | `kubectl get pods -n tkg-packages -l app.kubernetes.io/name=vault-injector` | Pod shows `Running` |
+| 10.10 | API pod with vault sidecar | `kubectl get pods -n managed-db-app -l app=managed-db-api` | Shows `2/2` ready (api + vault-agent) |
+| 10.11 | Frontend LoadBalancer IP | `kubectl get svc managed-db-dashboard-lb -n managed-db-app` | `EXTERNAL-IP` assigned |
+| 10.12 | HTTP connectivity | `curl http://<FRONTEND_IP>` | Returns HTTP 200 |
+| 10.13 | API health check | `curl http://<FRONTEND_IP>/api/healthz` | Returns `{"status":"ok","database":"connected"}` |
+
+### Deploy Bastion VM — SSH Jump Host
+
+**EKS Equivalent:** EC2 bastion host + Security Groups
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.14 | Bastion VM provisioned | `kubectl get virtualmachines -n <SUPERVISOR_NS>` | VM shows `PoweredOn` with internal IP |
+| 10.15 | VirtualMachineService created | `kubectl get virtualmachineservice -n <SUPERVISOR_NS>` | Service shows external IP assigned |
+| 10.16 | SSH connectivity | `nc -zv <EXTERNAL_IP> 22` | Connection succeeded on port 22 |
+
+### Deploy Secrets Demo — VCF Secret Store Integration
+
+**EKS Equivalent:** Secrets Manager + EKS pod injection
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.17 | KeyValueSecrets created | `vcf secret list` | `redis-creds` and `postgres-creds` appear |
+| 10.18 | Vault-injector running | `kubectl get pods -n tkg-packages -l app.kubernetes.io/name=vault-injector` | Pod shows `Running` |
+| 10.19 | Dashboard pod with vault sidecar | `kubectl get pods -n secrets-demo -l app=secrets-dashboard` | Shows `2/2` ready |
+| 10.20 | Dashboard LoadBalancer IP | `kubectl get svc secrets-dashboard-lb -n secrets-demo` | `EXTERNAL-IP` assigned |
+| 10.21 | HTTP connectivity | `curl http://<DASHBOARD_IP>` | Returns HTTP 200 |
+
+### Deploy Metrics — Observability Stack
+
+**EKS Equivalent:** CloudWatch + Prometheus + Grafana
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.22 | Telegraf package installed | `vcf package installed list -n tkg-packages \| grep telegraf` | Shows `Reconcile succeeded` |
+| 10.23 | Prometheus package installed | `vcf package installed list -n tkg-packages \| grep prometheus` | Shows `Reconcile succeeded` |
+| 10.24 | Grafana pod running | `kubectl get pods -n grafana -l app.kubernetes.io/name=grafana` | Pod shows `Running` |
+
+### Deploy GitOps — CI/CD Stack
+
+**EKS Equivalent:** ECR + CodePipeline + ArgoCD
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.25 | Harbor pods running | `kubectl get pods -n harbor` | All pods show `Running` |
+| 10.26 | ArgoCD pods running | `kubectl get pods -n argocd` | All pods show `Running` |
+| 10.27 | GitLab webservice running | `kubectl get pods -n gitlab-system -l app=webservice` | Pod shows `Running` |
+| 10.28 | Microservices Demo deployed | `kubectl get pods -n microservices-demo` | All 11 pods show `Running` |
+
+---
+
+## Phase 11: End-to-End Summary
 
 Once all phases pass, the VKS cluster is validated and ready for workload migration. Use this summary table to record your results.
 
@@ -378,14 +454,20 @@ Once all phases pass, the VKS cluster is validated and ready for workload migrat
 | 7 | Storage Validation (PVC binding) | ☐ Pass / ☐ Fail |
 | 8 | Compute Validation (Pod scheduling + security) | ☐ Pass / ☐ Fail |
 | 9 | Network Validation (LoadBalancer + HTTP) | ☐ Pass / ☐ Fail |
+| 10a | Deploy Hybrid App (VM + container connectivity) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10b | Deploy Managed DB App (DSM + vault credentials) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10c | Deploy Bastion VM (SSH jump host) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10d | Deploy Secrets Demo (Secret Store integration) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10e | Deploy Metrics (observability stack) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10f | Deploy GitOps (CI/CD stack) | ☐ Pass / ☐ Fail / ☐ Skipped |
 
 ### Migration Readiness Criteria
 
-All 9 phases must pass for the VKS cluster to be considered migration-ready. If any phase fails:
+Phases 1–9 must all pass for the VKS cluster to be considered migration-ready. Phase 10 sub-checks (10a–10f) are optional — deploy only the patterns that match your workload requirements. If any required phase fails:
 
 1. Review the troubleshooting section for that phase
 2. Fix the root cause and re-run the verification commands
-3. Do not proceed to workload migration until all phases pass
+3. Do not proceed to workload migration until all required phases pass
 
 ### Automated Validation
 
@@ -414,6 +496,10 @@ This script executes all phases non-interactively and reports pass/fail status f
 | **GitOps** | Flux / ArgoCD on EKS | ArgoCD on VKS (Helm-deployed) |
 | **CI/CD** | CodePipeline / CodeBuild | GitLab + GitLab Runner (Helm-deployed) |
 | **Monitoring** | CloudWatch + Prometheus | Prometheus + Telegraf + Grafana (Helm-deployed) |
+| **Managed Database** | RDS (PostgreSQL) | Data Services Manager (DSM) PostgresCluster CRD |
+| **Secrets Management** | Secrets Manager | VCF Secret Store + vault-injector |
+| **VM Workloads** | EC2 instances | VM Service (VirtualMachine CRD) |
+| **Bastion / Jump Host** | EC2 + Security Groups | VM Service + VirtualMachineService LoadBalancer |
 | **DNS** | Route 53 | CoreDNS with static host entries |
 | **Certificates** | ACM (AWS Certificate Manager) | Self-signed CA + wildcard certs (cert-manager optional) |
 | **CLI** | `aws` + `eksctl` + `kubectl` | `vcf` + `kubectl` |
