@@ -40,6 +40,14 @@ After applying the manifest, the script waits for the PostgresCluster's `status.
 
 An idempotency check skips creation if the PostgresCluster resource already exists.
 
+### Phase 1b: Create DSM Credentials KeyValueSecret
+
+After extracting DSM connection details, the script creates a `dsm-pg-creds` KeyValueSecret in the supervisor namespace via `vcf secret create`. This stores all five connection fields (host, port, username, password, database) in the VCF Secret Store, enabling vault-agent injection into application pods.
+
+### Phase 1c: Create ServiceAccount and Token
+
+Creates a `internal-app` ServiceAccount and `internal-app-token` long-lived token Secret in the supervisor namespace. This token is used by vault-agent sidecars to authenticate against the VCF Secret Store.
+
 ### Phase 2: Build & Push Container Images
 
 Builds Docker images for both the API and Frontend services (reused from `deploy-hybrid-app`), then pushes them to the configured container registry:
@@ -57,8 +65,11 @@ If `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are set, the script logs in to Doc
 
 Switches to the guest cluster kubeconfig, creates the application namespace (default: `managed-db-app`), and deploys:
 
-1. **API Deployment** (`apps/v1`) — Node.js/Express container with environment variables pointing to the DSM PostgresCluster connection endpoint. Includes a readiness probe on `/healthz` to ensure the pod only receives traffic when the database connection is healthy.
-2. **API ClusterIP Service** (`v1`) — Exposes the API on port 3001 within the cluster.
+1. Copies the supervisor `internal-app-token` into the guest cluster application namespace.
+2. Installs the `vault-injector` VKS standard package (idempotent — shared with secrets-demo).
+3. Waits for the vault-injector pod to reach Running state.
+4. **API Deployment** (`apps/v1`) — Node.js/Express container deployed with vault annotations instead of plaintext `POSTGRES_PASSWORD` env var. The API reads credentials from `/vault/secrets/dsm-pg-creds` via the `VAULT_SECRETS_PATH` env var. Includes a readiness probe on `/healthz` to ensure the pod only receives traffic when the database connection is healthy.
+5. **API ClusterIP Service** (`v1`) — Exposes the API on port 3001 within the cluster.
 
 The script waits for the API pod to reach Running state (timeout: 300s).
 
@@ -95,6 +106,7 @@ Prints a deployment summary with the Frontend LoadBalancer IP, DSM PostgreSQL ho
 | RDS Security Group | NSX VPC network isolation | Automatic — no manual config needed |
 | RDS Endpoint | `status.connection.host:port` | Populated after PostgresCluster reaches Ready |
 | RDS Master Password | `adminPasswordRef` (Kubernetes Secret) | Secret created before PostgresCluster |
+| RDS Master Password (Secrets Manager) | VCF Secret Store + vault-injector | Credentials stored as KeyValueSecret, injected via vault-agent sidecar |
 | RDS Parameter Group | `requestedSharedMemorySize` + defaults | DSM manages PostgreSQL configuration |
 | EKS + RDS architecture | VKS + DSM PostgresCluster | Same pattern: managed K8s + managed DB |
 
@@ -116,6 +128,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `VCFA_ENDPOINT` | Yes | — | VCFA hostname (no `https://` prefix) |
 | `TENANT_NAME` | Yes | — | SSO tenant/organization |
 | `CONTEXT_NAME` | Yes | — | Local VCF CLI context name |
+| `SECRET_STORE_IP` | Yes | — | VCF Secret Store IP address for vault-injector configuration |
 | `KUBECONFIG_FILE` | No | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to guest cluster admin kubeconfig |
 | `DSM_CLUSTER_NAME` | No | `postgres-clus-01` | PostgresCluster resource name |
 | `DSM_VM_CLASS` | No | `best-effort-large` | VM class for DSM instances (Single Server requires 4 CPU minimum) |
@@ -139,6 +152,8 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `POLL_INTERVAL` | No | `30` | Seconds between polling attempts |
 | `DOCKERHUB_USERNAME` | No | — | DockerHub username (for image push authentication) |
 | `DOCKERHUB_TOKEN` | No | — | DockerHub access token (for image push authentication) |
+
+> **Credential Security:** DSM credentials are stored as a KeyValueSecret in the VCF Secret Store and injected into the API pod via vault-agent sidecar. The password never appears as a plaintext environment variable in the Deployment manifest. The `VAULT_SECRETS_PATH` env var tells the API where to read the vault-mounted credential file.
 
 ---
 

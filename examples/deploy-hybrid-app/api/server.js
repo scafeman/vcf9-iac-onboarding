@@ -8,12 +8,81 @@ const PORT = process.env.API_PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// ---------------------------------------------------------------------------
+// Vault secret file parser
+// ---------------------------------------------------------------------------
+// Reads credentials from a vault-agent mounted file. Supports two formats:
+//   1. Vault default map template: data: map[key1:value1 key2:value2]
+//   2. Key=value per line: key1=value1\nkey2=value2
+// Returns an object with the parsed key-value pairs.
+
+const fs = require('fs');
+
+function parseVaultSecretsFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    console.error(`Vault secrets file not found at ${filePath}`);
+    process.exit(1);
+  }
+
+  const content = fs.readFileSync(filePath, 'utf8').trim();
+
+  // Try vault default map template format: data: map[k1:v1 k2:v2]
+  const mapMatch = content.match(/^data:\s*map\[(.+)\]/m);
+  if (mapMatch) {
+    const pairs = {};
+    // Split on spaces, then split each pair on first colon
+    const entries = mapMatch[1].split(/\s+/);
+    for (const entry of entries) {
+      const colonIdx = entry.indexOf(':');
+      if (colonIdx > 0) {
+        pairs[entry.substring(0, colonIdx)] = entry.substring(colonIdx + 1);
+      }
+    }
+    return pairs;
+  }
+
+  // Try key=value per line format
+  const pairs = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx > 0) {
+      pairs[trimmed.substring(0, eqIdx)] = trimmed.substring(eqIdx + 1);
+    }
+  }
+
+  if (Object.keys(pairs).length > 0) return pairs;
+
+  console.error(`Failed to parse vault secrets file at ${filePath}: unrecognized format`);
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Resolve PostgreSQL password (vault file or env var)
+// ---------------------------------------------------------------------------
+
+function resolvePassword() {
+  const vaultPath = process.env.VAULT_SECRETS_PATH;
+  if (vaultPath) {
+    console.log(`Reading credentials from vault secrets file: ${vaultPath}`);
+    const secrets = parseVaultSecretsFile(vaultPath);
+    if (!secrets.password) {
+      console.error(`Failed to parse vault secrets file: password key not found in ${vaultPath}`);
+      process.exit(1);
+    }
+    return secrets.password;
+  }
+  // Backward compatibility: fall back to env var
+  return process.env.POSTGRES_PASSWORD || 'assetpass';
+}
+
 // PostgreSQL connection pool
 const poolConfig = {
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
   user: process.env.POSTGRES_USER || 'assetadmin',
-  password: process.env.POSTGRES_PASSWORD || 'assetpass',
+  password: resolvePassword(),
   database: process.env.POSTGRES_DB || 'assetdb',
 };
 

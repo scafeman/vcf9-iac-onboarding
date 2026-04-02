@@ -10,7 +10,7 @@ Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EK
 - Declarative YAML manifests for VCF 9 resources (Projects, Namespaces, VKS Clusters, functional test workloads)
 - Property-based and content-presence test suites validating manifest correctness and guide accuracy
 - GitHub Actions workflows for automated deployment of all deployments via CI/CD
-- A managed database demo (Infrastructure Asset Tracker) showcasing VCF Data Services Manager (DSM) with a fully managed PostgresCluster and a Next.js/Node.js app on VKS — the VCF equivalent of AWS EKS + RDS, deployed in minutes with zero database administration
+- A managed database demo (Infrastructure Asset Tracker) showcasing VCF Data Services Manager (DSM) with a fully managed PostgresCluster and a Next.js/Node.js app on VKS — the VCF equivalent of AWS EKS + RDS, with vault-injected credentials via VCF Secret Store for zero-trust credential management
 - Companion trigger scripts for dispatching workflows from the command line
 - A self-hosted runner configuration for executing workflows on private VCF infrastructure
 - An EKS-to-VKS migration mapping for teams coming from AWS

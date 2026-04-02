@@ -331,6 +331,13 @@ EOF
   log_success "Service account token copied into namespace '${NAMESPACE}'"
 fi
 
+# --- Ensure tkg-packages namespace exists (vault-injector installs here) ---
+if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
+  kubectl create ns tkg-packages
+  kubectl label ns tkg-packages pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
+  log_success "Namespace 'tkg-packages' created"
+fi
+
 # --- Install vault-injector via VKS standard package ---
 log_step "4b" "Installing vault-injector package"
 
@@ -340,8 +347,8 @@ else
   VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
   cat > "${VAULT_VALUES_FILE}" <<VALEOF
 externalIP: "${SECRET_STORE_IP}"
-namespace: "${NAMESPACE}"
-agentInjectVaultAddr: "http://secret-store-service:8200"
+namespace: "tkg-packages"
+agentInjectVaultAddr: "http://secret-store-service.tkg-packages.svc.cluster.local:8200"
 agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
 VALEOF
 
@@ -362,9 +369,9 @@ fi
 # Wait for vault-injector pod readiness
 if ! wait_for_condition "vault-injector pod to be ready" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get pods -n '${NAMESPACE}' -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
+  "kubectl get pods -n 'tkg-packages' -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
   log_error "Vault-injector pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=vault-injector -o wide 2>/dev/null || true
+  kubectl get pods -n "tkg-packages" -l app.kubernetes.io/name=vault-injector -o wide 2>/dev/null || true
   exit 5
 fi
 

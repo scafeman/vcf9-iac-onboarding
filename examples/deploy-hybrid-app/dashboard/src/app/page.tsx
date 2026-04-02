@@ -262,9 +262,11 @@ export default function DashboardPage() {
             'VCF CLI context created and authenticated to VCFA',
             'DSM PostgresCluster provisioned via CRD (replaces AWS RDS)',
             'Connection details extracted from status.connection',
-            'Admin password retrieved from DSM-managed secret',
+            'Credentials stored in VCF Secret Store (KeyValueSecret)',
+            'ServiceAccount + token created for vault authentication',
             'Container images built and pushed to registry',
-            'API deployed with SSL connection to managed PostgreSQL',
+            'Vault-injector installed — credentials injected via sidecar',
+            'API deployed with vault-mounted credentials (no plaintext passwords)',
             'Frontend deployed with NSX LoadBalancer external IP',
             'End-to-end HTTP connectivity verified',
           ].map((step) => (
