@@ -35,7 +35,13 @@ See the [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.
 
 ## Architecture Overview
 
-The toolkit automates the VCF 9 provisioning workflow across seven phases:
+## Architecture Overview
+
+The toolkit provides seven deployment patterns that cover the full VCF 9 application lifecycle — from cluster provisioning to managed databases with vault-injected credentials.
+
+### Foundation: VKS Cluster Deployment (7 phases)
+
+Every deployment pattern starts with a running VKS cluster. The Deploy Cluster workflow automates the full provisioning lifecycle:
 
 1. **Environment Initialization** — VCF CLI context creation and VCFA authentication
 2. **Project & Namespace Provisioning** — Project, RBAC, and Supervisor Namespace creation via CCI APIs
@@ -47,6 +53,31 @@ The toolkit automates the VCF 9 provisioning workflow across seven phases:
 
 > [!TIP]
 > **The Context Bridge** is the critical step that most engineers miss. In VCF 9, Cluster API resources are hidden from the global context. This toolkit automates the switch to the namespace-scoped context, effectively "unlocking" `kubectl get clusters`. Without it, the command returns nothing — even though the cluster exists.
+
+### Deployment Patterns
+
+Once the VKS cluster is running, the toolkit offers six additional deployment patterns:
+
+| Pattern | What It Proves | AWS Equivalent |
+|---|---|---|
+| **Deploy Metrics** | VKS standard packages (Telegraf, Prometheus, Grafana) | EKS Add-ons + CloudWatch |
+| **Deploy GitOps** | Full CI/CD stack (Harbor, ArgoCD, GitLab) on VKS | ECR + CodePipeline + ArgoCD |
+| **Deploy Hybrid App** | VM-to-container connectivity over NSX VPC | EC2 + EKS in same VPC |
+| **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
+| **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
+| **Deploy Bastion VM** | SSH jump host with source-IP-restricted LoadBalancer | EC2 bastion + Security Groups |
+
+```
+Deploy Cluster (foundation)
+    ├── Deploy Metrics         — observability stack
+    ├── Deploy GitOps          — CI/CD + GitOps stack
+    ├── Deploy Hybrid App      — VM + container connectivity
+    ├── Deploy Managed DB App  — managed database + vault credentials
+    ├── Deploy Secrets Demo    — secret store integration
+    └── Deploy Bastion VM      — SSH jump host (no VKS cluster required)
+```
+
+Each pattern has a deploy script, teardown script, GitHub Actions workflow, and README documentation. All scripts and workflows follow the same structure — making it easy to understand one and apply the pattern to the others.
 
 ## How to Use This Toolkit
 
