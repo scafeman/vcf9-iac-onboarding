@@ -331,6 +331,13 @@ EOF
   log_success "Service account token copied into namespace '${NAMESPACE}'"
 fi
 
+# --- Ensure tkg-packages namespace exists (vault-injector installs here) ---
+if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
+  kubectl create ns tkg-packages
+  kubectl label ns tkg-packages pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
+  log_success "Namespace 'tkg-packages' created"
+fi
+
 # --- Install vault-injector via VKS standard package ---
 log_step "4b" "Installing vault-injector package"
 
