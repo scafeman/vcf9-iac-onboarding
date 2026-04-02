@@ -85,12 +85,8 @@ export default function DashboardPage() {
   function openEdit(a: Asset) {
     setEditAsset(a);
     setEditForm({
-      name: a.name,
-      type: a.type,
-      status: a.status,
-      ip_address: a.ip_address || '',
-      environment: a.environment || '',
-      notes: a.notes || '',
+      name: a.name, type: a.type, status: a.status,
+      ip_address: a.ip_address || '', environment: a.environment || '', notes: a.notes || '',
     });
     setEditErrors({});
   }
@@ -211,6 +207,99 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Deployment Checklist */}
+      <div style={{
+        background: '#161b22', borderRadius: '12px', padding: '32px',
+        marginBottom: '28px', border: '1px solid #30363d',
+      }}>
+        <span style={{
+          display: 'inline-block', background: apiOk && dbOk ? '#238636' : '#da3633',
+          color: '#fff', padding: '6px 16px', borderRadius: '20px',
+          fontSize: '13px', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '20px',
+        }}>
+          {apiOk && dbOk ? 'DEPLOYMENT VALIDATED' : 'DEPLOYMENT IN PROGRESS'}
+        </span>
+        <h2 style={{
+          fontSize: '28px', fontWeight: 700, margin: '0 0 6px 0',
+          background: 'linear-gradient(135deg, #58a6ff, #3fb950)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        }}>
+          VCF 9 Managed DB App — EKS + RDS Equivalent
+        </h2>
+        <p style={{ color: '#8b949e', fontSize: '15px', margin: '0 0 28px 0' }}>
+          Fully managed PostgreSQL via Data Services Manager (DSM) — zero database administration
+        </p>
+
+        {/* Metric Grid */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px',
+        }}>
+          {[
+            ['Database', 'DSM PostgresCluster', false],
+            ['App Tier', 'VKS Containers', false],
+            ['Networking', 'NSX VPC + SSL', false],
+            ['DB Status', dbOk ? 'Connected' : 'Waiting...', true],
+          ].map(([label, value, isGreen]) => (
+            <div key={label as string} style={{
+              background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px',
+            }}>
+              <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
+                {label as string}
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: 600, color: isGreen && dbOk ? '#3fb950' : '#58a6ff' }}>
+                {value as string}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Deployment Steps Checklist */}
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0' }}>
+          {[
+            'VCF CLI context created and authenticated to VCFA',
+            'DSM PostgresCluster provisioned via CRD (replaces AWS RDS)',
+            'Connection details extracted from status.connection',
+            'Admin password retrieved from DSM-managed secret',
+            'Container images built and pushed to registry',
+            'API deployed with SSL connection to managed PostgreSQL',
+            'Frontend deployed with NSX LoadBalancer external IP',
+            'End-to-end HTTP connectivity verified',
+          ].map((step) => (
+            <li key={step} style={{
+              padding: '11px 0', borderBottom: '1px solid #21262d',
+              fontSize: '15px', display: 'flex', alignItems: 'center', gap: '10px',
+            }}>
+              <span style={{ color: apiOk && dbOk ? '#3fb950' : '#8b949e', fontWeight: 'bold' }}>✓</span>
+              {step}
+            </li>
+          ))}
+        </ul>
+
+        {/* AWS Migration Benefits */}
+        <div style={{
+          background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px',
+        }}>
+          <h3 style={{ fontSize: '14px', color: '#58a6ff', margin: '0 0 12px 0', fontWeight: 600 }}>
+            AWS RDS → VCF DSM Migration
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+            {[
+              ['RDS Instance', 'DSM PostgresCluster CRD'],
+              ['RDS Instance Class', 'vmClass (best-effort-large)'],
+              ['RDS Multi-AZ', 'replicas (0=Single, 1=HA)'],
+              ['RDS Endpoint', 'status.connection.host:port'],
+              ['RDS Maintenance Window', 'maintenanceWindow spec'],
+              ['RDS Master Password', 'adminPasswordRef (K8s Secret)'],
+            ].map(([aws, vcf]) => (
+              <div key={aws} style={{ display: 'contents' }}>
+                <span style={{ color: '#8b949e', padding: '4px 0' }}>{aws}</span>
+                <span style={{ color: '#c9d1d9', padding: '4px 0' }}>→ {vcf}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Create Form */}
       <div style={{
         background: '#1e293b', borderRadius: '12px', padding: '24px',
@@ -318,8 +407,8 @@ export default function DashboardPage() {
       )}
 
       {/* Footer */}
-      <footer style={{ marginTop: '48px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
-        Powered by VCF VM Service — VM-to-Container Connectivity Demo
+      <footer style={{ marginTop: '48px', textAlign: 'center', color: '#484f58', fontSize: '12px' }}>
+        Powered by <a href="https://github.com/scafeman/vcf9-iac-onboarding" style={{ color: '#58a6ff', textDecoration: 'none' }}>vcf9-iac-onboarding</a> &middot; VCF Data Services Manager — Managed Database Demo
       </footer>
     </div>
   );
