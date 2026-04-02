@@ -214,9 +214,10 @@ export default function DashboardPage() {
 
         {/* Metric Grid — Row 1: Infrastructure */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px',
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px',
         }}>
           {[
+            ['Compute', 'VKS + VM Service'],
             ['Database', 'DSM PostgresCluster'],
             ['Networking', 'NSX VPC + SSL'],
           ].map(([label, value]) => (
