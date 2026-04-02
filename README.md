@@ -130,6 +130,7 @@ This is the deployment that resonates most with teams migrating from AWS. If you
 - [Engineering Workflow](VCF_Engineering_Workflow.md) — Condensed step-by-step engineering workflow
 - [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md) — Pass/fail migration validation checklist
 - [Examples Overview](examples/README.md) — Sample manifests and automation script documentation
+- [Command Reference](docs/COMMAND-REFERENCE.md) — VCF CLI, kubectl, and Docker command cheatsheet organized by context level
 
 ## Testing
 
