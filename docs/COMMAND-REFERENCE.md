@@ -105,7 +105,6 @@ Commands that run after switching to a namespace-scoped context via the Context 
 | `kubectl get postgrescluster <NAME> -n <NS> -o jsonpath='{.status.connection.host}'` | Get DSM PostgreSQL host IP |
 | `kubectl get postgrescluster <NAME> -n <NS> -o jsonpath='{.status.conditions}'` | Get provisioning conditions |
 | `kubectl get secret pg-<CLUSTER_NAME> -n <NS> -o jsonpath='{.data.password}' \| base64 -d` | Get DSM-created admin password |
-| `kubectl get storagepolicies` | List available vSphere storage policies |
 | `kubectl describe postgrescluster <NAME> -n <NS>` | Get events and detailed status |
 
 ### Secret Store
@@ -123,9 +122,10 @@ Commands that run after switching to a namespace-scoped context via the Context 
 
 | Command | Description |
 |---|---|
-| `kubectl get storagepolicies` | List vSphere storage policies |
-| `kubectl get storageclasses` | List Kubernetes storage classes |
+| `kubectl get storageclasses` | List Kubernetes storage classes available in the namespace |
 | `kubectl get subnetsets` | List NSX SubnetSets |
+
+> **Note:** `kubectl get storagepolicies` requires cluster-admin access and is not available to project-level users. Use `kubectl get storageclasses` on the guest cluster instead, or check available storage policies via the VCFA UI (Infrastructure → Storage Policies).
 
 ---
 
