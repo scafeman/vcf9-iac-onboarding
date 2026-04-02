@@ -79,12 +79,6 @@ on:
         required: false
         type: string
         default: "assetdb"
-      secret_store_ip:
-        description: "VCF Secret Store IP address for vault-injector"
-        required: false
-        type: string
-        default: "10.0.100.11"
-
   repository_dispatch:
     types: [deploy-managed-db-app]
 
@@ -141,7 +135,7 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
       # --- Secret Store (vault-injector) ---
-      SECRET_STORE_IP: ${{ github.event.inputs.secret_store_ip || github.event.client_payload.secret_store_ip || secrets.SECRET_STORE_IP }}
+      SECRET_STORE_IP: ${{ github.event.client_payload.secret_store_ip || secrets.SECRET_STORE_IP }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: managed-db-app-deploy
