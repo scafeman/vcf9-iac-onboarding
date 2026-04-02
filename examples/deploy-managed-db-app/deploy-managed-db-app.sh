@@ -595,6 +595,14 @@ fi
 
 log_success "Phase 3b complete — vault-injector deployed, supervisor token copied"
 
+# Wait for vault-injector mutating webhook to be registered
+# (the webhook must be active before creating pods with vault annotations)
+if ! wait_for_condition "vault-injector webhook to be registered" \
+  60 10 \
+  "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
+  log_warn "Vault-injector webhook not found — vault-agent sidecar may not be injected"
+fi
+
 # Deploy API Deployment with vault annotations
 if ! cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
