@@ -83,6 +83,7 @@ on:
         description: "VCF Secret Store IP address for vault-injector"
         required: false
         type: string
+        default: "10.0.100.11"
 
   repository_dispatch:
     types: [deploy-managed-db-app]
