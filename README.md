@@ -35,8 +35,6 @@ See the [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.
 
 ## Architecture Overview
 
-## Architecture Overview
-
 The toolkit provides seven deployment patterns that cover the full VCF 9 application lifecycle — from cluster provisioning to managed databases with vault-injected credentials.
 
 ### Foundation: VKS Cluster Deployment (7 phases)
