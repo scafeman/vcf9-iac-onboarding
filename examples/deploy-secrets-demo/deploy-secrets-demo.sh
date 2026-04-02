@@ -340,7 +340,7 @@ else
   VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
   cat > "${VAULT_VALUES_FILE}" <<VALEOF
 externalIP: "${SECRET_STORE_IP}"
-namespace: "${NAMESPACE}"
+namespace: "tkg-packages"
 agentInjectVaultAddr: "http://secret-store-service:8200"
 agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
 VALEOF
@@ -362,9 +362,9 @@ fi
 # Wait for vault-injector pod readiness
 if ! wait_for_condition "vault-injector pod to be ready" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get pods -n '${NAMESPACE}' -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
+  "kubectl get pods -n 'tkg-packages' -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'"; then
   log_error "Vault-injector pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=vault-injector -o wide 2>/dev/null || true
+  kubectl get pods -n "tkg-packages" -l app.kubernetes.io/name=vault-injector -o wide 2>/dev/null || true
   exit 5
 fi
 

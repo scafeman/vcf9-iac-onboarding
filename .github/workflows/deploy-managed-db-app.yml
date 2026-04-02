@@ -591,7 +591,7 @@ jobs:
             VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
             cat > "${VAULT_VALUES_FILE}" <<VALEOF
           externalIP: "${SECRET_STORE_IP}"
-          namespace: "${APP_NAMESPACE}"
+          namespace: "tkg-packages"
           agentInjectVaultAddr: "http://secret-store-service:8200"
           agentInjectVaultImage: "projects.packages.broadcom.com/vsphere/iaas/secret-store-service/9.0.0/openbao_ssl:0.0.15"
           VALEOF
