@@ -77,6 +77,11 @@ on:
         required: false
         type: string
         default: "bastion-vm"
+      dsm_cluster_name:
+        description: "DSM PostgresCluster name (must match the name used during deploy)"
+        required: false
+        type: string
+        default: "pg-clus-01"
 
   repository_dispatch:
     types: [teardown]
@@ -103,7 +108,7 @@ jobs:
       TEARDOWN_MANAGED_DB_APP: ${{ github.event.inputs.teardown_managed_db_app || github.event.client_payload.teardown_managed_db_app || 'true' }}
       BASTION_VM_NAME: ${{ github.event.inputs.bastion_vm_name || github.event.client_payload.bastion_vm_name || 'bastion-vm' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
-      DSM_CLUSTER_NAME: ${{ github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'pg-clus-01' }}
+      DSM_CLUSTER_NAME: ${{ github.event.inputs.dsm_cluster_name || github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'pg-clus-01' }}
       ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'admin-pw-pg-clus-01' }}
       MANAGED_DB_APP_NAMESPACE: ${{ github.event.client_payload.managed_db_app_namespace || 'managed-db-app' }}
       DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || '1800' }}
