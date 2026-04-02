@@ -188,24 +188,6 @@ export default function DashboardPage() {
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '48px 24px' }}>
-      {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: '36px' }}>
-        <h1 style={{
-          fontSize: '36px', fontWeight: 700, margin: '0 0 8px 0',
-          background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        }}>
-          VCF Infrastructure Asset Tracker
-        </h1>
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '12px' }}>
-          <span style={{ fontSize: '13px', color: apiOk ? '#4ade80' : '#f87171' }}>
-            {apiOk ? '● API Connected' : '● API Disconnected'}
-          </span>
-          <span style={{ fontSize: '13px', color: dbOk ? '#4ade80' : '#f87171' }}>
-            {dbOk ? '● DB Connected' : '● DB Disconnected'}
-          </span>
-        </div>
-      </div>
 
       {/* Deployment Checklist */}
       <div style={{
@@ -230,27 +212,47 @@ export default function DashboardPage() {
           Fully managed PostgreSQL via Data Services Manager (DSM) — zero database administration
         </p>
 
-        {/* Metric Grid */}
+        {/* Metric Grid — Row 1: Infrastructure */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px',
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px',
         }}>
           {[
-            ['Database', 'DSM PostgresCluster', false],
-            ['App Tier', 'VKS Containers', false],
-            ['Networking', 'NSX VPC + SSL', false],
-            ['DB Status', dbOk ? 'Connected' : 'Waiting...', true],
-          ].map(([label, value, isGreen]) => (
+            ['Database', 'DSM PostgresCluster'],
+            ['Networking', 'NSX VPC + SSL'],
+          ].map(([label, value]) => (
             <div key={label as string} style={{
               background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px',
             }}>
               <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
                 {label as string}
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 600, color: isGreen && dbOk ? '#3fb950' : '#58a6ff' }}>
+              <div style={{ fontSize: '20px', fontWeight: 600, color: '#58a6ff' }}>
                 {value as string}
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Metric Grid — Row 2: Tier Status */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '28px',
+        }}>
+          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>App Tier</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: '#58a6ff' }}>VKS Containers</div>
+          </div>
+          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>API Status</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: apiOk ? '#3fb950' : '#f87171' }}>
+              {apiOk ? 'Connected' : 'Waiting...'}
+            </div>
+          </div>
+          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
+            <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>DB Status</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: dbOk ? '#3fb950' : '#f87171' }}>
+              {dbOk ? 'Connected' : 'Waiting...'}
+            </div>
+          </div>
         </div>
 
         {/* Deployment Steps Checklist */}
@@ -298,6 +300,17 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Asset Tracker Heading */}
+      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <h1 style={{
+          fontSize: '36px', fontWeight: 700, margin: '0',
+          background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+        }}>
+          VCF Infrastructure Asset Tracker
+        </h1>
       </div>
 
       {/* Create Form */}
