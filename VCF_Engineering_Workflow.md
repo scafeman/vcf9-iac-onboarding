@@ -1,6 +1,6 @@
-# VCF 9 Engineering Workflow: Infrastructure & VKS Deployment
+# VCF 9 Engineering Workflow: Infrastructure & Application Deployment
 
-This guide provides the standardized steps to initialize the VCF context, provision infrastructure, and deploy VMware Kubernetes Service (VKS) clusters.
+This guide provides the standardized steps to initialize the VCF context, provision infrastructure, deploy VMware Kubernetes Service (VKS) clusters, and run application workloads on VCF 9.
 
 ---
 
@@ -147,29 +147,117 @@ You should receive the HTML response proving the pod is running, the storage is 
 
 ## Automated Scripts (Recommended)
 
-The manual workflow above has been fully automated into two scripts that handle the entire lifecycle without any user interaction. These are the recommended way to spin the dev environment up and down.
+The manual workflow above has been fully automated into scripts that handle the entire lifecycle without any user interaction. These are the recommended way to spin the dev environment up and down.
 
-### Deploy (Spin Up)
+### Build the Dev Container
 
 ```bash
-# Build and start the dev container (first time only)
 docker compose up -d --build
+```
 
-# Run the full deploy — creates context, project, namespace, cluster, and test workloads
+### Deploy VKS Cluster (Foundation)
+
+Every deployment pattern requires a running VKS cluster. Deploy it first:
+
+```bash
 docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
-See [examples/deploy-cluster/README-deploy.md](examples/deploy-cluster/README-deploy.md) for a detailed breakdown of each phase.
+See [examples/deploy-cluster/README-deploy.md](examples/deploy-cluster/README-deploy.md) for details.
 
-### Teardown (Spin Down)
+---
+
+## Phase 6: Application Deployment Patterns
+
+Once the VKS cluster is running, deploy any combination of the following patterns. Each is independent and can be deployed in any order.
+
+### Deploy Metrics — Observability Stack
+
+Installs Telegraf, Prometheus, and Grafana on the VKS cluster.
 
 ```bash
-# Tear down everything — deletes workloads, cluster, namespace, project, and context
+docker exec vcf9-dev bash examples/deploy-metrics/deploy-metrics.sh
+```
+
+**AWS Equivalent:** CloudWatch + Prometheus + Grafana
+
+### Deploy GitOps — CI/CD Stack
+
+Installs Harbor, ArgoCD, GitLab, and deploys the Google Microservices Demo.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-gitops/deploy-gitops.sh
+```
+
+**AWS Equivalent:** ECR + CodePipeline + ArgoCD
+
+### Deploy Hybrid App — VM-to-Container Connectivity
+
+Provisions a PostgreSQL VM via VM Service and deploys a Next.js/Node.js app on VKS, proving VM-to-container connectivity over NSX VPC.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh
+```
+
+**AWS Equivalent:** EC2 + EKS in the same VPC
+
+### Deploy Managed DB App — DSM Managed Database + Vault Credentials
+
+Provisions a fully managed PostgresCluster via DSM, stores credentials in the VCF Secret Store, and injects them into the API pod via vault-agent sidecar. The VCF equivalent of AWS EKS + RDS + Secrets Manager.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-managed-db-app/deploy-managed-db-app.sh
+```
+
+**AWS Equivalent:** EKS + RDS + Secrets Manager
+
+### Deploy Secrets Demo — VCF Secret Store Integration
+
+Demonstrates VCF Secret Store with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-secrets-demo/deploy-secrets-demo.sh
+```
+
+**AWS Equivalent:** Secrets Manager + EKS pod injection
+
+### Deploy Bastion VM — SSH Jump Host
+
+Deploys a minimal Ubuntu 24.04 bastion VM with source-IP-restricted SSH access via a VirtualMachineService LoadBalancer. Does not require a VKS cluster.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-bastion-vm/deploy-bastion-vm.sh
+```
+
+**AWS Equivalent:** EC2 bastion + Security Groups
+
+---
+
+## Teardown
+
+Each deployment has a corresponding teardown script. Tear down in reverse order.
+
+```bash
+# Application stacks (any order)
+docker exec vcf9-dev bash examples/deploy-managed-db-app/teardown-managed-db-app.sh
+docker exec vcf9-dev bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
+docker exec vcf9-dev bash examples/deploy-secrets-demo/teardown-secrets-demo.sh
+docker exec vcf9-dev bash examples/deploy-bastion-vm/teardown-bastion-vm.sh
+docker exec vcf9-dev bash examples/deploy-gitops/teardown-gitops.sh
+docker exec vcf9-dev bash examples/deploy-metrics/teardown-metrics.sh
+
+# Foundation (last)
 docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
 ```
 
-See [examples/deploy-cluster/README-teardown.md](examples/deploy-cluster/README-teardown.md) for a detailed breakdown of each phase.
-
 ### Configuration
 
-Both scripts read all configuration from environment variables loaded via the `.env` file. See the deploy README for the full variable reference.
+All scripts read configuration from environment variables loaded via the `.env` file. See the [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) for the full variable reference and the [Getting Started Guide](GETTING-STARTED.md) for setup instructions.
+
+### GitHub Actions Workflows
+
+All deployment patterns are also available as GitHub Actions workflows for CI/CD automation. See the [Workflows README](.github/workflows/README.md) for parameters, triggers, and troubleshooting.
+
+### Trigger Scripts
+
+Companion scripts for dispatching workflows via the GitHub API are available in the [`scripts/`](scripts/) folder. See the [Scripts README](scripts/README.md) for usage.
