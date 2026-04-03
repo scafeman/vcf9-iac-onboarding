@@ -85,7 +85,6 @@ The teardown script uses a subset of the deploy script's variables:
 | `TENANT_NAME` | Yes | — | SSO tenant/organization |
 | `CONTEXT_NAME` | Yes | — | Local VCF CLI context name |
 | `SUPERVISOR_NAMESPACE` | Yes | — | Supervisor namespace where resources were provisioned |
-| `CLUSTER_NAME` | No | — | Cluster name (used for namespace context fallback) |
 | `DSM_CLUSTER_NAME` | No | `postgres-clus-01` | PostgresCluster resource name |
 | `ADMIN_PASSWORD_SECRET_NAME` | No | `admin-pw-pg-clus-01` | Name of the admin password Secret |
 | `VM_TIMEOUT` | No | `600` | Seconds to wait for VM deletion |

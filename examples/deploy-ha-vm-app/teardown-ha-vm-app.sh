@@ -29,9 +29,6 @@ CONTEXT_NAME="${CONTEXT_NAME:-}"
 # --- Supervisor Namespace ---
 SUPERVISOR_NAMESPACE="${SUPERVISOR_NAMESPACE:-}"
 
-# --- Cluster Name (used for namespace context fallback) ---
-CLUSTER_NAME="${CLUSTER_NAME:-}"
-
 # --- DSM PostgresCluster Configuration ---
 DSM_CLUSTER_NAME="${DSM_CLUSTER_NAME:-postgres-clus-01}"
 ADMIN_PASSWORD_SECRET_NAME="${ADMIN_PASSWORD_SECRET_NAME:-admin-pw-pg-clus-01}"
@@ -162,7 +159,7 @@ fi
 # Switch to the namespace context for the supervisor namespace
 NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
 if [[ -z "${NS_CTX}" ]]; then
-  PROJECT_PATTERN=$(echo "${CLUSTER_NAME:-${SUPERVISOR_NAMESPACE}}" | sed 's/-clus-[0-9]*$//')
+  PROJECT_PATTERN=$(echo "${PROJECT_NAME:-${SUPERVISOR_NAMESPACE}}" | sed 's/-ns-.*$//')
   NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
 fi
 

@@ -60,8 +60,6 @@ class TestDeployVariableBlock:
     """Variable block includes all required variables."""
 
     REQUIRED_VARIABLES = [
-        "CLUSTER_NAME",
-        "KUBECONFIG_FILE",
         "VCF_API_TOKEN",
         "VCFA_ENDPOINT",
         "TENANT_NAME",

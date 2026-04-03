@@ -39,10 +39,6 @@ on:
         description: "VCF Project name (e.g., my-dev-project-01)"
         required: true
         type: string
-      cluster_name:
-        description: "Cluster name for namespace context fallback (e.g., my-dev-project-01-clus-01)"
-        required: true
-        type: string
       vm_class:
         description: "VM class for application VMs (default: best-effort-medium)"
         required: false
@@ -113,7 +109,6 @@ jobs:
     env:
       # --- Unified Parameter Resolution ---
       # Priority: workflow_dispatch input > client_payload > secret > default
-      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
       SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
       PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
 
@@ -168,19 +163,17 @@ jobs:
         run: |
           set -euo pipefail
           # Trim leading/trailing whitespace from input parameters
-          CLUSTER_NAME="$(echo -n "$CLUSTER_NAME" | xargs)"
           SUPERVISOR_NAMESPACE="$(echo -n "$SUPERVISOR_NAMESPACE" | xargs)"
           PROJECT_NAME="$(echo -n "$PROJECT_NAME" | xargs)"
           DSM_INFRA_POLICY="$(echo -n "$DSM_INFRA_POLICY" | xargs)"
           DSM_STORAGE_POLICY="$(echo -n "$DSM_STORAGE_POLICY" | xargs)"
           # Export trimmed values for subsequent steps
-          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
           echo "SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE" >> "$GITHUB_ENV"
           echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
           echo "DSM_INFRA_POLICY=$DSM_INFRA_POLICY" >> "$GITHUB_ENV"
           echo "DSM_STORAGE_POLICY=$DSM_STORAGE_POLICY" >> "$GITHUB_ENV"
           MISSING=""
-          for var in CLUSTER_NAME SUPERVISOR_NAMESPACE PROJECT_NAME DSM_INFRA_POLICY DSM_STORAGE_POLICY VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME ADMIN_PASSWORD; do
+          for var in SUPERVISOR_NAMESPACE PROJECT_NAME DSM_INFRA_POLICY DSM_STORAGE_POLICY VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME ADMIN_PASSWORD; do
             if [ -z "${!var:-}" ]; then
               MISSING="${MISSING}  - ${var}\n"
             fi
@@ -191,7 +184,6 @@ jobs:
             exit 1
           fi
           echo "All required inputs validated successfully"
-          echo "  CLUSTER_NAME=$CLUSTER_NAME"
           echo "  SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE"
           echo "  PROJECT_NAME=$PROJECT_NAME"
           echo "  DSM_INFRA_POLICY=$DSM_INFRA_POLICY"
@@ -215,7 +207,7 @@ jobs:
           # Switch to the namespace context for the supervisor namespace
           NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
           if [ -z "$NAMESPACE_CONTEXT" ]; then
-            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            PROJECT_PATTERN=$(echo "$PROJECT_NAME" | sed 's/-ns-.*$//')
             NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
           fi
           if [ -n "$NAMESPACE_CONTEXT" ]; then
