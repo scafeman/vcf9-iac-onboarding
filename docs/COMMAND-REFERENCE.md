@@ -78,6 +78,8 @@ Commands that run after switching to a namespace-scoped context via the Context 
 | `kubectl get clusters` | List VKS clusters in the namespace |
 | `kubectl get cluster <CLUSTER> -o yaml` | Get cluster details and status |
 | `kubectl get cluster <CLUSTER> -o jsonpath='{.status.phase}'` | Get cluster provisioning phase |
+| `kubectl get tkr` | List available Tanzu Kubernetes Releases (versions) |
+| `kubectl get clustercontentlibraries` | List content libraries for VM images |
 | `vcf cluster kubeconfig get <CLUSTER> --admin --export-file kubeconfig-<CLUSTER>.yaml` | Export admin kubeconfig |
 | `kubectl delete cluster <CLUSTER>` | Delete a VKS cluster |
 
@@ -115,7 +117,8 @@ Commands that run after switching to a namespace-scoped context via the Context 
 | `vcf secret list` | List KeyValueSecrets in current namespace |
 | `vcf secret create -f <FILE>` | Create a KeyValueSecret from YAML |
 | `vcf secret delete <NAME>` | Delete a KeyValueSecret |
-| `kubectl get serviceaccount internal-app` | Check if vault ServiceAccount exists |
+| `kubectl get serviceaccounts` | List ServiceAccounts in the namespace |
+| `kubectl get secrets -n <NAMESPACE>` | List all secrets in the namespace |
 | `kubectl get secret internal-app-token -o jsonpath='{.data.token}'` | Get the vault auth token (base64) |
 
 ### Storage & Networking
