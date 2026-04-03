@@ -122,10 +122,9 @@ Commands that run after switching to a namespace-scoped context via the Context 
 
 | Command | Description |
 |---|---|
-| `kubectl get storageclasses` | List Kubernetes storage classes available in the namespace |
-| `kubectl get subnetsets` | List NSX SubnetSets |
+| `kubectl get subnetsets` | List NSX SubnetSets (shows network addresses and access modes) |
 
-> **Note:** `kubectl get storagepolicies` requires cluster-admin access and is not available to project-level users. Use `kubectl get storageclasses` on the guest cluster instead, or check available storage policies via the VCFA UI (Infrastructure → Storage Policies).
+> **Note:** `kubectl get storageclasses` and `kubectl get storagepolicies` are not available in the namespace context (cluster-scoped resources). Use `kubectl get storageclasses` on the guest cluster context instead, or check available storage policies via the VCFA UI (Infrastructure → Storage Policies).
 
 ---
 
