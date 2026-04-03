@@ -44,10 +44,6 @@ set -euo pipefail
 # overridden by setting them in your environment before running the script.
 ###############################################################################
 
-# --- Cluster Identity ---
-CLUSTER_NAME="${CLUSTER_NAME:-}"
-KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME}.yaml}"
-
 # --- VCF CLI Connection ---
 VCF_API_TOKEN="${VCF_API_TOKEN:-}"
 VCFA_ENDPOINT="${VCFA_ENDPOINT:-}"
@@ -155,7 +151,6 @@ log_error() {
 validate_variables() {
   local missing=0
   local required_vars=(
-    "CLUSTER_NAME"
     "SUPERVISOR_NAMESPACE"
     "PROJECT_NAME"
     "VCF_API_TOKEN"
@@ -264,7 +259,7 @@ fi
 # Switch to the namespace context for the supervisor namespace
 NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
 if [[ -z "${NS_CTX}" ]]; then
-  PROJECT_PATTERN=$(echo "${CLUSTER_NAME}" | sed 's/-clus-[0-9]*$//')
+  PROJECT_PATTERN=$(echo "${PROJECT_NAME}" | sed 's/-ns-.*$//')
   NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
 fi
 

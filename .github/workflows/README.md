@@ -1071,7 +1071,7 @@ Deploys a traditional HA three-tier application using VCF VM Service VMs — the
 ### GitHub UI (workflow_dispatch)
 
 1. Go to **Actions** → **"Deploy HA VM App"** → **"Run workflow"**
-2. Fill in: **supervisor_namespace** (required), **project_name** (required), **cluster_name** (required), and optionally **vm_class**, **vm_image**, **storage_class**, **dsm_infra_policy**, **dsm_storage_policy**, **dsm_vm_class**, **dsm_storage_space**, **postgres_version**, **dsm_cluster_name**, **postgres_replicas**, **postgres_db**
+2. Fill in: **supervisor_namespace** (required), **project_name** (required), and optionally **vm_class**, **vm_image**, **storage_class**, **dsm_infra_policy**, **dsm_storage_policy**, **dsm_vm_class**, **dsm_storage_space**, **postgres_version**, **dsm_cluster_name**, **postgres_replicas**, **postgres_db**
 
 ### Direct API Call (curl)
 
@@ -1085,7 +1085,6 @@ curl -X POST \
     "client_payload": {
       "supervisor_namespace": "my-project-ns-xxxxx",
       "project_name": "my-dev-project-01",
-      "cluster_name": "my-dev-project-01-clus-01",
       "dsm_infra_policy": "shared-dsm-01",
       "dsm_storage_policy": "NFS"
     }
@@ -1098,7 +1097,6 @@ curl -X POST \
 |---|---|---|---|
 | `SUPERVISOR_NAMESPACE` | `supervisor_namespace` | (required) | Supervisor namespace where VMs and PostgresCluster will be provisioned |
 | `PROJECT_NAME` | `project_name` | (required) | VCF Project name |
-| `CLUSTER_NAME` | `cluster_name` | (required) | Cluster name for namespace context fallback |
 | `VM_CLASS` | `vm_class` | `best-effort-medium` | VM class for application VMs |
 | `VM_IMAGE` | `vm_image` | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
 | `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for VM disks |

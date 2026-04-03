@@ -99,7 +99,6 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `CLUSTER_NAME` | Yes | — | Cluster name (used for namespace context resolution) |
 | `SUPERVISOR_NAMESPACE` | Yes | — | Supervisor namespace for all resources |
 | `PROJECT_NAME` | Yes | — | VCF project name |
 | `VCF_API_TOKEN` | Yes | — | API token from the VCFA portal |
@@ -109,7 +108,6 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `DSM_INFRA_POLICY` | Yes | — | DSM infrastructure policy name |
 | `DSM_STORAGE_POLICY` | Yes | — | vSphere storage policy name |
 | `ADMIN_PASSWORD` | Yes | — | Admin password for the PostgresCluster |
-| `KUBECONFIG_FILE` | No | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to kubeconfig (kept for consistency) |
 | `VM_CLASS` | No | `best-effort-medium` | VM Service compute class for web/API VMs |
 | `VM_IMAGE` | No | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
 | `STORAGE_CLASS` | No | `nfs` | Storage class for VMs |
