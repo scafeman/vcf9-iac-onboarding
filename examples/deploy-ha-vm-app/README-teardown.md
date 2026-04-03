@@ -85,7 +85,7 @@ The teardown script uses a subset of the deploy script's variables:
 | `TENANT_NAME` | Yes | — | SSO tenant/organization |
 | `CONTEXT_NAME` | Yes | — | Local VCF CLI context name |
 | `SUPERVISOR_NAMESPACE` | Yes | — | Supervisor namespace where resources were provisioned |
-| `DSM_CLUSTER_NAME` | No | `postgres-clus-01` | PostgresCluster resource name |
+| `DSM_CLUSTER_NAME` | No | `pg-clus-01` | PostgresCluster resource name |
 | `ADMIN_PASSWORD_SECRET_NAME` | No | `admin-pw-pg-clus-01` | Name of the admin password Secret |
 | `VM_TIMEOUT` | No | `600` | Seconds to wait for VM deletion |
 | `POLL_INTERVAL` | No | `30` | Seconds between polling attempts |
@@ -144,10 +144,10 @@ A successful run produces output like this:
 ✓ VirtualMachine 'api-vm-02' fully terminated
 [Step 4] Deleting cloud-init Secret 'api-vm-02-cloud-init' in namespace 'my-project-ns'...
 ✓ Secret 'api-vm-02-cloud-init' deleted
-[Step 5] Deleting PostgresCluster 'postgres-clus-01' in supervisor namespace 'my-project-ns'...
-✓ PostgresCluster 'postgres-clus-01' delete command issued
-✓ PostgresCluster 'postgres-clus-01' fully deleted
-✓ DSM-created Secret 'pg-postgres-clus-01' cleaned up
+[Step 5] Deleting PostgresCluster 'pg-clus-01' in supervisor namespace 'my-project-ns'...
+✓ PostgresCluster 'pg-clus-01' delete command issued
+✓ PostgresCluster 'pg-clus-01' fully deleted
+✓ DSM-created Secret 'pg-pg-clus-01' cleaned up
 [Step 5] Deleting admin password Secret 'admin-pw-pg-clus-01' in supervisor namespace 'my-project-ns'...
 ✓ Admin password Secret 'admin-pw-pg-clus-01' deleted
 
@@ -165,7 +165,7 @@ A successful run produces output like this:
   api-vm-01-cloud-init: (deleted)
   api-vm-02:          (deleted)
   api-vm-02-cloud-init: (deleted)
-  PostgresCluster:    postgres-clus-01 (deleted)
+  PostgresCluster:    pg-clus-01 (deleted)
   Admin Secret:       admin-pw-pg-clus-01 (deleted)
 =============================================
 ```

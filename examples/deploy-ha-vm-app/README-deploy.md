@@ -111,7 +111,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `VM_CLASS` | No | `best-effort-medium` | VM Service compute class for web/API VMs |
 | `VM_IMAGE` | No | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
 | `STORAGE_CLASS` | No | `nfs` | Storage class for VMs |
-| `DSM_CLUSTER_NAME` | No | `postgres-clus-01` | PostgresCluster resource name |
+| `DSM_CLUSTER_NAME` | No | `pg-clus-01` | PostgresCluster resource name |
 | `DSM_VM_CLASS` | No | `best-effort-large` | VM class for DSM instances (4 CPU minimum) |
 | `DSM_STORAGE_SPACE` | No | `20Gi` | Storage allocation for PostgresCluster |
 | `POSTGRES_VERSION` | No | `17.7+vmware.v9.0.2.0` | PostgreSQL version |
@@ -167,14 +167,14 @@ A successful run produces output like this:
 ```
 [Step 0] Creating VCF CLI context and switching to supervisor namespace...
 ✓ VCF CLI context 'my-context' created, switched to namespace context 'my-context:my-project-ns'
-[Step 1] Provisioning DSM PostgresCluster 'postgres-clus-01' in supervisor namespace 'my-project-ns'...
+[Step 1] Provisioning DSM PostgresCluster 'pg-clus-01' in supervisor namespace 'my-project-ns'...
 ✓ Admin password Secret 'admin-pw-pg-clus-01' created
-✓ PostgresCluster 'postgres-clus-01' manifest applied to namespace 'my-project-ns'
-[Step 1b] Waiting for PostgresCluster 'postgres-clus-01' to reach Ready status with connection details...
-  Waiting for PostgresCluster 'postgres-clus-01' connection details... (0s/1800s elapsed)
-✓ PostgresCluster 'postgres-clus-01' is Ready
+✓ PostgresCluster 'pg-clus-01' manifest applied to namespace 'my-project-ns'
+[Step 1b] Waiting for PostgresCluster 'pg-clus-01' to reach Ready status with connection details...
+  Waiting for PostgresCluster 'pg-clus-01' connection details... (0s/1800s elapsed)
+✓ PostgresCluster 'pg-clus-01' is Ready
 ✓ DSM PostgreSQL connection: 10.0.2.50:5432/assetdb (user: pgadmin)
-✓ Phase 1 complete — DSM PostgresCluster 'postgres-clus-01' provisioned
+✓ Phase 1 complete — DSM PostgresCluster 'pg-clus-01' provisioned
 [Step 2] Provisioning API tier VMs in supervisor namespace 'my-project-ns'...
 --- Provisioning api-vm-01 ---
 ✓ Cloud-init Secret 'api-vm-01-cloud-init' created
@@ -264,8 +264,8 @@ A successful run produces output like this:
 - Verify the DSM infrastructure policy exists and is configured in the supervisor namespace
 - Verify the `DSM_STORAGE_POLICY` is available: `kubectl get storagepolicies`
 - Verify the `DSM_VM_CLASS` is available: `kubectl get virtualmachineclasses`
-- Check PostgresCluster events: `kubectl describe postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE>`
-- Check PostgresCluster status: `kubectl get postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE> -o yaml`
+- Check PostgresCluster events: `kubectl describe postgrescluster pg-clus-01 -n <SUPERVISOR_NAMESPACE>`
+- Check PostgresCluster status: `kubectl get postgrescluster pg-clus-01 -n <SUPERVISOR_NAMESPACE> -o yaml`
 - Increase `DSM_TIMEOUT` if the environment is slow to provision managed databases
 
 ### API VM does not reach PoweredOn state (exit 3)
