@@ -71,7 +71,7 @@ WEB_VM_02_NAME="${WEB_VM_02_NAME:-web-vm-02}"
 
 # --- Service Names ---
 WEB_LB_NAME="${WEB_LB_NAME:-ha-web-lb}"
-API_SVC_NAME="${API_SVC_NAME:-ha-api-internal}"
+API_SVC_NAME="${API_SVC_NAME:-ha-api-lb}"
 
 # --- App Labels ---
 WEB_APP_LABEL="${WEB_APP_LABEL:-ha-web}"
