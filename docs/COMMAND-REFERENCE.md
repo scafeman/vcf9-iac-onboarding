@@ -122,9 +122,13 @@ Commands that run after switching to a namespace-scoped context via the Context 
 
 | Command | Description |
 |---|---|
+| `kubectl get storagepolicyquotas -n <NAMESPACE>` | List storage policy quotas (shows which policies are available) |
+| `kubectl get storagepolicyusages -n <NAMESPACE>` | List storage usage breakdown by type (PVC, snapshot, VM) per policy |
+| `kubectl get storagequotas -n <NAMESPACE>` | List total storage quota for the namespace |
+| `kubectl get pvc -n <NAMESPACE>` | List PersistentVolumeClaims (cluster nodes, VMs, data disks) |
 | `kubectl get subnetsets` | List NSX SubnetSets (shows network addresses and access modes) |
 
-> **Note:** `kubectl get storageclasses` and `kubectl get storagepolicies` are not available in the namespace context (cluster-scoped resources). Use `kubectl get storageclasses` on the guest cluster context instead, or check available storage policies via the VCFA UI (Infrastructure → Storage Policies).
+> **Note:** `kubectl get storageclasses` and `kubectl get storagepolicies` are not available to project-level users in the namespace context (cluster-scoped or restricted). Use `kubectl get storagepolicyquotas` to discover available policies, or `kubectl get storageclasses` on the guest cluster context. Storage policies can also be viewed via the VCFA UI (Infrastructure → Storage Policies).
 
 ---
 
