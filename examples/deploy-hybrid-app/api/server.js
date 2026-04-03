@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const os = require('os');
 const { Pool } = require('pg');
 
 const app = express();
@@ -7,6 +8,12 @@ const PORT = process.env.API_PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Add X-Served-By header to all responses for HA topology display
+app.use((_req, res, next) => {
+  res.setHeader('X-Served-By', os.hostname());
+  next();
+});
 
 // ---------------------------------------------------------------------------
 // Vault secret file parser
