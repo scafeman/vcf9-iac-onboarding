@@ -8,14 +8,29 @@ This guide provides the standardized steps to initialize the VCF context, provis
 Before any resources can be created, you must establish a local context that points to the VCF Automation endpoint and identifies your tenant.
 
 ### Step 1: Create the Primary Environment Context
-Run this command to map your local CLI to the VCF 9 lab using the **my-dev** name.
+Run this command to map your local CLI to the VCF 9 environment.
 
 ```powershell
+# PowerShell
 vcf context create my-dev `
-  --endpoint vcfa01.vmw-lab1.rpcai.rackspace-cloud.com `
+  --endpoint https://vcfa01.vmw-lab1.rpcai.rackspace-cloud.com `
   --type cci `
   --tenant-name org-rax-01 `
+  --api-token <API_TOKEN> `
+  --set-current
 ```
+
+```bash
+# Bash (Linux / macOS / dev container)
+vcf context create my-dev \
+  --endpoint https://vcfa01.vmw-lab1.rpcai.rackspace-cloud.com \
+  --type cci \
+  --tenant-name org-rax-01 \
+  --api-token <API_TOKEN> \
+  --set-current
+```
+
+> **Note:** Replace `<API_TOKEN>` with your API token from the VCFA portal (Build & Deploy → Identity and Access Management → API Tokens). The endpoint and tenant values above are environment-specific — update them for your VCFA deployment.
 
 ### Step 2: Authenticate and Set Active Context
 Once the context is created, you must set it as "active" to update your local `kubectl` configuration.
@@ -99,14 +114,30 @@ kubectl get clusters
 To validate that the Tanzu cluster is properly integrated with the underlying vSphere CSI and NSX Load Balancer, we deploy a sample web application.
 
 ### Step 8: Connect to the Guest Cluster Context
-Download and use the kubeconfig for the newly created workload cluster.
+Retrieve the kubeconfig for the VKS guest cluster and set it as the active context.
 
-```powershell
-# Note: In the VCF UI, navigate to Build & Deploy -> Kubernetes -> my-dev-project-01-clus-01 and click "DOWNLOAD KUBECONFIG FILE"
-# Set your KUBECONFIG environment variable to point to the downloaded file
-$env:KUBECONFIG="C:\path\to\downloaded\kubeconfig.yaml"
+**Option A: VCF CLI (recommended)**
+
+```bash
+# From the namespace context (Phase 3)
+vcf cluster kubeconfig get <CLUSTER_NAME> --admin --export-file ./kubeconfig-<CLUSTER_NAME>.yaml
+
+# Set the KUBECONFIG environment variable
+export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml    # Bash
+# $env:KUBECONFIG=".\kubeconfig-<CLUSTER_NAME>.yaml"  # PowerShell
 
 # Verify connectivity to the workload cluster
+kubectl get nodes
+```
+
+**Option B: VCFA Portal (UI)**
+
+1. Navigate to Build & Deploy → Kubernetes → `<CLUSTER_NAME>` and click **Download Kubeconfig**
+2. Set the `KUBECONFIG` environment variable to point to the downloaded file
+
+```powershell
+# PowerShell
+$env:KUBECONFIG="C:\path\to\downloaded\kubeconfig.yaml"
 kubectl get nodes
 ```
 
