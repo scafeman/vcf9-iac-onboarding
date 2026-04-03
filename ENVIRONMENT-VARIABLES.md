@@ -151,11 +151,10 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `DSM_INFRA_POLICY` | Yes | DSM infrastructure policy name |
 | `DSM_STORAGE_POLICY` | Yes | vSphere storage policy name for DSM |
 | `ADMIN_PASSWORD` | Yes | Admin password for the PostgresCluster |
-| `CLUSTER_NAME` | No | Cluster name for namespace context fallback |
 | `VM_CLASS` | No | VM class for application VMs (default: `best-effort-medium`) |
 | `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
 | `STORAGE_CLASS` | No | Storage class for VM disks (default: `nfs`) |
-| `DSM_CLUSTER_NAME` | No | PostgresCluster resource name (default: `postgres-clus-01`) |
+| `DSM_CLUSTER_NAME` | No | PostgresCluster resource name (default: `pg-clus-01`) |
 | `DSM_VM_CLASS` | No | VM class for DSM instances — Single Server requires 4 CPU minimum (default: `best-effort-large`) |
 | `DSM_STORAGE_SPACE` | No | Storage allocation (default: `20Gi`) |
 | `POSTGRES_VERSION` | No | PostgreSQL version (default: `17.7+vmware.v9.0.2.0`) |

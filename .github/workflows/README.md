@@ -1105,7 +1105,7 @@ curl -X POST \
 | `DSM_VM_CLASS` | `dsm_vm_class` | `best-effort-large` | VM class for DSM instances (Single Server requires 4 CPU minimum) |
 | `DSM_STORAGE_SPACE` | `dsm_storage_space` | `20Gi` | Storage allocation |
 | `POSTGRES_VERSION` | `postgres_version` | `17.7+vmware.v9.0.2.0` | PostgreSQL version |
-| `DSM_CLUSTER_NAME` | `dsm_cluster_name` | `postgres-clus-01` | PostgresCluster resource name |
+| `DSM_CLUSTER_NAME` | `dsm_cluster_name` | `pg-clus-01` | PostgresCluster resource name |
 | `POSTGRES_REPLICAS` | `postgres_replicas` | `0` | Topology: `0` = Single Server, `1` = Single-Zone HA |
 | `POSTGRES_DB` | `postgres_db` | `assetdb` | Database name |
 | `ADMIN_PASSWORD` | — | (secret only) | Admin password for the PostgresCluster |
