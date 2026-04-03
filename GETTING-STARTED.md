@@ -63,7 +63,7 @@ Replace all `<placeholder>` values with your environment-specific settings. See 
 docker compose up -d --build
 ```
 
-This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2) and kubectl (v1.33.0) pre-installed. The `.env` file is automatically loaded by Docker Compose and passed into the container.
+This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2), kubectl (v1.33.0), Helm v3, and Docker CLI pre-installed. The `.env` file is automatically loaded by Docker Compose and passed into the container.
 
 ## Deploy Each Stack
 
@@ -167,6 +167,14 @@ docker exec vcf9-dev bash examples/deploy-managed-db-app/teardown-managed-db-app
 
 Typical teardown time: **2–11 minutes**.
 
+### Teardown Secrets Demo
+
+```bash
+docker exec vcf9-dev bash examples/deploy-secrets-demo/teardown-secrets-demo.sh
+```
+
+Typical teardown time: **1–3 minutes**.
+
 ### Teardown GitOps
 
 ```bash
@@ -191,7 +199,7 @@ docker exec vcf9-dev bash examples/deploy-cluster/teardown-cluster.sh
 
 Typical teardown time: **1–6 minutes**. This removes the VKS cluster, supervisor namespace, and project.
 
-> **Teardown order matters.** If you deployed multiple stacks, tear them down in reverse order: Hybrid App / GitOps / Metrics → Cluster. The [Teardown workflow](.github/workflows/README.md) handles this automatically with selective boolean inputs.
+> **Teardown order matters.** If you deployed multiple stacks, tear them down in reverse order: application stacks first (Managed DB App, Hybrid App, Secrets Demo, Bastion VM, GitOps, Metrics), then Cluster last. The [Teardown workflow](.github/workflows/README.md) handles this automatically with selective boolean inputs.
 
 ## GitHub Actions Setup
 
@@ -217,8 +225,10 @@ In your forked repo, go to **Settings → Secrets and variables → Actions → 
 | `TENANT_NAME` | SSO tenant/organization |
 | `DOCKERHUB_TOKEN` | DockerHub access token (for container image push) |
 | `DOCKERHUB_USERNAME` | DockerHub username |
+| `ADMIN_PASSWORD` | Admin password for DSM PostgresCluster (Deploy Managed DB App) |
+| `SECRET_STORE_IP` | VCF Secret Store IP address (Deploy Managed DB App, Deploy Secrets Demo) |
 
-Optional secrets (override defaults): `USER_IDENTITY`, `CONTENT_LIBRARY_ID`, `ZONE_NAME`, `SUPERVISOR_NAMESPACE`, `VM_CONTENT_LIBRARY_ID`. See the [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) for the full list.
+Optional secrets (override defaults): `USER_IDENTITY`, `CONTENT_LIBRARY_ID`, `ZONE_NAME`, `SUPERVISOR_NAMESPACE`, `VM_CONTENT_LIBRARY_ID`, `DSM_INFRA_POLICY`, `DSM_STORAGE_POLICY`. See the [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) for the full list.
 
 ### Create the Environment
 
