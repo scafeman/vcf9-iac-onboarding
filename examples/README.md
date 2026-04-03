@@ -369,7 +369,7 @@ Deploys the same Infrastructure Asset Tracker application but backed by a VCF Da
 
 ## Deploy HA VM App: HA Three-Tier Application on VMs
 
-Deploys a traditional HA three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with ALB, internal NLB, and RDS. The web tier (2× Ubuntu 24.04 VMs running Next.js) is fronted by a public VirtualMachineService LoadBalancer. The API tier (2× Ubuntu 24.04 VMs running Express) is fronted by an internal VirtualMachineService. The database tier uses a DSM-managed PostgresCluster.
+Deploys a traditional HA three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. The web tier (2× Ubuntu 24.04 VMs running Next.js) is fronted by a VirtualMachineService LoadBalancer. The API tier (2× Ubuntu 24.04 VMs running Express) is fronted by a VirtualMachineService LoadBalancer. The database tier uses a DSM-managed PostgresCluster.
 
 | | |
 |---|---|

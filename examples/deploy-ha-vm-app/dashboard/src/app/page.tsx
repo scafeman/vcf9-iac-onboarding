@@ -206,7 +206,7 @@ export default function DashboardPage() {
           background: 'linear-gradient(135deg, #58a6ff, #3fb950)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>
-          VCF 9 HA VM App — EC2 + ALB + NLB + RDS Equivalent
+          VCF 9 HA VM App — EC2 + 2× ALB + RDS Equivalent
         </h2>
         <p style={{ color: '#8b949e', fontSize: '15px', margin: '0 0 28px 0' }}>
           Traditional HA three-tier application on VCF VM Service VMs — zero container orchestration
@@ -263,7 +263,7 @@ export default function DashboardPage() {
             'DSM PostgresCluster provisioned via CRD (replaces AWS RDS)',
             'Connection details extracted from status.connection',
             'API tier VMs provisioned with cloud-init bootstrap',
-            'API LoadBalancer created (replaces AWS internal NLB)',
+            'API LoadBalancer created (replaces AWS ALB)',
             'Web tier VMs provisioned with cloud-init bootstrap',
             'Web LoadBalancer created (replaces AWS ALB)',
             'Node.js API server deployed via git clone + systemd',
@@ -285,14 +285,14 @@ export default function DashboardPage() {
           background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px',
         }}>
           <h3 style={{ fontSize: '14px', color: '#58a6ff', margin: '0 0 12px 0', fontWeight: 600 }}>
-            AWS EC2 + ALB + NLB → VCF VM Service Migration
+            AWS EC2 + 2× ALB → VCF VM Service Migration
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
             {[
               ['2× EC2 (Web)', '2× VirtualMachine (web-vm-01, web-vm-02)'],
-              ['ALB (public)', 'VirtualMachineService LoadBalancer (ha-web-lb)'],
+              ['ALB (Web)', 'VirtualMachineService LoadBalancer (ha-web-lb)'],
               ['2× EC2 (API)', '2× VirtualMachine (api-vm-01, api-vm-02)'],
-              ['Internal NLB', 'VirtualMachineService LoadBalancer (ha-api-internal)'],
+              ['ALB (API)', 'VirtualMachineService LoadBalancer (ha-api-lb)'],
               ['RDS PostgreSQL', 'DSM PostgresCluster CRD'],
               ['EC2 User Data', 'cloud-init + git clone + systemd'],
             ].map(([aws, vcf]) => (

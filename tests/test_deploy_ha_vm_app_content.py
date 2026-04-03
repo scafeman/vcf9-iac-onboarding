@@ -154,7 +154,7 @@ class TestDeployVirtualMachineManifests:
 
 
 class TestDeployVirtualMachineServiceManifests:
-    """Deploy script contains VirtualMachineService manifests for ha-web-lb and ha-api-internal."""
+    """Deploy script contains VirtualMachineService manifests for ha-web-lb and ha-api-lb."""
 
     def test_ha_web_lb_present(self, ha_vm_app_deploy_text):
         assert "ha-web-lb" in ha_vm_app_deploy_text
@@ -162,10 +162,10 @@ class TestDeployVirtualMachineServiceManifests:
     def test_ha_web_lb_is_load_balancer(self, ha_vm_app_deploy_text):
         assert "type: LoadBalancer" in ha_vm_app_deploy_text
 
-    def test_ha_api_internal_present(self, ha_vm_app_deploy_text):
-        assert "ha-api-internal" in ha_vm_app_deploy_text
+    def test_ha_api_lb_present(self, ha_vm_app_deploy_text):
+        assert "ha-api-lb" in ha_vm_app_deploy_text
 
-    def test_ha_api_internal_is_load_balancer(self, ha_vm_app_deploy_text):
+    def test_ha_api_lb_is_load_balancer(self, ha_vm_app_deploy_text):
         # API service must be LoadBalancer (not ClusterIP) so web VMs can reach it via routable IP
         assert ha_vm_app_deploy_text.count("type: LoadBalancer") >= 2, (
             "Deploy script should have at least 2 LoadBalancer services (web LB + API LB)"
@@ -301,21 +301,21 @@ class TestTeardownScript:
                 "ha-web-lb must be deleted before web VMs"
             )
 
-    def test_web_vm_before_ha_api_internal(self, ha_vm_app_teardown_text):
-        # Find the web-vm deletion phase and ha-api-internal deletion phase
+    def test_web_vm_before_ha_api_lb(self, ha_vm_app_teardown_text):
+        # Find the web-vm deletion phase and ha-api-lb deletion phase
         web_vm_positions = [m.start() for m in re.finditer(r"web-vm-0[12]", ha_vm_app_teardown_text)]
-        api_svc_positions = [m.start() for m in re.finditer(r"ha-api-internal", ha_vm_app_teardown_text)]
+        api_svc_positions = [m.start() for m in re.finditer(r"ha-api-lb", ha_vm_app_teardown_text)]
         if web_vm_positions and api_svc_positions:
             assert min(web_vm_positions) < max(api_svc_positions), (
-                "web VMs must be deleted before ha-api-internal"
+                "web VMs must be deleted before ha-api-lb"
             )
 
-    def test_ha_api_internal_before_api_vm(self, ha_vm_app_teardown_text):
-        api_svc_pos = ha_vm_app_teardown_text.index("ha-api-internal")
+    def test_ha_api_lb_before_api_vm(self, ha_vm_app_teardown_text):
+        api_svc_pos = ha_vm_app_teardown_text.index("ha-api-lb")
         api_vm_positions = [m.start() for m in re.finditer(r"delete virtualmachine.*api-vm", ha_vm_app_teardown_text, re.IGNORECASE)]
         if api_vm_positions:
             assert api_svc_pos < min(api_vm_positions), (
-                "ha-api-internal must be deleted before api VMs"
+                "ha-api-lb must be deleted before api VMs"
             )
 
     def test_api_vm_before_postgrescluster(self, ha_vm_app_teardown_text):

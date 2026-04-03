@@ -35,10 +35,10 @@ If a VM or Secret does not exist, the phase logs "already absent" and continues.
 
 ### Phase 3: Delete API Tier VirtualMachineService
 
-Deletes the `ha-api-internal` VirtualMachineService from the supervisor namespace. This removes the internal API VIP.
+Deletes the `ha-api-lb` VirtualMachineService from the supervisor namespace. This removes the API LoadBalancer and releases the external IP.
 
 ```
-kubectl delete virtualmachineservice ha-api-internal -n <SUPERVISOR_NAMESPACE> --ignore-not-found
+kubectl delete virtualmachineservice ha-api-lb -n <SUPERVISOR_NAMESPACE> --ignore-not-found
 ```
 
 ### Phase 4: Delete API Tier VMs + Cloud-Init Secrets
@@ -131,8 +131,8 @@ A successful run produces output like this:
 ✓ VirtualMachine 'web-vm-02' fully terminated
 [Step 2] Deleting cloud-init Secret 'web-vm-02-cloud-init' in namespace 'my-project-ns'...
 ✓ Secret 'web-vm-02-cloud-init' deleted
-[Step 3] Deleting VirtualMachineService 'ha-api-internal' in namespace 'my-project-ns'...
-✓ VirtualMachineService 'ha-api-internal' deleted
+[Step 3] Deleting VirtualMachineService 'ha-api-lb' in namespace 'my-project-ns'...
+✓ VirtualMachineService 'ha-api-lb' deleted
 [Step 4] Deleting VirtualMachine 'api-vm-01' in namespace 'my-project-ns'...
 ✓ VirtualMachine 'api-vm-01' delete command issued
   Waiting for VirtualMachine 'api-vm-01' to be deleted... (0s/600s elapsed)
@@ -161,7 +161,7 @@ A successful run produces output like this:
   web-vm-01-cloud-init: (deleted)
   web-vm-02:          (deleted)
   web-vm-02-cloud-init: (deleted)
-  ha-api-internal:    (deleted)
+  ha-api-lb:          (deleted)
   api-vm-01:          (deleted)
   api-vm-01-cloud-init: (deleted)
   api-vm-02:          (deleted)

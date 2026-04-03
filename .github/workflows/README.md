@@ -1064,7 +1064,7 @@ curl -X POST \
 
 ## Overview
 
-Deploys a traditional HA three-tier application using VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with ALB, internal NLB, and RDS. Provisions 2× web VMs (Next.js) fronted by a public VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by an internal VirtualMachineService, and a DSM-managed PostgresCluster. All resources are provisioned in a supervisor namespace — no VKS guest cluster required.
+Deploys a traditional HA three-tier application using VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. Provisions 2× web VMs (Next.js) fronted by a VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by a VirtualMachineService LoadBalancer, and a DSM-managed PostgresCluster. All resources are provisioned in a supervisor namespace — no VKS guest cluster required.
 
 ## Triggering the Workflow
 
@@ -1128,7 +1128,7 @@ curl -X POST \
 | 4 | **Provision DSM PostgresCluster** | Creates admin password Secret, applies PostgresCluster manifest, waits for Ready status, extracts connection details |
 | 5 | **Provision API VMs** | Creates cloud-init Secrets and VirtualMachine manifests for `api-vm-01` and `api-vm-02` with DSM connection details |
 | 6 | **Wait for API VMs Ready** | Polls until both API VMs reach PoweredOn state and obtain IP addresses |
-| 7 | **Create API Internal Service** | Applies `ha-api-internal` VirtualMachineService (selector `app: ha-api`, port `API_PORT`) |
+| 7 | **Create API LoadBalancer** | Applies `ha-api-lb` VirtualMachineService LoadBalancer (selector `app: ha-api`, port `API_PORT`) |
 | 8 | **Provision Web VMs** | Creates cloud-init Secrets and VirtualMachine manifests for `web-vm-01` and `web-vm-02` with API VIP address |
 | 9 | **Wait for Web VMs Ready** | Polls until both web VMs reach PoweredOn state and obtain IP addresses |
 | 10 | **Create Web LoadBalancer** | Applies `ha-web-lb` VirtualMachineService LoadBalancer (selector `app: ha-web`, port 80 → `FRONTEND_PORT`) |

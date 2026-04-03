@@ -2,11 +2,11 @@
 
 ## Overview
 
-`deploy-ha-vm-app.sh` deploys a traditional high-availability three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with ALB, internal NLB, and RDS. Unlike container-based examples, this deploys all application tiers on VMs provisioned via the VirtualMachine CRD, with VirtualMachineService resources providing load balancing.
+`deploy-ha-vm-app.sh` deploys a traditional high-availability three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. Unlike container-based examples, this deploys all application tiers on VMs provisioned via the VirtualMachine CRD, with VirtualMachineService resources providing load balancing.
 
 **Architecture:**
 - **Web Tier:** 2 Ubuntu 24.04 VMs (`web-vm-01`, `web-vm-02`) running Next.js, fronted by a public VirtualMachineService LoadBalancer (`ha-web-lb`) on port 80
-- **API Tier:** 2 Ubuntu 24.04 VMs (`api-vm-01`, `api-vm-02`) running Node.js/Express, fronted by an internal VirtualMachineService (`ha-api-internal`) on the API port
+- **API Tier:** 2 Ubuntu 24.04 VMs (`api-vm-01`, `api-vm-02`) running Node.js/Express, fronted by a VirtualMachineService LoadBalancer (`ha-api-lb`) on the API port
 - **DB Tier:** DSM PostgresCluster provisioned via the `databases.dataservices.vmware.com/v1alpha1` CRD (managed PostgreSQL)
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
@@ -18,7 +18,7 @@ The script is fully non-interactive. All configuration is driven by environment 
 | AWS Component | VCF Equivalent | Notes |
 |---|---|---|
 | 2× EC2 (web) + ALB | 2× VirtualMachine + VirtualMachineService LoadBalancer | `ha-web-lb` maps port 80 → frontend port |
-| 2× EC2 (API) + internal NLB | 2× VirtualMachine + VirtualMachineService (ClusterIP) | `ha-api-internal` provides stable API VIP |
+| 2× EC2 (API) + ALB | 2× VirtualMachine + VirtualMachineService LoadBalancer | `ha-api-lb` provides stable API VIP |
 | RDS PostgreSQL Multi-AZ | DSM PostgresCluster | `databases.dataservices.vmware.com/v1alpha1` |
 | EC2 Instance Type | `vmClass` | `kubectl get virtualmachineclasses` to list |
 | EC2 AMI | `VM_IMAGE` (content library image) | Ubuntu 24.04 server cloud image |
@@ -65,9 +65,9 @@ Waits for each VM to reach PoweredOn state and obtain an IP address (timeout: 60
 
 An idempotency check skips creation if the VirtualMachine already exists.
 
-### Phase 3: API Tier Internal VirtualMachineService
+### Phase 3: API Tier VirtualMachineService LoadBalancer
 
-Creates `ha-api-internal` VirtualMachineService (ClusterIP) that selects VMs with `app: ha-api` label. Maps `API_PORT` → `API_PORT`. This provides a single stable VIP for the web tier to connect to.
+Creates `ha-api-lb` VirtualMachineService (LoadBalancer) that selects VMs with `app: ha-api` label. Maps `API_PORT` → `API_PORT`. Waits for the LoadBalancer to receive an external IP. This provides a stable VIP for the web tier to connect to.
 
 ### Phase 4: Web Tier VM Provisioning
 
@@ -189,8 +189,8 @@ A successful run produces output like this:
 ✓ VM 'api-vm-02' is powered on
 ✓ VM 'api-vm-02' IP address: 172.30.0.141
 ✓ Phase 2 complete — API tier VMs provisioned (api-vm-01=172.30.0.140, api-vm-02=172.30.0.141)
-[Step 3] Creating internal VirtualMachineService 'ha-api-internal' for API tier...
-✓ VirtualMachineService 'ha-api-internal' created (ClusterIP, port 3001 → 3001)
+[Step 3] Creating VirtualMachineService LoadBalancer 'ha-api-lb' for API tier...
+✓ VirtualMachineService 'ha-api-lb' created (LoadBalancer, port 3001 → 3001)
 ✓ API VIP address: 10.96.0.50
 ✓ Phase 3 complete — API tier internal service created
 [Step 4] Provisioning Web tier VMs in supervisor namespace 'my-project-ns'...
@@ -280,7 +280,7 @@ A successful run produces output like this:
 ### API VirtualMachineService creation fails (exit 4)
 
 - Verify the API VMs have the `app: ha-api` label: `kubectl get virtualmachine -n <SUPERVISOR_NAMESPACE> --show-labels`
-- Check VirtualMachineService status: `kubectl get virtualmachineservice ha-api-internal -n <SUPERVISOR_NAMESPACE> -o yaml`
+- Check VirtualMachineService status: `kubectl get virtualmachineservice ha-api-lb -n <SUPERVISOR_NAMESPACE> -o yaml`
 
 ### Web VM does not reach PoweredOn state (exit 5)
 

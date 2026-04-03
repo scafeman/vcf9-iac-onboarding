@@ -141,7 +141,7 @@ See the [Deploy Managed DB App README](examples/deploy-managed-db-app/README-dep
 
 ### Deploy HA VM App
 
-Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) fronted by a VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by an internal VirtualMachineService, and a DSM-managed PostgresCluster — the VCF equivalent of 2× EC2 + ALB, 2× EC2 + internal NLB, and RDS PostgreSQL Multi-AZ.
+Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) fronted by a VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by a VirtualMachineService LoadBalancer, and a DSM-managed PostgresCluster — the VCF equivalent of 2× EC2 + 2× ALB and RDS PostgreSQL Multi-AZ.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh

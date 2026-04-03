@@ -63,7 +63,7 @@ Once the VKS cluster is running, the toolkit offers six additional deployment pa
 | **Deploy Hybrid App** | VM-to-container connectivity over NSX VPC | EC2 + EKS in same VPC |
 | **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
 | **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
-| **Deploy HA VM App** | Traditional HA three-tier app on VMs (web, API, managed DB) | 2× EC2 + ALB, 2× EC2 + internal NLB, RDS PostgreSQL Multi-AZ |
+| **Deploy HA VM App** | Traditional HA three-tier app on VMs (web, API, managed DB) | 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ |
 | **Deploy Bastion VM** | SSH jump host with source-IP-restricted LoadBalancer | EC2 bastion + Security Groups |
 
 ```

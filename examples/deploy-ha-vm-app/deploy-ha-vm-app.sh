@@ -6,11 +6,11 @@ set -euo pipefail
 #
 # This script deploys a traditional HA three-tier application using VCF VM
 # Service VMs — the VCF equivalent of deploying a classic HA application on
-# AWS EC2 instances with ALB, internal NLB, and RDS:
+# AWS EC2 instances with 2× ALB and RDS:
 #   Phase 0: VCF CLI context creation and supervisor namespace switch
 #   Phase 1: DSM PostgresCluster provisioning (DB tier)
 #   Phase 2: API tier VM provisioning (api-vm-01, api-vm-02)
-#   Phase 3: API tier internal VirtualMachineService (ha-api-internal)
+#   Phase 3: API tier VirtualMachineService LoadBalancer (ha-api-lb)
 #   Phase 4: Web tier VM provisioning (web-vm-01, web-vm-02)
 #   Phase 5: Web tier VirtualMachineService LoadBalancer (ha-web-lb)
 #   Phase 6: End-to-end connectivity verification
@@ -22,7 +22,7 @@ set -euo pipefail
 #
 # AWS Equivalent:
 #   Web Tier = 2× EC2 + ALB
-#   API Tier = 2× EC2 + internal NLB
+#   API Tier = 2× EC2 + ALB
 #   DB Tier  = RDS PostgreSQL Multi-AZ
 #
 # Prerequisites:

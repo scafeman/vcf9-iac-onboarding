@@ -8,7 +8,7 @@ set -euo pipefail
 # correct reverse dependency order:
 #   Phase 1: Delete ha-web-lb VirtualMachineService (releases LoadBalancer IP)
 #   Phase 2: Delete web-vm-01 / web-vm-02 VirtualMachines + cloud-init secrets
-#   Phase 3: Delete ha-api-internal VirtualMachineService
+#   Phase 3: Delete ha-api-lb VirtualMachineService
 #   Phase 4: Delete api-vm-01 / api-vm-02 VirtualMachines + cloud-init secrets
 #   Phase 5: Delete DSM PostgresCluster + admin password secret
 #
