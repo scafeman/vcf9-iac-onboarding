@@ -317,16 +317,22 @@ Event types: `deploy-vks`, `deploy-vks-metrics`, `deploy-argocd`, `deploy-hybrid
 
 Quick reference for teams migrating from AWS CLI to VCF CLI.
 
-| AWS CLI | VCF CLI / kubectl | Notes |
-|---|---|---|
-| `aws eks update-kubeconfig` | `vcf cluster kubeconfig get <CLUSTER> --admin` | Exports kubeconfig file |
-| `aws eks list-clusters` | `kubectl get clusters` | Requires namespace context |
-| `aws eks describe-cluster` | `kubectl get cluster <NAME> -o yaml` | Full cluster status |
-| `aws rds describe-db-instances` | `kubectl get postgrescluster -n <NS>` | DSM managed databases |
-| `aws rds create-db-instance` | `kubectl apply -f postgres-cluster.yaml` | Declarative via CRD |
-| `aws ec2 describe-instances` | `kubectl get virtualmachines -n <NS>` | VM Service VMs |
-| `aws ec2 run-instances` | `kubectl apply -f sample-create-vm.yaml` | Declarative via CRD |
-| `aws elbv2 describe-load-balancers` | `kubectl get svc -A --field-selector spec.type=LoadBalancer` | NSX LoadBalancers |
-| `aws secretsmanager list-secrets` | `vcf secret list` | VCF Secret Store |
-| `aws secretsmanager create-secret` | `vcf secret create -f <FILE>` | KeyValueSecret CRD |
-| `aws iam list-roles` | `kubectl get projectrolebindings -n <PROJECT>` | CCI RBAC |
+| AWS CLI | VCF CLI / kubectl | Context | Notes |
+|---|---|---|---|
+| `aws eks update-kubeconfig` | `vcf cluster kubeconfig get <CLUSTER> --admin` | Namespace | Exports kubeconfig file |
+| `aws eks list-clusters` | `kubectl get clusters` | Namespace | Requires namespace context (Context Bridge) |
+| `aws eks describe-cluster` | `kubectl get cluster <NAME> -o yaml` | Namespace | Full cluster status |
+| `aws rds describe-db-instances` | `kubectl get postgrescluster -n <NS>` | Namespace | DSM managed databases |
+| `aws rds create-db-instance` | `kubectl apply -f postgres-cluster.yaml` | Namespace | Declarative via CRD |
+| `aws ec2 describe-instances` | `kubectl get virtualmachines -n <NS>` | Namespace | VM Service VMs |
+| `aws ec2 run-instances` | `kubectl apply -f sample-create-vm.yaml` | Namespace | Declarative via CRD |
+| `aws elbv2 describe-load-balancers` | `kubectl get svc -A --field-selector spec.type=LoadBalancer` | Guest Cluster | NSX LoadBalancers |
+| `aws secretsmanager list-secrets` | `vcf secret list` | Namespace | VCF Secret Store |
+| `aws secretsmanager create-secret` | `vcf secret create -f <FILE>` | Namespace | KeyValueSecret CRD |
+| `aws iam list-roles` | `kubectl get projectrolebindings -n <PROJECT>` | Global | CCI RBAC |
+| `aws eks list-nodegroups` | `kubectl get virtualmachines` | Namespace | Worker nodes are VMs |
+| `aws eks describe-nodegroup` | `kubectl get virtualmachine <VM> -o yaml` | Namespace | VM details and power state |
+| `aws ec2 describe-vpcs` | `kubectl get vpcs` | Global | NSX VPCs |
+| `aws ec2 describe-subnets` | `kubectl get subnetsets` | Namespace | NSX SubnetSets |
+| `aws ec2 describe-security-groups` | `kubectl get vpcconnectivityprofiles` | Global | VPC connectivity policies |
+| `aws sts get-caller-identity` | `vcf context list --current` | Any | Verify active context and identity |
