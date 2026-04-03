@@ -664,6 +664,7 @@ runcmd:
     echo "API_PORT=${API_PORT}" >> /etc/environment
   - |
     cd /opt/dashboard && npm install && npm run build
+    cp -r /opt/dashboard/.next/static /opt/dashboard/.next/standalone/.next/static
   - |
     echo "[Unit]" > /etc/systemd/system/dashboard.service
     echo "Description=Next.js Dashboard" >> /etc/systemd/system/dashboard.service
