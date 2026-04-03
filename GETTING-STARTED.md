@@ -139,6 +139,18 @@ Typical deployment time: **14–35 minutes** (DSM provisioning takes 10–25 min
 
 See the [Deploy Managed DB App README](examples/deploy-managed-db-app/README-deploy.md) for details.
 
+### Deploy HA VM App
+
+Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) fronted by a VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by a VirtualMachineService LoadBalancer, and a DSM-managed PostgresCluster — the VCF equivalent of 2× EC2 + 2× ALB and RDS PostgreSQL Multi-AZ.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh
+```
+
+Typical deployment time: **15–40 minutes** (DSM provisioning takes 10–25 minutes). Requires a supervisor namespace with VPC networking, a DSM infrastructure policy configured in the supervisor namespace, and an Ubuntu 24.04 image in the content library.
+
+See the [Deploy HA VM App README](examples/deploy-ha-vm-app/README-deploy.md) for details.
+
 ## Teardown
 
 Each deployment has a corresponding teardown script. Teardown scripts are fully idempotent — safe to run multiple times.
@@ -166,6 +178,14 @@ docker exec vcf9-dev bash examples/deploy-managed-db-app/teardown-managed-db-app
 ```
 
 Typical teardown time: **2–11 minutes**.
+
+### Teardown HA VM App
+
+```bash
+docker exec vcf9-dev bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh
+```
+
+Typical teardown time: **2–10 minutes**.
 
 ### Teardown Secrets Demo
 

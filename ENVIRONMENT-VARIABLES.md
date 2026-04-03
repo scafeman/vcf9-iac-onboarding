@@ -138,6 +138,45 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 
 ---
 
+## Deploy HA VM App — HA Three-Tier Application on VMs
+
+| Variable | Required | Description |
+|---|---|---|
+| `SUPERVISOR_NAMESPACE` | Yes | Supervisor namespace where VMs and PostgresCluster will be provisioned |
+| `PROJECT_NAME` | Yes | VCF Project name |
+| `VCF_API_TOKEN` | Yes | API token from the VCFA portal |
+| `VCFA_ENDPOINT` | Yes | VCFA hostname (no `https://` prefix) |
+| `TENANT_NAME` | Yes | SSO tenant/organization |
+| `CONTEXT_NAME` | Yes | Local CLI context name |
+| `DSM_INFRA_POLICY` | Yes | DSM infrastructure policy name |
+| `DSM_STORAGE_POLICY` | Yes | vSphere storage policy name for DSM |
+| `ADMIN_PASSWORD` | Yes | Admin password for the PostgresCluster |
+| `CLUSTER_NAME` | No | Cluster name for namespace context fallback |
+| `VM_CLASS` | No | VM class for application VMs (default: `best-effort-medium`) |
+| `VM_IMAGE` | No | VM image name (default: `ubuntu-24.04-server-cloudimg-amd64`) |
+| `STORAGE_CLASS` | No | Storage class for VM disks (default: `nfs`) |
+| `DSM_CLUSTER_NAME` | No | PostgresCluster resource name (default: `postgres-clus-01`) |
+| `DSM_VM_CLASS` | No | VM class for DSM instances — Single Server requires 4 CPU minimum (default: `best-effort-large`) |
+| `DSM_STORAGE_SPACE` | No | Storage allocation (default: `20Gi`) |
+| `POSTGRES_VERSION` | No | PostgreSQL version (default: `17.7+vmware.v9.0.2.0`) |
+| `POSTGRES_REPLICAS` | No | Topology: `0` = Single Server, `1` = Single-Zone HA (default: `0`) |
+| `POSTGRES_DB` | No | Database name (default: `assetdb`) |
+| `ADMIN_PASSWORD_SECRET_NAME` | No | Name of the admin password Secret (default: `admin-pw-pg-clus-01`) |
+| `DSM_MAINTENANCE_WINDOW_DAY` | No | Maintenance window day (default: `SATURDAY`) |
+| `DSM_MAINTENANCE_WINDOW_TIME` | No | Maintenance window start time (default: `04:59`) |
+| `DSM_MAINTENANCE_WINDOW_DURATION` | No | Maintenance window duration (default: `6h0m0s`) |
+| `DSM_SHARED_MEMORY` | No | Requested shared memory size (default: `64Mi`) |
+| `API_PORT` | No | API service port (default: `3001`) |
+| `FRONTEND_PORT` | No | Frontend port (default: `3000`) |
+| `CONTAINER_REGISTRY` | No | Docker registry prefix (default: `scafeman`) |
+| `IMAGE_TAG` | No | Container image tag (default: `latest`) |
+| `VM_TIMEOUT` | No | Seconds to wait for VM PoweredOn (default: `600`) |
+| `DSM_TIMEOUT` | No | Seconds to wait for PostgresCluster Ready (default: `1800`) |
+| `LB_TIMEOUT` | No | Seconds to wait for LoadBalancer external IP (default: `300`) |
+| `POLL_INTERVAL` | No | Seconds between polling attempts (default: `30`) |
+
+---
+
 ## GitHub Actions Runner
 
 | Variable | Required | Description |

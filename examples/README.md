@@ -288,6 +288,7 @@ Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
   ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
   ├─► Deploy Managed DB App: DSM PostgresCluster Asset Tracker (managed database)
+  ├─► Deploy HA VM App: HA Three-Tier Application on VMs (VM-based HA with managed DB)
   └─► Deploy Bastion VM: SSH Jump Host (standalone VM — no VKS cluster required)
 ```
 
@@ -365,5 +366,17 @@ Deploys the same Infrastructure Asset Tracker application but backed by a VCF Da
 | Deploy | `bash examples/deploy-managed-db-app/deploy-managed-db-app.sh` |
 | Teardown | `bash examples/deploy-managed-db-app/teardown-managed-db-app.sh` |
 | Output | Next.js dashboard at LoadBalancer IP, DSM-managed PostgreSQL, Node.js API — all communicating over NSX VPC |
+
+## Deploy HA VM App: HA Three-Tier Application on VMs
+
+Deploys a traditional HA three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. The web tier (2× Ubuntu 24.04 VMs running Next.js) is fronted by a VirtualMachineService LoadBalancer. The API tier (2× Ubuntu 24.04 VMs running Express) is fronted by a VirtualMachineService LoadBalancer. The database tier uses a DSM-managed PostgresCluster.
+
+| | |
+|---|---|
+| Folder | [`deploy-ha-vm-app/`](deploy-ha-vm-app/) |
+| Depends on | Supervisor Namespace with VPC networking + DSM infrastructure policy configured |
+| Deploy | `bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh` |
+| Teardown | `bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh` |
+| Output | Next.js dashboard at LoadBalancer IP, 2× web VMs, 2× API VMs, DSM-managed PostgreSQL — all communicating over NSX VPC |
 
 ---

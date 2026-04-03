@@ -1,0 +1,311 @@
+# =============================================================================
+# Deploy HA VM App — GitHub Actions Workflow
+# =============================================================================
+#
+# This workflow deploys a traditional HA three-tier application using VCF VM
+# Service VMs — the VCF equivalent of deploying a classic HA application on
+# AWS EC2 instances with 2× ALB and RDS:
+#   Phase 0: VCF CLI context creation and supervisor namespace switch
+#   Phase 1: DSM PostgresCluster provisioning (DB tier)
+#   Phase 2: API tier VM provisioning (api-vm-01, api-vm-02)
+#   Phase 3: API tier VirtualMachineService LoadBalancer (ha-api-lb)
+#   Phase 4: Web tier VM provisioning (web-vm-01, web-vm-02)
+#   Phase 5: Web tier VirtualMachineService LoadBalancer (ha-web-lb)
+#   Phase 6: End-to-end connectivity verification
+#
+# Prerequisites:
+#   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
+#     network access to the supervisor API. All required tools (VCF CLI,
+#     kubectl, curl, jq) are baked into the runner via Dockerfile.runner.
+#   - A DSM infrastructure policy configured in the supervisor namespace.
+#   - Ubuntu 24.04 image available in content library.
+#
+# Triggers:
+#   - workflow_dispatch: Manual trigger from the GitHub Actions UI
+#   - repository_dispatch: API trigger with event type "deploy-ha-vm-app"
+#
+# =============================================================================
+
+name: Deploy HA VM App
+
+on:
+  workflow_dispatch:
+    inputs:
+      supervisor_namespace:
+        description: "Supervisor namespace where VMs and PostgresCluster will be provisioned (e.g., my-project-ns-xxxxx)"
+        required: true
+        type: string
+      project_name:
+        description: "VCF Project name (e.g., my-dev-project-01)"
+        required: true
+        type: string
+      cluster_name:
+        description: "Cluster name for namespace context fallback (e.g., my-dev-project-01-clus-01)"
+        required: true
+        type: string
+      vm_class:
+        description: "VM class for application VMs (default: best-effort-medium)"
+        required: false
+        type: string
+        default: "best-effort-medium"
+      vm_image:
+        description: "VM image name (default: ubuntu-24.04-server-cloudimg-amd64)"
+        required: false
+        type: string
+        default: "ubuntu-24.04-server-cloudimg-amd64"
+      storage_class:
+        description: "Storage class for VM disks (default: nfs)"
+        required: false
+        type: string
+        default: "nfs"
+      dsm_infra_policy:
+        description: "DSM infrastructure policy name"
+        required: false
+        type: string
+        default: "shared-dsm-01"
+      dsm_storage_policy:
+        description: "vSphere storage policy name for DSM"
+        required: false
+        type: string
+        default: "NFS"
+      dsm_vm_class:
+        description: "VM class for DSM instances (default: best-effort-large)"
+        required: false
+        type: string
+        default: "best-effort-large"
+      dsm_storage_space:
+        description: "Storage allocation for DSM (default: 20Gi)"
+        required: false
+        type: string
+        default: "20Gi"
+      postgres_version:
+        description: "PostgreSQL version (default: 17.7+vmware.v9.0.2.0)"
+        required: false
+        type: string
+        default: "17.7+vmware.v9.0.2.0"
+      dsm_cluster_name:
+        description: "PostgresCluster resource name (default: pgsql-clus-01)"
+        required: false
+        type: string
+        default: "postgres-clus-01"
+      postgres_replicas:
+        description: "Topology: 0 = Single Server, 1 = Single-Zone HA (default: 0)"
+        required: false
+        type: string
+        default: "0"
+      postgres_db:
+        description: "Database name (default: assetdb)"
+        required: false
+        type: string
+        default: "assetdb"
+  repository_dispatch:
+    types: [deploy-ha-vm-app]
+
+jobs:
+  deploy:
+    name: Deploy HA VM App
+    runs-on: [self-hosted, vcf]
+    environment: vcf-production
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # --- Unified Parameter Resolution ---
+      # Priority: workflow_dispatch input > client_payload > secret > default
+      CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
+      SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
+      PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
+
+      # --- VM Configuration ---
+      VM_CLASS: ${{ github.event.inputs.vm_class || github.event.client_payload.vm_class || secrets.VM_CLASS || 'best-effort-medium' }}
+      VM_IMAGE: ${{ github.event.inputs.vm_image || github.event.client_payload.vm_image || secrets.VM_IMAGE || 'ubuntu-24.04-server-cloudimg-amd64' }}
+      STORAGE_CLASS: ${{ github.event.inputs.storage_class || github.event.client_payload.storage_class || secrets.STORAGE_CLASS || 'nfs' }}
+
+      # --- DSM-Specific Parameters ---
+      DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY }}
+      DSM_VM_CLASS: ${{ github.event.inputs.dsm_vm_class || github.event.client_payload.dsm_vm_class || secrets.DSM_VM_CLASS || 'best-effort-large' }}
+      DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
+      DSM_STORAGE_SPACE: ${{ github.event.inputs.dsm_storage_space || github.event.client_payload.dsm_storage_space || secrets.DSM_STORAGE_SPACE || '20Gi' }}
+      POSTGRES_VERSION: ${{ github.event.inputs.postgres_version || github.event.client_payload.postgres_version || secrets.POSTGRES_VERSION || '17.7+vmware.v9.0.2.0' }}
+      DSM_CLUSTER_NAME: ${{ github.event.inputs.dsm_cluster_name || github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'postgres-clus-01' }}
+      POSTGRES_REPLICAS: ${{ github.event.inputs.postgres_replicas || github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '0' }}
+      POSTGRES_DB: ${{ github.event.inputs.postgres_db || github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
+      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'admin-pw-pg-clus-01' }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      DSM_MAINTENANCE_WINDOW_DAY: ${{ github.event.client_payload.dsm_maintenance_window_day || 'SATURDAY' }}
+      DSM_MAINTENANCE_WINDOW_TIME: ${{ github.event.client_payload.dsm_maintenance_window_time || '04:59' }}
+      DSM_MAINTENANCE_WINDOW_DURATION: ${{ github.event.client_payload.dsm_maintenance_window_duration || '6h0m0s' }}
+      DSM_SHARED_MEMORY: ${{ github.event.client_payload.dsm_shared_memory || '64Mi' }}
+
+      # --- Application Parameters ---
+      CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
+      IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
+      API_PORT: ${{ github.event.client_payload.api_port || secrets.API_PORT || '3001' }}
+      FRONTEND_PORT: ${{ github.event.client_payload.frontend_port || secrets.FRONTEND_PORT || '3000' }}
+
+      # --- Timeouts and Polling ---
+      VM_TIMEOUT: ${{ github.event.client_payload.vm_timeout || secrets.VM_TIMEOUT || '600' }}
+      DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || secrets.DSM_TIMEOUT || '1800' }}
+      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
+      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '30' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+      # --- Static Configuration ---
+      CONTEXT_NAME: ha-vm-app-deploy
+
+    steps:
+      # Step 1: Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Step 2: Validate Inputs
+      - name: Validate Inputs
+        run: |
+          set -euo pipefail
+          # Trim leading/trailing whitespace from input parameters
+          CLUSTER_NAME="$(echo -n "$CLUSTER_NAME" | xargs)"
+          SUPERVISOR_NAMESPACE="$(echo -n "$SUPERVISOR_NAMESPACE" | xargs)"
+          PROJECT_NAME="$(echo -n "$PROJECT_NAME" | xargs)"
+          DSM_INFRA_POLICY="$(echo -n "$DSM_INFRA_POLICY" | xargs)"
+          DSM_STORAGE_POLICY="$(echo -n "$DSM_STORAGE_POLICY" | xargs)"
+          # Export trimmed values for subsequent steps
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+          echo "SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE" >> "$GITHUB_ENV"
+          echo "PROJECT_NAME=$PROJECT_NAME" >> "$GITHUB_ENV"
+          echo "DSM_INFRA_POLICY=$DSM_INFRA_POLICY" >> "$GITHUB_ENV"
+          echo "DSM_STORAGE_POLICY=$DSM_STORAGE_POLICY" >> "$GITHUB_ENV"
+          MISSING=""
+          for var in CLUSTER_NAME SUPERVISOR_NAMESPACE PROJECT_NAME DSM_INFRA_POLICY DSM_STORAGE_POLICY VCF_API_TOKEN VCFA_ENDPOINT TENANT_NAME ADMIN_PASSWORD; do
+            if [ -z "${!var:-}" ]; then
+              MISSING="${MISSING}  - ${var}\n"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing required variables:"
+            echo -e "$MISSING"
+            exit 1
+          fi
+          echo "All required inputs validated successfully"
+          echo "  CLUSTER_NAME=$CLUSTER_NAME"
+          echo "  SUPERVISOR_NAMESPACE=$SUPERVISOR_NAMESPACE"
+          echo "  PROJECT_NAME=$PROJECT_NAME"
+          echo "  DSM_INFRA_POLICY=$DSM_INFRA_POLICY"
+          echo "  DSM_STORAGE_POLICY=$DSM_STORAGE_POLICY"
+
+      # Step 3: Create VCF CLI Context
+      - name: Create VCF CLI Context
+        run: |
+          set -euo pipefail
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
+            --endpoint "https://$VCFA_ENDPOINT" \
+            --type cci \
+            --tenant-name "$TENANT_NAME" \
+            --api-token "$VCF_API_TOKEN" \
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            exit 1
+          fi
+
+          # Switch to the namespace context for the supervisor namespace
+          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+          if [ -z "$NAMESPACE_CONTEXT" ]; then
+            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+          fi
+          if [ -n "$NAMESPACE_CONTEXT" ]; then
+            vcf context use "$NAMESPACE_CONTEXT"
+            echo "VCF CLI context '$CONTEXT_NAME' created, switched to namespace context '$NAMESPACE_CONTEXT'"
+          else
+            echo "::error::Could not find a namespace context for supervisor namespace '${SUPERVISOR_NAMESPACE}' under context '${CONTEXT_NAME}'"
+            exit 1
+          fi
+
+      # Step 4: Deploy HA VM App
+      - name: Deploy HA VM App
+        id: deploy
+        run: |
+          set -euo pipefail
+          echo "Executing deploy-ha-vm-app.sh..."
+          bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh 2>&1 | tee /tmp/deploy-ha-vm-app.log
+
+          # Extract deployment details from the deploy script output for job summary
+          WEB_LB_IP=$(grep -oP 'Web LB External IP:\s*\K[0-9.]+' /tmp/deploy-ha-vm-app.log || true)
+          API_VM_01_IP=$(grep -oP "api-vm-01=\K[0-9.]+" /tmp/deploy-ha-vm-app.log || true)
+          API_VM_02_IP=$(grep -oP "api-vm-02=\K[0-9.]+" /tmp/deploy-ha-vm-app.log || true)
+          WEB_VM_01_IP=$(grep -oP "web-vm-01=\K[0-9.]+" /tmp/deploy-ha-vm-app.log || true)
+          WEB_VM_02_IP=$(grep -oP "web-vm-02=\K[0-9.]+" /tmp/deploy-ha-vm-app.log || true)
+          DSM_ENDPOINT=$(grep -oP 'DSM PostgreSQL connection:\s*\K[^\s]+' /tmp/deploy-ha-vm-app.log || true)
+
+          # Fallback: extract IPs from kubectl if not found in log
+          if [ -z "$WEB_LB_IP" ]; then
+            WEB_LB_IP=$(kubectl get virtualmachineservice ha-web-lb -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "unknown")
+          fi
+
+          echo "WEB_LB_IP=$WEB_LB_IP" >> "$GITHUB_ENV"
+          echo "API_VM_01_IP=${API_VM_01_IP:-unknown}" >> "$GITHUB_ENV"
+          echo "API_VM_02_IP=${API_VM_02_IP:-unknown}" >> "$GITHUB_ENV"
+          echo "WEB_VM_01_IP=${WEB_VM_01_IP:-unknown}" >> "$GITHUB_ENV"
+          echo "WEB_VM_02_IP=${WEB_VM_02_IP:-unknown}" >> "$GITHUB_ENV"
+          echo "DSM_ENDPOINT=${DSM_ENDPOINT:-unknown}" >> "$GITHUB_ENV"
+
+      # Step 5: Write Job Summary
+      - name: Write Job Summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ✅ HA VM App Deployment Complete
+
+          | Field | Value |
+          |---|---|
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | Project | \`${PROJECT_NAME}\` |
+          | VM Class | \`${VM_CLASS}\` |
+          | VM Image | \`${VM_IMAGE}\` |
+          | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
+          | Frontend | http://${WEB_LB_IP} |
+
+          ### VM Details
+          | VM | IP Address | Role |
+          |---|---|---|
+          | \`api-vm-01\` | \`${API_VM_01_IP}\` | API Tier |
+          | \`api-vm-02\` | \`${API_VM_02_IP}\` | API Tier |
+          | \`web-vm-01\` | \`${WEB_VM_01_IP}\` | Web Tier |
+          | \`web-vm-02\` | \`${WEB_VM_02_IP}\` | Web Tier |
+
+          ### Services
+          | Service | Endpoint |
+          |---|---|
+          | Web LB (ha-web-lb) | http://${WEB_LB_IP} |
+          | API LB (ha-api-lb) | \`ha-api-lb.${SUPERVISOR_NAMESPACE}.svc:${API_PORT}\` |
+          | DSM PostgreSQL | \`${DSM_ENDPOINT}\` |
+          EOF
+
+      # Step 6: Write Failure Summary
+      - name: Write Failure Summary
+        if: failure()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## ❌ HA VM App Deployment Failed
+
+          | Field | Value |
+          |---|---|
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | Project | \`${PROJECT_NAME}\` |
+          | VM Class | \`${VM_CLASS}\` |
+          | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
+          | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Check that the DSM infrastructure policy is configured in the supervisor namespace
+          3. Verify the Ubuntu 24.04 image is available in the content library
+          4. Verify SUPERVISOR_NAMESPACE, PROJECT_NAME, DSM_INFRA_POLICY, and DSM_STORAGE_POLICY are set correctly
+          5. Check VM class availability: \`kubectl get virtualmachineclasses -n ${SUPERVISOR_NAMESPACE}\`
+          6. Check storage class availability: \`kubectl get storageclasses\`
+          7. Re-run the workflow — all steps are idempotent and will skip already-completed work
+          EOF

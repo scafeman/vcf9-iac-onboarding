@@ -63,6 +63,7 @@ Once the VKS cluster is running, the toolkit offers six additional deployment pa
 | **Deploy Hybrid App** | VM-to-container connectivity over NSX VPC | EC2 + EKS in same VPC |
 | **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
 | **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
+| **Deploy HA VM App** | Traditional HA three-tier app on VMs (web, API, managed DB) | 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ |
 | **Deploy Bastion VM** | SSH jump host with source-IP-restricted LoadBalancer | EC2 bastion + Security Groups |
 
 ```
@@ -71,6 +72,7 @@ Deploy Cluster (foundation)
     ├── Deploy GitOps          — CI/CD + GitOps stack
     ├── Deploy Hybrid App      — VM + container connectivity
     ├── Deploy Managed DB App  — managed database + vault credentials
+    ├── Deploy HA VM App       — HA three-tier app on VMs
     ├── Deploy Secrets Demo    — secret store integration
     └── Deploy Bastion VM      — SSH jump host (no VKS cluster required)
 ```
@@ -110,6 +112,7 @@ All five deployments are available as GitHub Actions workflows for automated CI/
 | Deploy Secrets Demo | `deploy-secrets-demo.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-secrets-demo`) |
 | Deploy Bastion VM | `deploy-bastion-vm.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-bastion-vm`) |
 | Deploy Managed DB App | `deploy-managed-db-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-managed-db-app`) |
+| Deploy HA VM App | `deploy-ha-vm-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-ha-vm-app`) |
 | Teardown VCF Stacks | `teardown.yml` | `workflow_dispatch` / `repository_dispatch` (event: `teardown`) |
 
 Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
@@ -123,6 +126,7 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 | Deploy GitOps | Installs Harbor, ArgoCD, GitLab, and deploys Microservices Demo | [`examples/deploy-gitops/`](examples/deploy-gitops/) |
 | Deploy Hybrid App | Provisions a PostgreSQL VM + deploys a Next.js/Node.js app on VKS | [`examples/deploy-hybrid-app/`](examples/deploy-hybrid-app/) |
 | Deploy Managed DB App | Provisions a DSM-managed PostgresCluster + deploys a Next.js/Node.js app on VKS | [`examples/deploy-managed-db-app/`](examples/deploy-managed-db-app/) |
+| Deploy HA VM App | Deploys a traditional HA three-tier app on VMs: 2× web VMs + LB, 2× API VMs + internal service, DSM PostgresCluster | [`examples/deploy-ha-vm-app/`](examples/deploy-ha-vm-app/) |
 | Deploy Bastion VM | Deploys a secure SSH jump host VM with source-IP-restricted LoadBalancer | [`examples/deploy-bastion-vm/`](examples/deploy-bastion-vm/) |
 | Deploy Secrets Demo | Demonstrates VCF Secret Store with vault-injected secrets for Redis + PostgreSQL | [`examples/deploy-secrets-demo/`](examples/deploy-secrets-demo/) |
 

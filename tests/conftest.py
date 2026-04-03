@@ -674,3 +674,36 @@ def managed_db_sample_manifest_text() -> str:
     """Return the raw text of examples/sample-create-postgres-cluster.yaml."""
     with open(MANAGED_DB_SAMPLE_MANIFEST_PATH, encoding="utf-8") as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Deploy HA VM App Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def ha_vm_app_deploy_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-ha-vm-app', 'deploy-ha-vm-app.sh')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def ha_vm_app_teardown_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-ha-vm-app', 'teardown-ha-vm-app.sh')
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def ha_vm_app_workflow_yaml_text():
+    path = os.path.join(os.path.dirname(__file__), '..', '.github', 'workflows', 'deploy-ha-vm-app.yml')
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture(scope="session")
+def ha_vm_app_workflow_yaml(ha_vm_app_workflow_yaml_text):
+    return yaml.safe_load(ha_vm_app_workflow_yaml_text)
+
+@pytest.fixture(scope="session")
+def ha_vm_app_api_server_text():
+    path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-hybrid-app', 'api', 'server.js')
+    with open(path) as f:
+        return f.read()

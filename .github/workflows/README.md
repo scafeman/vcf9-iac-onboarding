@@ -13,6 +13,7 @@ This repository contains eight GitHub Actions workflows that automate the end-to
 | Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
 | Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
 | Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
+| Deploy HA VM App — HA Three-Tier Application on VMs | `deploy-ha-vm-app.yml` | Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) + LoadBalancer, 2× API VMs (Express) + internal VirtualMachineService, DSM PostgresCluster |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
@@ -25,6 +26,7 @@ Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy GitOps (deploy-argocd.yml)
     ├── Deploy Hybrid App (deploy-hybrid-app.yml)
     ├── Deploy Managed DB App (deploy-managed-db-app.yml)
+    ├── Deploy HA VM App (deploy-ha-vm-app.yml)
     ├── Deploy Secrets Demo (deploy-secrets-demo.yml)
     └── Deploy Bastion VM (deploy-bastion-vm.yml)  ← no VKS cluster required
 
@@ -35,6 +37,7 @@ Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase E: Secrets Demo Stack Teardown
     ├── Phase F: Bastion VM Teardown
     ├── Phase G: Managed DB App Teardown
+    ├── Phase H: HA VM App Teardown
     └── Phase C: Cluster Stack Teardown
 ```
 
@@ -1054,6 +1057,112 @@ curl -X POST \
 
 - Verify Docker is running on the self-hosted runner
 - Verify `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are set
+
+---
+
+# Deploy HA VM App — HA Three-Tier Application on VMs (`deploy-ha-vm-app.yml`)
+
+## Overview
+
+Deploys a traditional HA three-tier application using VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. Provisions 2× web VMs (Next.js) fronted by a VirtualMachineService LoadBalancer, 2× API VMs (Express) fronted by a VirtualMachineService LoadBalancer, and a DSM-managed PostgresCluster. All resources are provisioned in a supervisor namespace — no VKS guest cluster required.
+
+## Triggering the Workflow
+
+### GitHub UI (workflow_dispatch)
+
+1. Go to **Actions** → **"Deploy HA VM App"** → **"Run workflow"**
+2. Fill in: **supervisor_namespace** (required), **project_name** (required), **cluster_name** (required), and optionally **vm_class**, **vm_image**, **storage_class**, **dsm_infra_policy**, **dsm_storage_policy**, **dsm_vm_class**, **dsm_storage_space**, **postgres_version**, **dsm_cluster_name**, **postgres_replicas**, **postgres_db**
+
+### Direct API Call (curl)
+
+```bash
+curl -X POST \
+  -H "Authorization: token GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/OWNER/REPO/dispatches" \
+  -d '{
+    "event_type": "deploy-ha-vm-app",
+    "client_payload": {
+      "supervisor_namespace": "my-project-ns-xxxxx",
+      "project_name": "my-dev-project-01",
+      "cluster_name": "my-dev-project-01-clus-01",
+      "dsm_infra_policy": "shared-dsm-01",
+      "dsm_storage_policy": "NFS"
+    }
+  }'
+```
+
+## Parameters
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `SUPERVISOR_NAMESPACE` | `supervisor_namespace` | (required) | Supervisor namespace where VMs and PostgresCluster will be provisioned |
+| `PROJECT_NAME` | `project_name` | (required) | VCF Project name |
+| `CLUSTER_NAME` | `cluster_name` | (required) | Cluster name for namespace context fallback |
+| `VM_CLASS` | `vm_class` | `best-effort-medium` | VM class for application VMs |
+| `VM_IMAGE` | `vm_image` | `ubuntu-24.04-server-cloudimg-amd64` | Content library image name |
+| `STORAGE_CLASS` | `storage_class` | `nfs` | Storage class for VM disks |
+| `DSM_INFRA_POLICY` | `dsm_infra_policy` | `shared-dsm-01` | DSM infrastructure policy name |
+| `DSM_STORAGE_POLICY` | `dsm_storage_policy` | `NFS` | vSphere storage policy name for DSM |
+| `DSM_VM_CLASS` | `dsm_vm_class` | `best-effort-large` | VM class for DSM instances (Single Server requires 4 CPU minimum) |
+| `DSM_STORAGE_SPACE` | `dsm_storage_space` | `20Gi` | Storage allocation |
+| `POSTGRES_VERSION` | `postgres_version` | `17.7+vmware.v9.0.2.0` | PostgreSQL version |
+| `DSM_CLUSTER_NAME` | `dsm_cluster_name` | `postgres-clus-01` | PostgresCluster resource name |
+| `POSTGRES_REPLICAS` | `postgres_replicas` | `0` | Topology: `0` = Single Server, `1` = Single-Zone HA |
+| `POSTGRES_DB` | `postgres_db` | `assetdb` | Database name |
+| `ADMIN_PASSWORD` | — | (secret only) | Admin password for the PostgresCluster |
+| `API_PORT` | `api_port` | `3001` | API service port |
+| `FRONTEND_PORT` | `frontend_port` | `3000` | Frontend port |
+| `VM_TIMEOUT` | `vm_timeout` | `600` | Seconds to wait for VM PoweredOn |
+| `DSM_TIMEOUT` | `dsm_timeout` | `1800` | Seconds to wait for PostgresCluster Ready |
+| `LB_TIMEOUT` | `lb_timeout` | `300` | Seconds to wait for LoadBalancer external IP |
+| `POLL_INTERVAL` | `poll_interval` | `30` | Seconds between polling attempts |
+
+## Workflow Steps
+
+| # | Step Name | Description |
+|---|---|---|
+| 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
+| 2 | **Validate Inputs** | Checks all required environment variables are set |
+| 3 | **Create VCF CLI Context** | Creates a VCF CLI context and switches to the supervisor namespace |
+| 4 | **Provision DSM PostgresCluster** | Creates admin password Secret, applies PostgresCluster manifest, waits for Ready status, extracts connection details |
+| 5 | **Provision API VMs** | Creates cloud-init Secrets and VirtualMachine manifests for `api-vm-01` and `api-vm-02` with DSM connection details |
+| 6 | **Wait for API VMs Ready** | Polls until both API VMs reach PoweredOn state and obtain IP addresses |
+| 7 | **Create API LoadBalancer** | Applies `ha-api-lb` VirtualMachineService LoadBalancer (selector `app: ha-api`, port `API_PORT`) |
+| 8 | **Provision Web VMs** | Creates cloud-init Secrets and VirtualMachine manifests for `web-vm-01` and `web-vm-02` with API VIP address |
+| 9 | **Wait for Web VMs Ready** | Polls until both web VMs reach PoweredOn state and obtain IP addresses |
+| 10 | **Create Web LoadBalancer** | Applies `ha-web-lb` VirtualMachineService LoadBalancer (selector `app: ha-web`, port 80 → `FRONTEND_PORT`) |
+| 11 | **Wait for LoadBalancer IP** | Polls until the web LoadBalancer receives an external IP |
+| 12 | **HTTP Connectivity Test** | Curls the frontend IP for HTTP 200 and the API healthz endpoint for 200 |
+| 13 | **Write Job Summary** | Writes deployment summary with Web LB IP, VM details, and DSM endpoint |
+| 14 | **Write Failure Summary** | On failure, writes failure summary with troubleshooting steps |
+
+## Troubleshooting
+
+### VM does not reach PoweredOn state
+
+- Verify the `VM_IMAGE` exists in the content library and is a cloud image
+- Verify the `VM_CLASS` is available: `kubectl get virtualmachineclasses`
+- Check VirtualMachine events: `kubectl describe virtualmachine <vm-name> -n <SUPERVISOR_NAMESPACE>`
+- Increase `VM_TIMEOUT` if the environment is slow to provision VMs
+
+### DSM PostgresCluster does not reach Ready status
+
+- Verify the DSM infrastructure policy exists in the supervisor namespace
+- Verify the `DSM_STORAGE_POLICY` is available: `kubectl get storagepolicies`
+- Check PostgresCluster conditions: `kubectl get postgrescluster <name> -n <SUPERVISOR_NAMESPACE> -o yaml`
+- DSM provisioning can take 10–25 minutes — increase `DSM_TIMEOUT` if needed
+
+### No LoadBalancer IP assigned
+
+- Check NSX load balancer capacity and VPC configuration
+- Verify the VirtualMachineService exists: `kubectl get virtualmachineservice -n <SUPERVISOR_NAMESPACE>`
+
+### Connectivity test fails
+
+- Cloud-init bootstrap may still be running — the script retries with configurable interval
+- Check VM cloud-init logs via serial console or SSH
+- Verify the API VMs can reach the DSM PostgresCluster endpoint
 
 ---
 
