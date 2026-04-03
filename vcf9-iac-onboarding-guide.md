@@ -1313,6 +1313,14 @@ This reference maps AWS EKS constructs to their VCF 9 / VKS equivalents. Use it 
 | Transit Gateway | TransitGateway (`vpc.nsx.vmware.com/v1alpha1`) | AWS Transit Gateway connects VPCs and on-premises networks; NSX TransitGateway serves the same role, connecting VPCs via VPCAttachment resources. |
 | NAT Gateway | VPCNATRule (`vpc.nsx.vmware.com/v1alpha1`) | AWS NAT Gateway provides managed outbound internet access; NSX VPCNATRule defines SNAT (outbound) and DNAT (inbound) rules explicitly per VPC. |
 | Security Groups | VPCConnectivityProfile (`vpc.nsx.vmware.com/v1alpha1`) | AWS Security Groups are stateful firewall rules per ENI; NSX VPCConnectivityProfile defines connectivity policies at the VPC level, controlling external access and service gateway settings. |
+| RDS (PostgreSQL) | DSM PostgresCluster (`databases.dataservices.vmware.com/v1alpha1`) | AWS RDS is a fully managed database service; VCF Data Services Manager (DSM) provisions managed PostgreSQL instances via the PostgresCluster CRD. See `examples/deploy-managed-db-app/`. |
+| Secrets Manager | VCF Secret Store + vault-injector | AWS Secrets Manager stores and rotates secrets; VCF Secret Store uses KeyValueSecrets injected into pods via vault-agent sidecars. See `examples/deploy-secrets-demo/` and `examples/deploy-managed-db-app/`. |
+| EC2 Instances | VM Service (`vmoperator.vmware.com/v1alpha3`) | AWS EC2 provides on-demand VMs; VCF VM Service provisions VirtualMachines via CRD with cloud-init bootstrap. See `examples/deploy-hybrid-app/` and `examples/deploy-bastion-vm/`. |
+| ECR | Harbor (self-hosted on VKS) | AWS ECR is a managed container registry; Harbor is deployed as a Helm chart on VKS. See `examples/deploy-gitops/`. |
+| CloudWatch | Telegraf + Prometheus + Grafana | AWS CloudWatch provides integrated monitoring; VKS uses VKS standard packages for metrics collection and Helm for Grafana. See `examples/deploy-metrics/`. |
+| CodePipeline / CodeBuild | GitLab CI + ArgoCD | AWS CI/CD services; VKS uses GitLab and ArgoCD deployed via Helm. See `examples/deploy-gitops/`. |
+
+> **Deployment Patterns:** This guide covers VKS cluster provisioning (Phases 1–8). For application deployment patterns (managed databases, secret store integration, VM workloads, observability, GitOps), see the [Examples README](examples/README.md) and individual deployment READMEs in the `examples/` folder.
 
 ### Architectural Differences
 
