@@ -107,7 +107,7 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 # --- Git Repository (for cloning app source to VMs) ---
 GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
-GIT_BRANCH="${GIT_BRANCH:-main}"
+GIT_BRANCH="${GIT_BRANCH:-feature/deploy-ha-vm-app}"
 
 # --- Timeouts and Polling ---
 VM_TIMEOUT="${VM_TIMEOUT:-600}"
