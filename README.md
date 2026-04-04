@@ -54,7 +54,7 @@ Every deployment pattern starts with a running VKS cluster. The Deploy Cluster w
 
 ### Deployment Patterns
 
-Once the VKS cluster is running, the toolkit offers six additional deployment patterns:
+Once the VKS cluster is running, the toolkit offers seven additional deployment patterns:
 
 | Pattern | What It Proves | AWS Equivalent |
 |---|---|---|
@@ -126,7 +126,7 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 | Deploy GitOps | Installs Harbor, ArgoCD, GitLab, and deploys Microservices Demo | [`examples/deploy-gitops/`](examples/deploy-gitops/) |
 | Deploy Hybrid App | Provisions a PostgreSQL VM + deploys a Next.js/Node.js app on VKS | [`examples/deploy-hybrid-app/`](examples/deploy-hybrid-app/) |
 | Deploy Managed DB App | Provisions a DSM-managed PostgresCluster + deploys a Next.js/Node.js app on VKS | [`examples/deploy-managed-db-app/`](examples/deploy-managed-db-app/) |
-| Deploy HA VM App | Deploys a traditional HA three-tier app on VMs: 2× web VMs + LB, 2× API VMs + internal service, DSM PostgresCluster | [`examples/deploy-ha-vm-app/`](examples/deploy-ha-vm-app/) |
+| Deploy HA VM App | Deploys a traditional HA three-tier app on VMs: 2× web VMs + LB, 2× API VMs + LB, DSM PostgresCluster | [`examples/deploy-ha-vm-app/`](examples/deploy-ha-vm-app/) |
 | Deploy Bastion VM | Deploys a secure SSH jump host VM with source-IP-restricted LoadBalancer | [`examples/deploy-bastion-vm/`](examples/deploy-bastion-vm/) |
 | Deploy Secrets Demo | Demonstrates VCF Secret Store with vault-injected secrets for Redis + PostgreSQL | [`examples/deploy-secrets-demo/`](examples/deploy-secrets-demo/) |
 

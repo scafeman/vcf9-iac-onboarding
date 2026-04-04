@@ -13,7 +13,7 @@ This repository contains eight GitHub Actions workflows that automate the end-to
 | Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
 | Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
 | Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
-| Deploy HA VM App — HA Three-Tier Application on VMs | `deploy-ha-vm-app.yml` | Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) + LoadBalancer, 2× API VMs (Express) + internal VirtualMachineService, DSM PostgresCluster |
+| Deploy HA VM App — HA Three-Tier Application on VMs | `deploy-ha-vm-app.yml` | Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) + LoadBalancer, 2× API VMs (Express) + LoadBalancer, DSM PostgresCluster |
 | Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
 
 ## Execution Order
