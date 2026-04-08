@@ -707,3 +707,53 @@ def ha_vm_app_api_server_text():
     path = os.path.join(os.path.dirname(__file__), '..', 'examples', 'deploy-hybrid-app', 'api', 'server.js')
     with open(path) as f:
         return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Deploy Knative Fixtures
+# ---------------------------------------------------------------------------
+
+KNATIVE_DEPLOY_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-knative", "deploy-knative.sh"
+)
+
+KNATIVE_TEARDOWN_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-knative", "teardown-knative.sh"
+)
+
+KNATIVE_WORKFLOW_YAML_PATH = os.path.join(
+    PROJECT_ROOT, ".github", "workflows", "deploy-knative.yml"
+)
+
+
+@pytest.fixture(scope="session")
+def knative_deploy_text() -> str:
+    """Return the full text of the deploy-knative deploy script."""
+    with open(KNATIVE_DEPLOY_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def knative_teardown_text() -> str:
+    """Return the full text of the deploy-knative teardown script."""
+    with open(KNATIVE_TEARDOWN_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def knative_deploy_phases(knative_deploy_text: str) -> dict[int, str]:
+    """Return phase sections from the deploy-knative script keyed by phase number."""
+    return _extract_phases(knative_deploy_text)
+
+
+@pytest.fixture(scope="session")
+def knative_workflow_yaml_text() -> str:
+    """Return the raw text of .github/workflows/deploy-knative.yml."""
+    with open(KNATIVE_WORKFLOW_YAML_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+@pytest.fixture(scope="session")
+def knative_workflow_yaml(knative_workflow_yaml_text: str) -> dict:
+    """Return the parsed YAML dict of the deploy-knative workflow file."""
+    return yaml.safe_load(knative_workflow_yaml_text)
