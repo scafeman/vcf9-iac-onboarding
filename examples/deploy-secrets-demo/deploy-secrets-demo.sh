@@ -364,6 +364,13 @@ VALEOF
 
   rm -f "${VAULT_VALUES_FILE}"
   log_success "vault-injector package installed"
+
+  # Strip kapp ownership labels from shared resources so other packages
+  # (Prometheus, Telegraf, etc.) can coexist in the tkg-packages namespace.
+  # Without this, kapp refuses to deploy other packages because it sees
+  # the namespace and LimitRange as "owned by vault-injector.app".
+  kubectl label ns tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
+  kubectl label limitrange ns-limit-range -n tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
 fi
 
 # Wait for vault-injector pod readiness

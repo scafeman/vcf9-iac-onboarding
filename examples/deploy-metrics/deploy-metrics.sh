@@ -284,6 +284,13 @@ kubectl label ns "${PACKAGE_NAMESPACE}" \
 
 log_success "Namespace '${PACKAGE_NAMESPACE}' labelled with privileged PodSecurity standard"
 
+# Strip kapp ownership labels from shared resources if vault-injector (or
+# another package) has already claimed them.  Without this, kapp refuses to
+# deploy Prometheus/Telegraf because it sees the namespace and LimitRange as
+# "owned by vault-injector.app".
+kubectl label ns "${PACKAGE_NAMESPACE}" kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
+kubectl label limitrange ns-limit-range -n "${PACKAGE_NAMESPACE}" kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
+
 ###############################################################################
 # Phase 4: VKS Package Repository Registration
 ###############################################################################
