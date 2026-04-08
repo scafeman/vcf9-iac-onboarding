@@ -74,6 +74,7 @@ POLL_INTERVAL="${POLL_INTERVAL:-10}"
 
 KNATIVE_CRDS_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-crds.yaml"
 KNATIVE_CORE_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-core.yaml"
+CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/contour.yaml"
 NET_CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/net-contour.yaml"
 DASHBOARD_IMAGE="${CONTAINER_REGISTRY}/knative-dashboard:${IMAGE_TAG}"
 
@@ -214,8 +215,15 @@ log_success "Knative Serving Core installed and Available"
 # Phase 4: net-contour Networking Plugin
 ###############################################################################
 
-log_step 4 "Installing net-contour networking plugin (v${NET_CONTOUR_VERSION})"
+log_step 4 "Installing Contour and net-contour networking plugin (v${NET_CONTOUR_VERSION})"
 
+# Install Contour into contour-external and contour-internal namespaces
+if ! kubectl apply -f "${CONTOUR_URL}"; then
+  log_error "Failed to apply Contour from ${CONTOUR_URL}"
+  exit 3
+fi
+
+# Install net-contour controller (bridges Knative to Contour)
 if ! kubectl apply -f "${NET_CONTOUR_URL}"; then
   log_error "Failed to apply net-contour plugin from ${NET_CONTOUR_URL}"
   exit 3
@@ -228,7 +236,7 @@ if ! wait_for_condition "net-contour controller to be Available" \
   exit 3
 fi
 
-log_success "net-contour networking plugin installed and Available"
+log_success "Contour and net-contour networking plugin installed and Available"
 
 ###############################################################################
 # Phase 5: Ingress Configuration

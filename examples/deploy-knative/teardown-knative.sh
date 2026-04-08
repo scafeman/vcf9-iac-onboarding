@@ -43,6 +43,7 @@ POLL_INTERVAL="${POLL_INTERVAL:-10}"
 
 KNATIVE_CRDS_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-crds.yaml"
 KNATIVE_CORE_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-core.yaml"
+CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/contour.yaml"
 NET_CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/net-contour.yaml"
 
 ###############################################################################
@@ -195,6 +196,10 @@ if kubectl get deployment net-contour-controller -n "${KNATIVE_NAMESPACE}" >/dev
 else
   log_success "net-contour controller already absent"
 fi
+
+# Delete Contour resources using the upstream manifest
+kubectl delete -f "${CONTOUR_URL}" --ignore-not-found 2>/dev/null || true
+log_success "Contour resources deleted"
 
 # Delete contour-external namespace
 if kubectl get ns contour-external >/dev/null 2>&1; then
