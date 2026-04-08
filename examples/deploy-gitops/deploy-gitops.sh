@@ -29,7 +29,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Deploy Cluster completed successfully (VKS cluster running with LB support)
 #   - Valid admin kubeconfig file for the target cluster
-#   - Helm v3 installed
+#   - Helm v4 installed
 #   - kubectl installed
 #   - openssl installed
 #   - vcf CLI installed (for VKS package installation)
@@ -68,8 +68,8 @@ HARBOR_DB_PASSWORD="${HARBOR_DB_PASSWORD:-changeit}"
 CERT_DIR="${CERT_DIR:-./certs}"
 
 # --- GitLab Versions ---
-GITLAB_OPERATOR_VERSION="${GITLAB_OPERATOR_VERSION:-9.10.1}"
-GITLAB_RUNNER_VERSION="${GITLAB_RUNNER_VERSION:-0.75.0}"
+GITLAB_OPERATOR_VERSION="${GITLAB_OPERATOR_VERSION:-9.10.3}"
+GITLAB_RUNNER_VERSION="${GITLAB_RUNNER_VERSION:-0.87.1}"
 # GITLAB_RUNNER_TOKEN is auto-retrieved from the GitLab instance after Phase 9.
 # Set it here only if you already have a token from a previous deployment.
 GITLAB_RUNNER_TOKEN="${GITLAB_RUNNER_TOKEN:-}"

@@ -169,7 +169,7 @@ The runner image is built from `Dockerfile.runner`, which extends `myoung34/gith
 
 - **VCF CLI** v9.0.2 — context management, project/namespace provisioning, kubeconfig retrieval
 - **kubectl** v1.33.0 — Kubernetes resource management
-- **Helm** v3 — chart-based deployments
+- **Helm** v4 — chart-based deployments
 - **jq** — JSON processing
 - **openssl** — certificate generation
 
@@ -518,8 +518,8 @@ curl -X POST \
 | `KUBECONFIG_PATH` | `kubeconfig_path` | `./kubeconfig-<CLUSTER_NAME>.yaml` | Path to the admin kubeconfig file |
 | `HARBOR_VERSION` | `harbor_version` | `1.18.3` | Harbor Helm chart version |
 | `ARGOCD_VERSION` | `argocd_version` | `9.4.17` | ArgoCD Helm chart version |
-| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.1` | GitLab Operator Helm chart version |
-| `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.75.0` | GitLab Runner Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `gitlab_operator_version` | `9.10.3` | GitLab Operator Helm chart version |
+| `GITLAB_RUNNER_VERSION` | `gitlab_runner_version` | `0.87.1` | GitLab Runner Helm chart version |
 | `HARBOR_ADMIN_PASSWORD` | `harbor_admin_password` | (auto-generated) | Harbor admin password |
 | `PACKAGE_TIMEOUT` | `package_timeout` | `900` | Package reconciliation timeout in seconds |
 | `PACKAGE_NAMESPACE` | `package_namespace` | `tkg-packages` | Namespace for VKS standard packages |

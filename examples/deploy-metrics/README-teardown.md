@@ -54,7 +54,7 @@ Resources cleaned up include:
 - Docker and Docker Compose installed
 - The `vcf9-dev` container running (`docker compose up -d`)
 - A populated `.env` file with the same variables used by the deploy script
-- Helm v3 installed (for Grafana Operator uninstall)
+- Helm v4 installed (for Grafana Operator uninstall)
 
 ---
 

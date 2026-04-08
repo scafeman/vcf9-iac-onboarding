@@ -101,7 +101,7 @@ Lists all installed packages via `vcf package installed list`, checks that Teleg
 - **Deploy Cluster completed successfully** — a VKS cluster must be running and accessible. The deploy script does not create a cluster; it installs observability packages on an existing one.
 - **Valid admin kubeconfig file** for the target VKS cluster (produced by Deploy Cluster's Phase 5). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
 - **Docker and Docker Compose installed** — the script runs inside the `vcf9-dev` container.
-- **Helm v3** — required for the Grafana Operator installation (Phase 9). Helm is pre-installed in the `vcf9-dev` container via the Dockerfile.
+- **Helm v4** — required for the Grafana Operator installation (Phase 9). Helm is pre-installed in the `vcf9-dev` container via the Dockerfile.
 - **openssl** — required for self-signed certificate generation (Phase 7b). Pre-installed in the `vcf9-dev` container.
 
 ---

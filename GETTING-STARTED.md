@@ -63,7 +63,7 @@ Replace all `<placeholder>` values with your environment-specific settings. See 
 docker compose up -d --build
 ```
 
-This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2), kubectl (v1.33.0), Helm v3, and Docker CLI pre-installed. The `.env` file is automatically loaded by Docker Compose and passed into the container.
+This builds an Ubuntu 24.04 container with VCF CLI (v9.0.2), kubectl (v1.33.0), Helm v4, and Docker CLI pre-installed. The `.env` file is automatically loaded by Docker Compose and passed into the container.
 
 ## Deploy Each Stack
 

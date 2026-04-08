@@ -121,7 +121,7 @@ Prints a summary of all deployed components, their namespaces, versions, and acc
 
 - **Deploy Cluster completed successfully** — a VKS cluster must be running and accessible with LoadBalancer support and `nfs` storageClass. The deploy script does not create a cluster; it installs the ArgoCD Consumption Model stack on an existing one.
 - **Valid admin kubeconfig file** for the target VKS cluster (produced by Deploy Cluster). By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
-- **Helm v3 installed** — required for Harbor, ArgoCD, GitLab, and GitLab Runner installation.
+- **Helm v4 installed** — required for Harbor, ArgoCD, GitLab, and GitLab Runner installation.
 - **kubectl installed** — required for all Kubernetes operations.
 - **openssl installed** — required for self-signed certificate generation.
 - **vcf CLI installed** — required for VKS package installation (cert-manager, Contour).
@@ -150,8 +150,8 @@ The ArgoCD CLI is auto-downloaded if not already in PATH.
 | `CERT_DIR` | `./certs` | Directory for generated certificate files |
 | `CONTOUR_INGRESS_NAMESPACE` | `tanzu-system-ingress` | Namespace for Contour Envoy (VKS package default) |
 | `HARBOR_NAMESPACE` | `harbor` | Namespace for Harbor |
-| `GITLAB_OPERATOR_VERSION` | `9.10.0` | GitLab Helm chart version |
-| `GITLAB_RUNNER_VERSION` | `0.75.0` | GitLab Runner Helm chart version |
+| `GITLAB_OPERATOR_VERSION` | `9.10.3` | GitLab Helm chart version |
+| `GITLAB_RUNNER_VERSION` | `0.87.1` | GitLab Runner Helm chart version |
 | `GITLAB_RUNNER_TOKEN` | (auto-retrieved) | GitLab Runner registration token (auto-retrieved from GitLab instance if not set) |
 | `GITLAB_NAMESPACE` | `gitlab-system` | Namespace for GitLab |
 | `GITLAB_RUNNER_NAMESPACE` | `gitlab-runners` | Namespace for GitLab Runner |

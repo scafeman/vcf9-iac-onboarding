@@ -56,7 +56,7 @@ Prints a summary of all removed components. Note: Contour and cert-manager are s
 
 - **Valid admin kubeconfig file** for the target VKS cluster. By default the script looks for `./kubeconfig-<CLUSTER_NAME>.yaml`.
 - **Cluster reachable** — the script warns if the cluster is unreachable but attempts cleanup anyway.
-- **Helm v3 installed** — required for uninstalling Helm releases.
+- **Helm v4 installed** — required for uninstalling Helm releases.
 - **kubectl installed** — required for all Kubernetes operations.
 
 ---

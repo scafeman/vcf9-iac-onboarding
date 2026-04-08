@@ -32,8 +32,12 @@ RUN curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kub
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client
 
-# Install Helm v3
-RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash \
+# Install Helm v4
+RUN curl -fsSL https://get.helm.sh/helm-v4.1.0-linux-amd64.tar.gz -o /tmp/helm.tar.gz \
+    && tar -xzf /tmp/helm.tar.gz -C /tmp \
+    && mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && chmod +x /usr/local/bin/helm \
+    && rm -rf /tmp/helm.tar.gz /tmp/linux-amd64 \
     && helm version --short
 
 # Install Docker CLI (for building and pushing container images via mounted Docker socket)

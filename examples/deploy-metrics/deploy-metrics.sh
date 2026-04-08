@@ -23,7 +23,7 @@ set -euo pipefail
 # Prerequisites:
 #   - Deploy Cluster completed successfully (VKS cluster running)
 #   - Valid admin kubeconfig file for the target cluster
-#   - Helm v3 installed (included in the vcf9-dev container Dockerfile)
+#   - Helm v4 installed (included in the vcf9-dev container Dockerfile)
 #
 # Edit the variable block below with your environment-specific values,
 # then run: bash examples/deploy-metrics/deploy-metrics.sh
