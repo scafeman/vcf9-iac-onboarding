@@ -562,7 +562,7 @@ def bastion_teardown_text():
 @pytest.fixture(scope="session")
 def bastion_workflow_yaml_text():
     path = os.path.join(os.path.dirname(__file__), '..', '.github', 'workflows', 'deploy-bastion-vm.yml')
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         return f.read()
 
 @pytest.fixture(scope="session")

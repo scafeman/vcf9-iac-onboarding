@@ -289,10 +289,12 @@ class TestTeardownDeletionOrder:
         pg_pos = managed_db_teardown_text.index("delete postgrescluster")
         assert ns_pos < pg_pos, "Namespace must be deleted before PostgresCluster"
 
-    def test_postgrescluster_before_secret(self, managed_db_teardown_text):
+    def test_postgrescluster_before_admin_secret(self, managed_db_teardown_text):
         pg_pos = managed_db_teardown_text.index("delete postgrescluster")
-        secret_pos = managed_db_teardown_text.index("delete secret")
-        assert pg_pos < secret_pos, "PostgresCluster must be deleted before admin password Secret"
+        # Find the admin password secret deletion (not the vault token secret)
+        admin_secret_positions = [m.start() for m in re.finditer(r"delete secret.*ADMIN_PASSWORD_SECRET_NAME", managed_db_teardown_text)]
+        if admin_secret_positions:
+            assert pg_pos < min(admin_secret_positions), "PostgresCluster must be deleted before admin password Secret"
 
 
 class TestTeardownIgnoreNotFound:

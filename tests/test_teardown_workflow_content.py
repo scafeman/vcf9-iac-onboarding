@@ -30,10 +30,15 @@ class TestWorkflowStructure:
         types = triggers["repository_dispatch"]["types"]
         assert "teardown" in types
 
-    def test_workflow_dispatch_has_five_inputs(self, teardown_workflow_yaml):
+    def test_workflow_dispatch_has_expected_inputs(self, teardown_workflow_yaml):
         triggers = teardown_workflow_yaml.get("on") or teardown_workflow_yaml.get(True)
         inputs = triggers["workflow_dispatch"]["inputs"]
-        expected = {"cluster_name", "teardown_gitops", "teardown_metrics", "teardown_cluster", "teardown_hybrid_app"}
+        expected = {
+            "cluster_name", "teardown_gitops", "teardown_metrics", "teardown_cluster",
+            "teardown_hybrid_app", "teardown_secrets_demo", "teardown_bastion_vm",
+            "teardown_managed_db_app", "teardown_ha_vm_app", "bastion_vm_name",
+            "dsm_cluster_name",
+        }
         assert set(inputs.keys()) == expected
 
     def test_cluster_name_input_is_required(self, teardown_workflow_yaml):

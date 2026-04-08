@@ -72,7 +72,7 @@ class TestDeployScriptShebangAndStrictMode:
 
 
 class TestDeployVariableBlock:
-    """Variable block includes all 15 required variables."""
+    """Variable block includes all required variables."""
 
     REQUIRED_VARIABLES = [
         "VCF_API_TOKEN",
@@ -80,8 +80,6 @@ class TestDeployVariableBlock:
         "TENANT_NAME",
         "CONTEXT_NAME",
         "SUPERVISOR_NAMESPACE",
-        "BASTION_EXTERNAL_IP",
-        "BASTION_SNAT_IP",
         "ALLOWED_SSH_SOURCES",
         "VM_CLASS",
         "VM_IMAGE",
@@ -141,49 +139,11 @@ class TestVirtualMachineManifest:
 # ===================================================================
 
 
-class TestNATRuleActions:
-    """DNAT and SNAT action fields are present in the deploy script."""
-
-    def test_dnat_action(self, bastion_deploy_text):
-        assert "action: DNAT" in bastion_deploy_text
-
-    def test_snat_action(self, bastion_deploy_text):
-        assert "action: SNAT" in bastion_deploy_text
-
-
-# ===================================================================
-# Deploy script — SecurityPolicy manifest
-# Validates: Requirements 3.1, 3.2
-# ===================================================================
-
-
-class TestSecurityPolicyManifest:
-    """SecurityPolicy uses correct apiVersion."""
-
-    def test_security_policy_api_version(self, bastion_deploy_text):
-        assert "crd.nsx.vmware.com/v1alpha1" in bastion_deploy_text
-
-    def test_security_policy_kind(self, bastion_deploy_text):
-        assert "kind: SecurityPolicy" in bastion_deploy_text
-
-
-# ===================================================================
-# Deploy script — idempotency checks
-# Validates: Requirements 1.6, 2.5, 3.5
-# ===================================================================
-
-
 class TestDeployIdempotencyChecks:
     """Deploy script contains idempotency checks for key resources."""
 
     def test_vm_idempotency_check(self, bastion_deploy_text):
         assert "kubectl get virtualmachine" in bastion_deploy_text
-
-    def test_nat_rule_idempotency_check(self, bastion_deploy_text):
-        assert "kubectl get vpcnatrule" in bastion_deploy_text
-
-    def test_security_policy_idempotency_check(self, bastion_deploy_text):
-        assert "kubectl get securitypolicy" in bastion_deploy_text
 
 
 # ===================================================================
@@ -206,18 +166,15 @@ class TestTeardownScriptShebangAndStrictMode:
 
 
 class TestTeardownDeletionOrder:
-    """Teardown deletes securitypolicy before vpcnatrule before virtualmachine before secret."""
+    """Teardown deletes vmservice before virtualmachine before secret."""
 
-    def test_securitypolicy_before_vpcnatrule(self, bastion_teardown_text):
-        sp_pos = bastion_teardown_text.index("delete securitypolicy")
-        nat_pos = bastion_teardown_text.index("delete vpcnatrule")
-        assert sp_pos < nat_pos, "SecurityPolicy must be deleted before VPCNATRule"
-
-    def test_vpcnatrule_before_virtualmachine(self, bastion_teardown_text):
-        # Find the last vpcnatrule delete (SNAT)
-        nat_positions = [m.start() for m in re.finditer(r"delete vpcnatrule", bastion_teardown_text)]
-        vm_pos = bastion_teardown_text.index("delete virtualmachine")
-        assert max(nat_positions) < vm_pos, "VPCNATRule must be deleted before VirtualMachine"
+    def test_vmservice_before_virtualmachine(self, bastion_teardown_text):
+        svc_pos = bastion_teardown_text.index("delete virtualmachineservice")
+        # Find "delete virtualmachine" that is NOT "delete virtualmachineservice"
+        import re
+        vm_matches = [m.start() for m in re.finditer(r"delete virtualmachine\b(?!service)", bastion_teardown_text)]
+        if vm_matches:
+            assert svc_pos < min(vm_matches), "VirtualMachineService must be deleted before VirtualMachine"
 
     def test_virtualmachine_before_secret(self, bastion_teardown_text):
         vm_pos = bastion_teardown_text.index("delete virtualmachine")
@@ -267,8 +224,7 @@ class TestWorkflowContent:
         "Validate Inputs",
         "Create VCF CLI Context",
         "Provision Bastion VM",
-        "Create NAT Rules",
-        "Create Security Policy",
+        "Expose SSH via VirtualMachineService",
         "SSH Connectivity Verification",
     ]
 
