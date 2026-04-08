@@ -943,6 +943,8 @@ jobs:
         if: env.TEARDOWN_HA_VM_APP == 'true'
         run: |
           set -euo pipefail
+          export CONTEXT_NAME="teardown-deploy"
+          export SUPERVISOR_NAMESPACE="${DYNAMIC_NS_NAME}"
           bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh
 
       # =====================================================================
