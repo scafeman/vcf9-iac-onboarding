@@ -17,6 +17,21 @@ export default function DashboardPage() {
   const [triggering, setTriggering] = useState(false);
   const [deploymentValid, setDeploymentValid] = useState(false);
 
+  // Load audit log from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('knative-audit-log');
+      if (stored) setAuditLog(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
+
+  // Persist audit log to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem('knative-audit-log', JSON.stringify(auditLog));
+    } catch { /* ignore */ }
+  }, [auditLog]);
+
   const fetchStatus = useCallback(() => {
     fetch('/api/knative-status')
       .then((r) => r.json())
@@ -29,7 +44,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000);
+    const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
@@ -40,7 +55,7 @@ export default function DashboardPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create',
+          action: ['create', 'update', 'delete'][Math.floor(Math.random() * 3)],
           asset_name: `test-server-${Date.now()}`,
           asset_id: `demo-${String(Math.floor(Math.random() * 9000) + 1000)}`,
           timestamp: new Date().toISOString(),
@@ -48,14 +63,22 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAuditLog((prev) => [data, ...prev].slice(0, 20));
+        setAuditLog((prev) => [data, ...prev].slice(0, 50));
       }
     } catch {
       /* ignore */
     } finally {
       setTriggering(false);
-      setTimeout(fetchStatus, 1000);
+      // Poll faster after trigger to catch the pod scaling up
+      setTimeout(fetchStatus, 500);
+      setTimeout(fetchStatus, 2000);
+      setTimeout(fetchStatus, 4000);
     }
+  }
+
+  function clearLog() {
+    setAuditLog([]);
+    localStorage.removeItem('knative-audit-log');
   }
 
   const podColor = podCount === null ? '#8b949e' : podCount === 0 ? '#f0883e' : '#3fb950';
@@ -191,6 +214,16 @@ export default function DashboardPage() {
           }}
         >
           {triggering ? 'Triggering...' : 'Trigger Audit'}
+        </button>
+        <button
+          onClick={clearLog}
+          style={{
+            padding: '10px 16px', borderRadius: '6px', border: '1px solid #475569',
+            background: 'transparent', color: '#94a3b8',
+            fontSize: '13px', cursor: 'pointer',
+          }}
+        >
+          Clear Log
         </button>
         <span style={{ fontSize: '14px', color: '#8b949e' }}>
           Knative pods: <strong style={{ color: podColor }}>{podLabel}</strong>
