@@ -798,7 +798,7 @@ while [[ "${VERIFY_ELAPSED}" -lt "${KNATIVE_TIMEOUT}" ]]; do
   API_HEALTH_RESPONSE=$(kubectl run api-health-test-${VERIFY_ELAPSED} --rm -i --restart=Never \
     --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
     curl -s -o /dev/null -w "%{http_code}" \
-    "${API_INTERNAL_URL}/healthz" 2>/dev/null | head -1 | tr -d '[:space:]') || true
+    "${API_INTERNAL_URL}/healthz" 2>/dev/null | grep -oE '^[0-9]+' | head -1) || true
   if [[ "${API_HEALTH_RESPONSE}" == "200" ]]; then
     break
   fi
@@ -824,7 +824,7 @@ while [[ "${VERIFY_ELAPSED}" -lt "${KNATIVE_TIMEOUT}" ]]; do
     curl -s -o /dev/null -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -d "{\"action\":\"create\",\"asset_name\":\"test-server\",\"asset_id\":\"demo-001\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    "${AUDIT_INTERNAL_URL}" 2>/dev/null | head -1 | tr -d '[:space:]') || true
+    "${AUDIT_INTERNAL_URL}" 2>/dev/null | grep -oE '^[0-9]+' | head -1) || true
   if [[ "${AUDIT_RESPONSE}" == "200" ]]; then
     break
   fi
@@ -843,7 +843,7 @@ log_success "Audit function responded with HTTP 200"
 # Check audit trail via /log endpoint
 AUDIT_LOG_RESPONSE=$(kubectl run audit-log-test --rm -i --restart=Never \
   --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
-  curl -s "${AUDIT_INTERNAL_URL}/log" 2>/dev/null | head -1) || true
+  curl -s "${AUDIT_INTERNAL_URL}/log" 2>/dev/null | grep -v '^pod ' | head -1) || true
 echo "  Audit trail response: ${AUDIT_LOG_RESPONSE}"
 log_success "Audit trail /log endpoint verified"
 
@@ -851,8 +851,10 @@ log_success "Audit trail /log endpoint verified"
 echo "  Waiting for scale-to-zero (grace period: ${SCALE_TO_ZERO_GRACE_PERIOD})..."
 sleep 60
 
-AUDIT_POD_COUNT=$(kubectl get pods -n "${DEMO_NAMESPACE}" -l serving.knative.dev/service=asset-audit --no-headers 2>/dev/null | grep -c "Running" || echo "0")
-if [[ "${AUDIT_POD_COUNT}" -eq 0 ]]; then
+AUDIT_POD_COUNT=$(kubectl get pods -n "${DEMO_NAMESPACE}" -l serving.knative.dev/service=asset-audit --no-headers 2>/dev/null | grep -c "Running" || true)
+AUDIT_POD_COUNT="${AUDIT_POD_COUNT:-0}"
+AUDIT_POD_COUNT=$(echo "${AUDIT_POD_COUNT}" | tr -d '[:space:]')
+if [[ "${AUDIT_POD_COUNT}" -eq 0 ]] 2>/dev/null; then
   log_success "Scale-to-zero confirmed: 0 audit function pods running"
 else
   log_warn "Audit function still has ${AUDIT_POD_COUNT} running pod(s) — scale-to-zero may need more time"

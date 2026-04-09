@@ -61,8 +61,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 |---|---|---|
 | `HARBOR_VERSION` | No | Harbor Helm chart version (default: `1.18.3`) |
 | `ARGOCD_VERSION` | No | ArgoCD Helm chart version (default: `9.4.17`) |
-| `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.1`) |
-| `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.75.0`) |
+| `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.3`) |
+| `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.87.1`) |
 
 ---
 

@@ -234,9 +234,18 @@ if kubectl get ns "${DEMO_NAMESPACE}" >/dev/null 2>&1; then
     log_success "Knative Service 'asset-audit' already absent"
   fi
 
-  # Delete the demo namespace
+  # Delete the demo namespace and wait for termination
   kubectl delete ns "${DEMO_NAMESPACE}" --ignore-not-found
-  log_success "Namespace '${DEMO_NAMESPACE}' deleted"
+  if ! wait_for_deletion "namespace '${DEMO_NAMESPACE}'" \
+    "${KNATIVE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get ns '${DEMO_NAMESPACE}'"; then
+    log_warn "Namespace '${DEMO_NAMESPACE}' did not terminate within ${KNATIVE_TIMEOUT}s — forcing finalizer removal"
+    kubectl get ns "${DEMO_NAMESPACE}" -o json 2>/dev/null \
+      | jq '.spec.finalizers = []' \
+      | kubectl replace --raw "/api/v1/namespaces/${DEMO_NAMESPACE}/finalize" -f - 2>/dev/null || true
+    sleep 5
+  fi
+  log_success "Namespace '${DEMO_NAMESPACE}' terminated"
   PHASE_STATUS["phase1"]="deleted"
 else
   log_success "Namespace '${DEMO_NAMESPACE}' does not exist, already absent"
@@ -250,6 +259,9 @@ fi
 log_step 2 "Deleting DSM PostgresCluster '${DSM_CLUSTER_NAME}' and secrets in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
 if [[ -n "${VCFA_ENDPOINT:-}" ]] && [[ -n "${VCF_API_TOKEN:-}" ]]; then
+  # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
+  unset KUBECONFIG 2>/dev/null || true
+
   # Create VCF CLI context for supervisor namespace access
   vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
   vcf context create "${CONTEXT_NAME}" \
@@ -289,6 +301,13 @@ if [[ -n "${VCFA_ENDPOINT:-}" ]] && [[ -n "${VCF_API_TOKEN:-}" ]]; then
   fi
 
   PHASE_STATUS["phase2"]="deleted"
+
+  # Restore guest cluster kubeconfig for remaining phases
+  export KUBECONFIG="${KUBECONFIG_FILE}"
+  ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+  if kubectl config get-contexts "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1; then
+    kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1 || true
+  fi
 else
   log_warn "VCF CLI credentials not set — skipping DSM PostgresCluster deletion"
   PHASE_STATUS["phase2"]="skipped (no VCF credentials)"

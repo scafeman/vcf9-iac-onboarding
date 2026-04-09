@@ -15,6 +15,7 @@
 #   Phase Group F: Bastion VM Teardown (VirtualMachineService, VM, cloud-init Secret)
 #   Phase Group G: Managed DB App Teardown (DSM PostgresCluster, API, Frontend)
 #   Phase Group H: HA VM App Teardown (Web LB, Web VMs, API Service, API VMs, DSM PostgresCluster)
+#   Phase Group I: Knative Teardown (Dashboard, RBAC, API Server, Audit Function, DSM, Contour, Knative Serving)
 #   Phase Group C: Cluster Stack Teardown (workloads, VKS cluster, project)
 #
 # Prerequisites:
@@ -78,6 +79,11 @@ on:
         required: false
         type: boolean
         default: true
+      teardown_knative:
+        description: "Tear down the Knative stack (Dashboard, RBAC, API Server, Audit Function, DSM, Contour, Knative Serving)"
+        required: false
+        type: boolean
+        default: true
       bastion_vm_name:
         description: "Bastion VM name (must match the name used during deploy)"
         required: false
@@ -113,6 +119,7 @@ jobs:
       TEARDOWN_BASTION_VM: ${{ github.event.inputs.teardown_bastion_vm || github.event.client_payload.teardown_bastion_vm || 'true' }}
       TEARDOWN_MANAGED_DB_APP: ${{ github.event.inputs.teardown_managed_db_app || github.event.client_payload.teardown_managed_db_app || 'true' }}
       TEARDOWN_HA_VM_APP: ${{ github.event.inputs.teardown_ha_vm_app || github.event.client_payload.teardown_ha_vm_app || 'true' }}
+      TEARDOWN_KNATIVE: ${{ github.event.inputs.teardown_knative || github.event.client_payload.teardown_knative || 'true' }}
       BASTION_VM_NAME: ${{ github.event.inputs.bastion_vm_name || github.event.client_payload.bastion_vm_name || 'bastion-vm' }}
       DOMAIN: ${{ github.event.client_payload.domain || secrets.DOMAIN || 'lab.local' }}
       DSM_CLUSTER_NAME: ${{ github.event.inputs.dsm_cluster_name || github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'pg-clus-01' }}
@@ -204,7 +211,7 @@ jobs:
       # =====================================================================
 
       - name: Warn Orphaned Stacks
-        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true' || env.TEARDOWN_SECRETS_DEMO != 'true' || env.TEARDOWN_BASTION_VM != 'true' || env.TEARDOWN_MANAGED_DB_APP != 'true' || env.TEARDOWN_HA_VM_APP != 'true')
+        if: env.TEARDOWN_CLUSTER == 'true' && (env.TEARDOWN_GITOPS != 'true' || env.TEARDOWN_METRICS != 'true' || env.TEARDOWN_HYBRID_APP != 'true' || env.TEARDOWN_SECRETS_DEMO != 'true' || env.TEARDOWN_BASTION_VM != 'true' || env.TEARDOWN_MANAGED_DB_APP != 'true' || env.TEARDOWN_HA_VM_APP != 'true' || env.TEARDOWN_KNATIVE != 'true')
         run: |
           set -euo pipefail
           if [ "$TEARDOWN_GITOPS" != "true" ]; then
@@ -227,6 +234,9 @@ jobs:
           fi
           if [ "$TEARDOWN_HA_VM_APP" != "true" ]; then
             echo "::warning::HA VM App teardown is skipped but cluster teardown is enabled. The HA VM App VMs, services, and DSM PostgresCluster will be orphaned."
+          fi
+          if [ "$TEARDOWN_KNATIVE" != "true" ]; then
+            echo "::warning::Knative teardown is skipped but cluster teardown is enabled. Knative Serving, Contour, and knative-demo resources will be orphaned."
           fi
 
       # =====================================================================
@@ -963,6 +973,18 @@ jobs:
           bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh
 
       # =====================================================================
+      # Phase Group I: Knative Stack Teardown
+      # =====================================================================
+
+      - name: Delete Knative Resources
+        if: env.TEARDOWN_KNATIVE == 'true'
+        run: |
+          set -euo pipefail
+          export CONTEXT_NAME="teardown-deploy"
+          export SUPERVISOR_NAMESPACE="${DYNAMIC_NS_NAME}"
+          bash examples/deploy-knative/teardown-knative.sh
+
+      # =====================================================================
       # Phase Group C: Cluster Stack Teardown
       # =====================================================================
 
@@ -1109,10 +1131,11 @@ jobs:
           | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down (\`${BASTION_VM_NAME}\`)" || echo "⏭️ Skipped") |
           | Managed DB App | $([ "$TEARDOWN_MANAGED_DB_APP" = "true" ] && echo "✅ Torn down (\`${DSM_CLUSTER_NAME}\`)" || echo "⏭️ Skipped") |
           | HA VM App | $([ "$TEARDOWN_HA_VM_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Knative | $([ "$TEARDOWN_KNATIVE" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
-            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ] || [ "$TEARDOWN_KNATIVE" != "true" ]; then
               cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.

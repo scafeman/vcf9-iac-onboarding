@@ -317,7 +317,7 @@ In AWS, pods are scheduled on EC2 instances in managed node groups. Security is 
 | EC2 instances (node groups) | VirtualMachines (MachineDeployments) | VMs are visible via `kubectl get virtualmachines` |
 | Instance types (m5.large, etc.) | VM Classes (best-effort-large, etc.) | Set via `vmClass` variable in cluster topology |
 | Cluster Autoscaler | Cluster API Autoscaler annotations | `cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size` / `max-size` |
-| Fargate (serverless pods) | No equivalent | VKS requires VM-backed worker nodes |
+| Fargate (serverless pods) | Knative Serving | Scale-to-zero serverless workloads via `examples/deploy-knative/` |
 
 ---
 
@@ -434,6 +434,34 @@ Once the VKS cluster passes Phases 1–9, you can deploy application workloads u
 | 10.26 | ArgoCD pods running | `kubectl get pods -n argocd` | All pods show `Running` |
 | 10.27 | GitLab webservice running | `kubectl get pods -n gitlab-system -l app=webservice` | Pod shows `Running` |
 | 10.28 | Microservices Demo deployed | `kubectl get pods -n microservices-demo` | All 11 pods show `Running` |
+
+### Deploy HA VM App — HA Three-Tier Application on VMs
+
+**EKS Equivalent:** 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.29 | Web VMs provisioned | `kubectl get virtualmachines -n <SUPERVISOR_NS>` | 2× web VMs show `PoweredOn` |
+| 10.30 | API VMs provisioned | `kubectl get virtualmachines -n <SUPERVISOR_NS>` | 2× API VMs show `PoweredOn` |
+| 10.31 | Web LoadBalancer IP | `kubectl get virtualmachineservice -n <SUPERVISOR_NS>` | Web LB shows external IP |
+| 10.32 | API LoadBalancer IP | `kubectl get virtualmachineservice -n <SUPERVISOR_NS>` | API LB shows external IP |
+| 10.33 | DSM PostgresCluster ready | `kubectl get postgrescluster -n <SUPERVISOR_NS>` | Status shows `Ready` |
+| 10.34 | Dashboard HTTP connectivity | `curl http://<WEB_LB_IP>` | Returns HTTP 200 |
+
+### Deploy Knative — Serverless FaaS with DSM PostgreSQL
+
+**EKS Equivalent:** Lambda + API Gateway + RDS PostgreSQL
+
+| # | Check | Command | Pass Criteria |
+|---|---|---|---|
+| 10.35 | Knative Serving installed | `kubectl get pods -n knative-serving` | All pods show `Running` |
+| 10.36 | Contour networking installed | `kubectl get pods -n contour-external` | Contour + Envoy pods `Running` |
+| 10.37 | DSM PostgresCluster ready | `kubectl get postgrescluster -n <SUPERVISOR_NS>` | Status shows `Ready` with connection details |
+| 10.38 | API server running | `kubectl get pods -n knative-demo -l app=knative-api-server` | Pod shows `Running` |
+| 10.39 | Audit function ready | `kubectl get ksvc asset-audit -n knative-demo` | Shows `Ready: True` with URL |
+| 10.40 | Dashboard LoadBalancer IP | `kubectl get svc knative-dashboard -n knative-demo` | `EXTERNAL-IP` assigned |
+| 10.41 | Dashboard HTTP connectivity | `curl http://<DASHBOARD_IP>` | Returns HTTP 200 |
+| 10.42 | Scale-to-zero verified | `kubectl get pods -n knative-demo -l serving.knative.dev/service=asset-audit` | 0 pods after idle timeout |
 
 ---
 

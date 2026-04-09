@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains nine GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains ten GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
@@ -15,7 +15,7 @@ This repository contains nine GitHub Actions workflows that automate the end-to-
 | Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
 | Deploy HA VM App — HA Three-Tier Application on VMs | `deploy-ha-vm-app.yml` | Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) + LoadBalancer, 2× API VMs (Express) + LoadBalancer, DSM PostgresCluster |
 | Deploy Knative — Serverless Asset Tracker | `deploy-knative.yml` | Deploys Knative Serving with serverless audit function, Express API server, and DSM PostgresCluster on an existing VKS cluster |
-| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
+| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down all deployment pattern stacks in reverse dependency order |
 
 ## Execution Order
 
