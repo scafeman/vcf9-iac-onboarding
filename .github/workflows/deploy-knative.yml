@@ -142,13 +142,48 @@ jobs:
           if [ -z "${KUBECONFIG_PATH:-}" ]; then
             KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
           fi
+
+          # If the kubeconfig file doesn't exist, retrieve it via VCF CLI
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+            if ! vcf context create "$CONTEXT_NAME" \
+              --endpoint "https://$VCFA_ENDPOINT" \
+              --type cci \
+              --tenant-name "$TENANT_NAME" \
+              --api-token "$VCF_API_TOKEN" \
+              --set-current; then
+              vcf context use "$CONTEXT_NAME" 2>/dev/null || true
+              vcf context refresh 2>/dev/null || true
+            fi
+
+            # Find and switch to the namespace context that contains this cluster
+            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+            if [ -z "$NAMESPACE_CONTEXT" ]; then
+              NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+            fi
+            if [ -n "$NAMESPACE_CONTEXT" ]; then
+              vcf context use "$NAMESPACE_CONTEXT"
+            else
+              echo "::error::Could not find a namespace context for cluster '${CLUSTER_NAME}'"
+              exit 1
+            fi
+
+            vcf cluster kubeconfig get "$CLUSTER_NAME" --admin --export-file "$KUBECONFIG_PATH"
+            echo "Kubeconfig retrieved via VCF CLI"
+          fi
+
           export KUBECONFIG="$KUBECONFIG_PATH"
           echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
           echo "KUBECONFIG_FILE=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
-          if [ ! -f "$KUBECONFIG_PATH" ]; then
-            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'"
-            exit 1
+
+          # Switch to the admin context
+          ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+          if kubectl config get-contexts "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH" >/dev/null 2>&1; then
+            kubectl config use-context "$ADMIN_CONTEXT" --kubeconfig="$KUBECONFIG_PATH"
           fi
+
           if ! kubectl get namespaces >/dev/null 2>&1; then
             echo "::error::Unable to reach cluster '${CLUSTER_NAME}'"
             exit 1
