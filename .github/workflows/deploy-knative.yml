@@ -166,19 +166,23 @@ jobs:
       - name: Create VCF CLI Context
         run: |
           set -euo pipefail
-          echo "Deleting existing context '$CONTEXT_NAME'..."
-          vcf context delete "$CONTEXT_NAME" --yes || echo "Context delete returned non-zero (context may not exist)"
-          sleep 2
-          echo "Creating context '$CONTEXT_NAME'..."
+          # Create an empty kubeconfig if missing — vcf context delete needs it to clean up context entries
+          KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            touch "$KUBECONFIG_PATH"
+          fi
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          # Remove the empty placeholder so Setup Kubeconfig knows to retrieve it
+          if [ ! -s "$KUBECONFIG_PATH" ]; then
+            rm -f "$KUBECONFIG_PATH"
+          fi
           if ! vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
             --set-current; then
-            echo "Context create failed, listing existing contexts..."
-            vcf context list 2>&1 || true
-            echo "::error::Failed to create VCF CLI context '${CONTEXT_NAME}'"
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
             exit 1
           fi
           echo "VCF CLI context '$CONTEXT_NAME' created and activated"
