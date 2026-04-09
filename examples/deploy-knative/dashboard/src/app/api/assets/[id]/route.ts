@@ -1,0 +1,34 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const API_HOST = process.env.API_HOST || 'knative-api-server.knative-demo.svc.cluster.local';
+const API_PORT = process.env.API_PORT || '3001';
+const BACKEND = `http://${API_HOST}:${API_PORT}`;
+
+export const dynamic = 'force-dynamic';
+
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const body = await request.json();
+    const res = await fetch(`${BACKEND}/api/assets/${params.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: 'Failed to reach API', detail: message }, { status: 502 });
+  }
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const res = await fetch(`${BACKEND}/api/assets/${params.id}`, { method: 'DELETE' });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: 'Failed to reach API', detail: message }, { status: 502 });
+  }
+}

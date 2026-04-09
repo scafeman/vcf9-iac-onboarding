@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'VCF 9 Knative FaaS Dashboard',
+  title: 'VCF 9 Knative FaaS + DBaaS Dashboard',
   description: 'Knative Serving serverless audit function — AWS Lambda equivalent on VCF',
 };
 

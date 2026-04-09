@@ -1,5 +1,5 @@
 {
-  "name": "knative-audit-function",
+  "name": "knative-api-server",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -7,7 +7,8 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "pg": "^8.13.0",
+    "pg": "^8.13.1",
+    "cors": "^2.8.5",
     "uuid": "^10.0.0"
   }
 }
