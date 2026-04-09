@@ -289,10 +289,11 @@ Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
   ├─► Deploy Managed DB App: DSM PostgresCluster Asset Tracker (managed database)
   ├─► Deploy HA VM App: HA Three-Tier Application on VMs (VM-based HA with managed DB)
+  ├─► Deploy Knative: Serverless Asset Tracker with DSM PostgreSQL (Knative Serving FaaS)
   └─► Deploy Bastion VM: SSH Jump Host (standalone VM — no VKS cluster required)
 ```
 
-Deploy Metrics, Deploy GitOps, Deploy Hybrid App, and Deploy Managed DB App all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
+Deploy Metrics, Deploy GitOps, Deploy Hybrid App, Deploy Managed DB App, and Deploy Knative all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
 
 ---
 
@@ -378,5 +379,17 @@ Deploys a traditional HA three-tier application entirely on VCF VM Service VMs �
 | Deploy | `bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh` |
 | Teardown | `bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh` |
 | Output | Next.js dashboard at LoadBalancer IP, 2× web VMs, 2× API VMs, DSM-managed PostgreSQL — all communicating over NSX VPC |
+
+## Deploy Knative: Serverless Asset Tracker with DSM PostgreSQL
+
+Deploys Knative Serving on an existing VKS cluster with a serverless audit function, Express API server, DSM-managed PostgresCluster, and a Next.js dashboard — the VCF equivalent of deploying AWS Lambda + API Gateway + RDS. The audit function scales to zero when idle and cold-starts on request, demonstrating Knative's FaaS capabilities with persistent DSM PostgreSQL storage.
+
+| | |
+|---|---|
+| Folder | [`deploy-knative/`](deploy-knative/) |
+| Depends on | Deploy Cluster (running VKS cluster) + DSM infrastructure policy configured in supervisor namespace |
+| Deploy | `bash examples/deploy-knative/deploy-knative.sh` |
+| Teardown | `bash examples/deploy-knative/teardown-knative.sh` |
+| Output | Next.js dashboard at LoadBalancer IP, Knative audit function with scale-to-zero, Express API server, DSM-managed PostgreSQL — all communicating over NSX VPC |
 
 ---

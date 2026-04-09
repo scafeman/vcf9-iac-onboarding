@@ -35,7 +35,7 @@ See the [EKS to VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.
 
 ## Architecture Overview
 
-The toolkit provides seven deployment patterns that cover the full VCF 9 application lifecycle — from cluster provisioning to managed databases with vault-injected credentials.
+The toolkit provides nine deployment patterns that cover the full VCF 9 application lifecycle — from cluster provisioning to managed databases with vault-injected credentials.
 
 ### Foundation: VKS Cluster Deployment (7 phases)
 
@@ -54,7 +54,7 @@ Every deployment pattern starts with a running VKS cluster. The Deploy Cluster w
 
 ### Deployment Patterns
 
-Once the VKS cluster is running, the toolkit offers seven additional deployment patterns:
+Once the VKS cluster is running, the toolkit offers eight additional deployment patterns:
 
 | Pattern | What It Proves | AWS Equivalent |
 |---|---|---|
@@ -64,6 +64,7 @@ Once the VKS cluster is running, the toolkit offers seven additional deployment 
 | **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
 | **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
 | **Deploy HA VM App** | Traditional HA three-tier app on VMs (web, API, managed DB) | 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ |
+| **Deploy Knative** | Knative Serving FaaS with DSM-backed serverless audit function | Lambda + API Gateway + RDS |
 | **Deploy Bastion VM** | SSH jump host with source-IP-restricted LoadBalancer | EC2 bastion + Security Groups |
 
 ```
@@ -73,6 +74,7 @@ Deploy Cluster (foundation)
     ├── Deploy Hybrid App      — VM + container connectivity
     ├── Deploy Managed DB App  — managed database + vault credentials
     ├── Deploy HA VM App       — HA three-tier app on VMs
+    ├── Deploy Knative         — serverless FaaS + DBaaS
     ├── Deploy Secrets Demo    — secret store integration
     └── Deploy Bastion VM      — SSH jump host (no VKS cluster required)
 ```
@@ -101,7 +103,7 @@ See the [Getting Started Guide](GETTING-STARTED.md) for full setup instructions,
 
 ## GitHub Actions Workflows
 
-All five deployments are available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
+All deployments are available as GitHub Actions workflows for automated CI/CD deployment. The workflows run on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, and openssl baked in.
 
 | Workflow | File | Trigger |
 |---|---|---|
@@ -113,6 +115,7 @@ All five deployments are available as GitHub Actions workflows for automated CI/
 | Deploy Bastion VM | `deploy-bastion-vm.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-bastion-vm`) |
 | Deploy Managed DB App | `deploy-managed-db-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-managed-db-app`) |
 | Deploy HA VM App | `deploy-ha-vm-app.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-ha-vm-app`) |
+| Deploy Knative | `deploy-knative.yml` | `workflow_dispatch` / `repository_dispatch` (event: `deploy-knative`) |
 | Teardown VCF Stacks | `teardown.yml` | `workflow_dispatch` / `repository_dispatch` (event: `teardown`) |
 
 Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hybrid App can run. The Teardown workflow reverses the deploy order with selective boolean inputs. See the [Workflows README](.github/workflows/README.md) for full parameter documentation, credential retrieval instructions, and troubleshooting.
@@ -127,6 +130,7 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 | Deploy Hybrid App | Provisions a PostgreSQL VM + deploys a Next.js/Node.js app on VKS | [`examples/deploy-hybrid-app/`](examples/deploy-hybrid-app/) |
 | Deploy Managed DB App | Provisions a DSM-managed PostgresCluster + deploys a Next.js/Node.js app on VKS | [`examples/deploy-managed-db-app/`](examples/deploy-managed-db-app/) |
 | Deploy HA VM App | Deploys a traditional HA three-tier app on VMs: 2× web VMs + LB, 2× API VMs + LB, DSM PostgresCluster | [`examples/deploy-ha-vm-app/`](examples/deploy-ha-vm-app/) |
+| Deploy Knative | Deploys Knative Serving with serverless audit function, API server, and DSM PostgresCluster | [`examples/deploy-knative/`](examples/deploy-knative/) |
 | Deploy Bastion VM | Deploys a secure SSH jump host VM with source-IP-restricted LoadBalancer | [`examples/deploy-bastion-vm/`](examples/deploy-bastion-vm/) |
 | Deploy Secrets Demo | Demonstrates VCF Secret Store with vault-injected secrets for Redis + PostgreSQL | [`examples/deploy-secrets-demo/`](examples/deploy-secrets-demo/) |
 

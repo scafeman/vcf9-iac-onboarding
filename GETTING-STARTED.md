@@ -151,6 +151,18 @@ Typical deployment time: **15–40 minutes** (DSM provisioning takes 10–25 min
 
 See the [Deploy HA VM App README](examples/deploy-ha-vm-app/README-deploy.md) for details.
 
+### Deploy Knative
+
+Deploys Knative Serving with a serverless audit function, Express API server, and DSM PostgresCluster — the VCF equivalent of Lambda + API Gateway + RDS.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-knative/deploy-knative.sh
+```
+
+Typical deployment time: **10–45 minutes** (DSM provisioning takes 10–25 minutes). Requires a running VKS cluster from Deploy Cluster, a DSM infrastructure policy configured in the supervisor namespace, and container images pushed to the registry.
+
+See the [Deploy Knative README](examples/deploy-knative/README-deploy.md) for details.
+
 ## Teardown
 
 Each deployment has a corresponding teardown script. Teardown scripts are fully idempotent — safe to run multiple times.
@@ -183,6 +195,14 @@ Typical teardown time: **2–11 minutes**.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh
+```
+
+Typical teardown time: **2–10 minutes**.
+
+### Teardown Knative
+
+```bash
+docker exec vcf9-dev bash examples/deploy-knative/teardown-knative.sh
 ```
 
 Typical teardown time: **2–10 minutes**.
