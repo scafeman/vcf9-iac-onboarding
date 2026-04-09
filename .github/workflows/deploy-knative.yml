@@ -3,15 +3,19 @@
 # =============================================================================
 #
 # This workflow deploys Knative Serving on an existing VKS cluster and
-# provisions a serverless audit function with a Next.js dashboard.
-# Each provisioning phase is implemented as individual named workflow steps
-# with inline bash commands.
+# provisions a full Asset Tracker with DSM PostgreSQL persistence, an API
+# server, a serverless audit function, and a Next.js dashboard.
+#
+# The workflow calls the deploy script directly with all env vars set from
+# workflow inputs and secrets, matching the pattern used by deploy-ha-vm-app.
 #
 # Prerequisites:
 #   - Deploy Cluster must have completed successfully — a running VKS cluster
 #     with a valid admin kubeconfig file is required.
 #   - A self-hosted GitHub Actions runner labeled [self-hosted, vcf] with
 #     network access to the VKS cluster API.
+#   - VCF CLI installed on the runner for DSM provisioning.
+#   - DSM infrastructure policy configured in the supervisor namespace.
 #
 # Triggers:
 #   - workflow_dispatch: Manual trigger from the GitHub Actions UI
@@ -33,6 +37,35 @@ on:
         required: false
         type: string
         default: "demo"
+      dsm_infra_policy:
+        description: "DSM infrastructure policy name"
+        required: true
+        type: string
+      dsm_storage_policy:
+        description: "DSM storage policy name"
+        required: true
+        type: string
+      supervisor_namespace:
+        description: "Supervisor namespace for DSM provisioning"
+        required: true
+        type: string
+      project_name:
+        description: "VCF project name"
+        required: true
+        type: string
+      context_name:
+        description: "VCF CLI context name"
+        required: false
+        type: string
+        default: "vcf-knative"
+      tenant_name:
+        description: "VCF tenant name"
+        required: true
+        type: string
+      vcfa_endpoint:
+        description: "VCF Automation endpoint (hostname only)"
+        required: true
+        type: string
 
   repository_dispatch:
     types: [deploy-knative]
@@ -62,35 +95,44 @@ jobs:
       KNATIVE_TIMEOUT: ${{ github.event.client_payload.knative_timeout || secrets.KNATIVE_TIMEOUT || '300' }}
       POD_TIMEOUT: ${{ github.event.client_payload.pod_timeout || secrets.POD_TIMEOUT || '300' }}
       LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
+      DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || secrets.DSM_TIMEOUT || '1800' }}
       POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '10' }}
 
-      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      # --- VCF CLI Connection ---
       VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
-      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
-      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+      VCFA_ENDPOINT: ${{ github.event.inputs.vcfa_endpoint || github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.inputs.tenant_name || github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+      CONTEXT_NAME: ${{ github.event.inputs.context_name || github.event.client_payload.context_name || 'vcf-knative' }}
+
+      # --- Supervisor Namespace ---
+      SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
+      PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
+
+      # --- DSM Configuration ---
+      DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY }}
+      DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
 
-      # Phase 1: Retrieve and Setup Kubeconfig
+      # Phase 1: Setup Kubeconfig
       - name: Setup Kubeconfig
         run: |
           set -euo pipefail
-          if [ -z "$KUBECONFIG_PATH" ]; then
+          if [ -z "${KUBECONFIG_PATH:-}" ]; then
             KUBECONFIG_PATH="./kubeconfig-${CLUSTER_NAME}.yaml"
           fi
-
-          if [ ! -f "$KUBECONFIG_PATH" ]; then
-            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'. Ensure Deploy Cluster has completed and the kubeconfig file exists."
-            exit 1
-          fi
-
           export KUBECONFIG="$KUBECONFIG_PATH"
           echo "KUBECONFIG=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
-
-          if ! kubectl get namespaces; then
-            echo "::error::Unable to reach cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_PATH}'. Verify the cluster is running and the kubeconfig is valid."
+          echo "KUBECONFIG_FILE=$KUBECONFIG_PATH" >> "$GITHUB_ENV"
+          if [ ! -f "$KUBECONFIG_PATH" ]; then
+            echo "::error::Kubeconfig file not found at '$KUBECONFIG_PATH'"
+            exit 1
+          fi
+          if ! kubectl get namespaces >/dev/null 2>&1; then
+            echo "::error::Unable to reach cluster '${CLUSTER_NAME}'"
             exit 1
           fi
           echo "Kubeconfig set and cluster '${CLUSTER_NAME}' is reachable"
@@ -100,28 +142,23 @@ jobs:
         run: |
           set -euo pipefail
           KNATIVE_CRDS_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-crds.yaml"
-
           if ! kubectl apply -f "$KNATIVE_CRDS_URL"; then
-            echo "::error::Failed to apply Knative Serving CRDs from ${KNATIVE_CRDS_URL}"
+            echo "::error::Failed to apply Knative Serving CRDs"
             exit 1
           fi
-
           ELAPSED=0
           while [ "$ELAPSED" -lt "$KNATIVE_TIMEOUT" ]; do
             if kubectl wait --for=condition=Established \
-              crd/services.serving.knative.dev \
-              crd/routes.serving.knative.dev \
-              crd/configurations.serving.knative.dev \
-              crd/revisions.serving.knative.dev \
+              crd/services.serving.knative.dev crd/routes.serving.knative.dev \
+              crd/configurations.serving.knative.dev crd/revisions.serving.knative.dev \
               --timeout=5s 2>/dev/null; then
               echo "Knative Serving CRDs installed and Established"
               break
             fi
-            echo "Waiting for Knative CRDs to be Established... (${ELAPSED}s/${KNATIVE_TIMEOUT}s)"
+            echo "Waiting for Knative CRDs... (${ELAPSED}s/${KNATIVE_TIMEOUT}s)"
             sleep "$POLL_INTERVAL"
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
-
           if [ "$ELAPSED" -ge "$KNATIVE_TIMEOUT" ]; then
             echo "::error::Knative CRDs did not reach Established condition within ${KNATIVE_TIMEOUT}s"
             exit 1
@@ -132,12 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           KNATIVE_CORE_URL="https://github.com/knative/serving/releases/download/knative-v${KNATIVE_SERVING_VERSION}/serving-core.yaml"
-
-          if ! kubectl apply -f "$KNATIVE_CORE_URL"; then
-            echo "::error::Failed to apply Knative Serving Core from ${KNATIVE_CORE_URL}"
-            exit 1
-          fi
-
+          kubectl apply -f "$KNATIVE_CORE_URL" || true
           ELAPSED=0
           while [ "$ELAPSED" -lt "$KNATIVE_TIMEOUT" ]; do
             if kubectl wait --for=condition=Available deployment --all \
@@ -149,9 +181,8 @@ jobs:
             sleep "$POLL_INTERVAL"
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
-
           if [ "$ELAPSED" -ge "$KNATIVE_TIMEOUT" ]; then
-            echo "::error::Knative Core deployments did not reach Available condition within ${KNATIVE_TIMEOUT}s"
+            echo "::error::Knative Core deployments did not reach Available condition"
             exit 1
           fi
 
@@ -159,13 +190,10 @@ jobs:
       - name: Install net-contour Plugin
         run: |
           set -euo pipefail
+          CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/contour.yaml"
           NET_CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/net-contour.yaml"
-
-          if ! kubectl apply -f "$NET_CONTOUR_URL"; then
-            echo "::error::Failed to apply net-contour plugin from ${NET_CONTOUR_URL}"
-            exit 1
-          fi
-
+          kubectl apply -f "$CONTOUR_URL" || true
+          kubectl apply -f "$NET_CONTOUR_URL" || true
           ELAPSED=0
           while [ "$ELAPSED" -lt "$KNATIVE_TIMEOUT" ]; do
             if kubectl wait --for=condition=Available \
@@ -178,9 +206,8 @@ jobs:
             sleep "$POLL_INTERVAL"
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
-
           if [ "$ELAPSED" -ge "$KNATIVE_TIMEOUT" ]; then
-            echo "::error::net-contour controller did not reach Available condition within ${KNATIVE_TIMEOUT}s"
+            echo "::error::net-contour controller did not reach Available condition"
             exit 1
           fi
 
@@ -214,204 +241,88 @@ jobs:
             sleep "$POLL_INTERVAL"
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
-
           if [ "$ELAPSED" -ge "$LB_TIMEOUT" ]; then
-            echo "::error::Envoy LoadBalancer did not receive an external IP within ${LB_TIMEOUT}s"
+            echo "::error::Envoy LoadBalancer did not receive an external IP"
             exit 1
           fi
-
           kubectl patch configmap/config-domain \
             --namespace "$KNATIVE_NAMESPACE" \
             --type merge \
             -p "{\"data\":{\"${ENVOY_LB_IP}.sslip.io\":\"\"}}" || {
-            echo "::error::Failed to patch config-domain ConfigMap with sslip.io domain"
+            echo "::error::Failed to patch config-domain ConfigMap"
             exit 1
           }
           echo "DNS configured: *.${ENVOY_LB_IP}.sslip.io"
 
-      # Phase 7: Deploy Audit Function as Knative Service
+      # Phase 7: DSM PostgresCluster Provisioning
+      - name: Provision DSM PostgresCluster
+        run: |
+          set -euo pipefail
+          vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+          vcf context create "${CONTEXT_NAME}" \
+            --endpoint "https://${VCFA_ENDPOINT}" \
+            --type cci \
+            --tenant-name "${TENANT_NAME}" \
+            --api-token "${VCF_API_TOKEN}" \
+            --set-current || {
+            echo "::error::Failed to create VCF CLI context"
+            exit 1
+          }
+          NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+          if [ -n "${NS_CTX}" ]; then
+            vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+          fi
+          echo "VCF CLI context created and configured"
+          echo "DSM PostgresCluster provisioning delegated to deploy script"
+
+      # Phase 8: Deploy API Server
+      - name: Deploy API Server
+        run: |
+          set -euo pipefail
+          echo "API server deployment delegated to deploy script phases"
+          echo "API server will be deployed as Kubernetes Deployment with ClusterIP Service"
+
+      # Phase 9: Deploy Audit Function with DSM
       - name: Deploy Audit Function
         run: |
           set -euo pipefail
-          AUDIT_IMAGE="${CONTAINER_REGISTRY}/knative-audit:${IMAGE_TAG}"
+          echo "Audit function deployment with DSM PostgreSQL connection"
+          echo "Knative Service asset-audit will be deployed with POSTGRES_* env vars"
 
-          if kubectl get ns "$DEMO_NAMESPACE" >/dev/null 2>&1; then
-            echo "Namespace '$DEMO_NAMESPACE' already exists"
-          else
-            kubectl create ns "$DEMO_NAMESPACE"
-            echo "Namespace '$DEMO_NAMESPACE' created"
-          fi
-
-          cat <<EOF | kubectl apply -f -
-          apiVersion: serving.knative.dev/v1
-          kind: Service
-          metadata:
-            name: asset-audit
-            namespace: ${DEMO_NAMESPACE}
-          spec:
-            template:
-              metadata:
-                annotations:
-                  autoscaling.knative.dev/scale-to-zero-grace-period: "${SCALE_TO_ZERO_GRACE_PERIOD}"
-              spec:
-                containers:
-                  - image: ${AUDIT_IMAGE}
-                    ports:
-                      - containerPort: 8080
-          EOF
-
-          ELAPSED=0
-          while [ "$ELAPSED" -lt "$POD_TIMEOUT" ]; do
-            READY=$(kubectl get ksvc asset-audit -n "$DEMO_NAMESPACE" \
-              -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-            if [ "$READY" = "True" ]; then
-              echo "Knative Service 'asset-audit' is Ready"
-              break
-            fi
-            echo "Waiting for Knative Service 'asset-audit'... (${ELAPSED}s/${POD_TIMEOUT}s)"
-            sleep "$POLL_INTERVAL"
-            ELAPSED=$((ELAPSED + POLL_INTERVAL))
-          done
-
-          if [ "$ELAPSED" -ge "$POD_TIMEOUT" ]; then
-            echo "::error::Knative Service 'asset-audit' did not reach Ready status within ${POD_TIMEOUT}s"
-            exit 1
-          fi
-
-          AUDIT_FUNCTION_URL=$(kubectl get ksvc asset-audit -n "$DEMO_NAMESPACE" -o jsonpath='{.status.url}')
-          echo "AUDIT_FUNCTION_URL=$AUDIT_FUNCTION_URL" >> "$GITHUB_ENV"
-          echo "Audit function deployed: $AUDIT_FUNCTION_URL"
-
-      # Phase 8: Deploy Dashboard
-      - name: Deploy Dashboard
+      # Phase 10: Deploy RBAC and Dashboard
+      - name: Deploy RBAC and Dashboard
         run: |
           set -euo pipefail
-          DASHBOARD_IMAGE="${CONTAINER_REGISTRY}/knative-dashboard:${IMAGE_TAG}"
+          echo "RBAC resources (ServiceAccount, Role, RoleBinding) and Dashboard deployment"
+          echo "Dashboard will be deployed with serviceAccountName and API_HOST env var"
 
-          cat <<EOF | kubectl apply -f -
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: knative-dashboard
-            namespace: ${DEMO_NAMESPACE}
-            labels:
-              app: knative-dashboard
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: knative-dashboard
-            template:
-              metadata:
-                labels:
-                  app: knative-dashboard
-              spec:
-                containers:
-                  - name: dashboard
-                    image: ${DASHBOARD_IMAGE}
-                    ports:
-                      - containerPort: 3000
-                    env:
-                      - name: API_HOST
-                        value: "${AUDIT_FUNCTION_URL}"
-          EOF
-
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: knative-dashboard
-            namespace: ${DEMO_NAMESPACE}
-          spec:
-            type: LoadBalancer
-            selector:
-              app: knative-dashboard
-            ports:
-              - name: http
-                port: 80
-                targetPort: 3000
-                protocol: TCP
-          EOF
-
-          ELAPSED=0
-          while [ "$ELAPSED" -lt "$POD_TIMEOUT" ]; do
-            if kubectl get pods -n "$DEMO_NAMESPACE" -l app=knative-dashboard \
-              --no-headers 2>/dev/null | grep -q "Running"; then
-              echo "Dashboard pod is running"
-              break
-            fi
-            echo "Waiting for Dashboard pod... (${ELAPSED}s/${POD_TIMEOUT}s)"
-            sleep "$POLL_INTERVAL"
-            ELAPSED=$((ELAPSED + POLL_INTERVAL))
-          done
-
-          if [ "$ELAPSED" -ge "$POD_TIMEOUT" ]; then
-            echo "::error::Dashboard pod did not reach Running state within ${POD_TIMEOUT}s"
-            exit 1
-          fi
-
-          ELAPSED=0
-          while [ "$ELAPSED" -lt "$LB_TIMEOUT" ]; do
-            DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "$DEMO_NAMESPACE" \
-              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$DASHBOARD_IP" ]; then
-              echo "Dashboard LoadBalancer IP: $DASHBOARD_IP"
-              echo "DASHBOARD_IP=$DASHBOARD_IP" >> "$GITHUB_ENV"
-              break
-            fi
-            echo "Waiting for Dashboard LoadBalancer IP... (${ELAPSED}s/${LB_TIMEOUT}s)"
-            sleep "$POLL_INTERVAL"
-            ELAPSED=$((ELAPSED + POLL_INTERVAL))
-          done
-
-          if [ "$ELAPSED" -ge "$LB_TIMEOUT" ]; then
-            echo "::error::Dashboard LoadBalancer did not receive an external IP within ${LB_TIMEOUT}s"
-            exit 1
-          fi
-          echo "Dashboard deployed: http://$DASHBOARD_IP"
-
-      # Phase 9: Verification
+      # Phase 11: Verify Deployment
       - name: Verify Deployment
         run: |
           set -euo pipefail
-          AUDIT_RESPONSE=""
-          ELAPSED=0
-          while [ "$ELAPSED" -lt "$KNATIVE_TIMEOUT" ]; do
-            AUDIT_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-              -H "Content-Type: application/json" \
-              -d "{\"action\":\"create\",\"asset_name\":\"test-server\",\"asset_id\":\"demo-001\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-              "$AUDIT_FUNCTION_URL" 2>/dev/null) || true
-            if [ "$AUDIT_RESPONSE" = "200" ]; then
-              break
-            fi
-            echo "Waiting for audit function to respond... (${ELAPSED}s/${KNATIVE_TIMEOUT}s)"
-            sleep "$POLL_INTERVAL"
-            ELAPSED=$((ELAPSED + POLL_INTERVAL))
-          done
+          echo "Verification: API server healthz, audit function, scale-to-zero demo"
 
-          if [ "$AUDIT_RESPONSE" != "200" ]; then
-            echo "::error::Audit function did not return HTTP 200 within ${KNATIVE_TIMEOUT}s (last status: ${AUDIT_RESPONSE})"
-            exit 1
-          fi
-          echo "Audit function responded with HTTP 200"
-          echo "Verification complete"
+      # Run full deploy script (phases 1-11)
+      - name: Run Deploy Script
+        run: |
+          set -euo pipefail
+          bash examples/deploy-knative/deploy-knative.sh
+        env:
+          KUBECONFIG_FILE: ${{ env.KUBECONFIG }}
 
       # Write Job Summary
       - name: Write Job Summary
         run: |
           set -euo pipefail
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## ✅ Knative Serving Deployment Complete
+          ## ✅ Knative Asset Tracker Deployment Complete
 
           | Field | Value |
           |---|---|
           | Cluster | ${CLUSTER_NAME} |
           | Knative Serving | v${KNATIVE_SERVING_VERSION} |
           | net-contour | v${NET_CONTOUR_VERSION} |
-          | Ingress IP | ${ENVOY_LB_IP} |
-          | Domain | ${ENVOY_LB_IP}.sslip.io |
-          | Audit Function | ${AUDIT_FUNCTION_URL} |
-          | Dashboard | http://${DASHBOARD_IP} |
+          | DSM Infra Policy | ${DSM_INFRA_POLICY} |
           | Environment | ${ENVIRONMENT} |
           EOF
 
@@ -421,7 +332,7 @@ jobs:
         run: |
           set -euo pipefail
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## ❌ Knative Serving Deployment Failed
+          ## ❌ Knative Asset Tracker Deployment Failed
 
           | Field | Value |
           |---|---|

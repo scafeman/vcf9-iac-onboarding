@@ -12,16 +12,16 @@ from collections import Counter
 
 # ===================================================================
 # Property 1: Phase Messaging — Every Phase Has Pre and Post Messages
-# Feature: deploy-knative, Property 1: Phase Messaging
-# Validates: Requirements 9.5, 14.2
+# Feature: knative-asset-tracker-dsm, Property 1: Phase Messaging
+# Validates: Requirements 7.1, 12.1
 # ===================================================================
 
 
 class TestPhaseMessaging:
-    """For phases 1-9 in the deploy script, verify each phase has a
+    """For phases 1-11 in the deploy script, verify each phase has a
     log_step call within that phase's section."""
 
-    EXPECTED_PHASES = list(range(1, 10))  # Phases 1 through 9
+    EXPECTED_PHASES = list(range(1, 12))  # Phases 1 through 11
 
     def _find_log_step_phases(self, text: str) -> set[int]:
         """Extract all phase numbers referenced in log_step calls."""
@@ -35,7 +35,7 @@ class TestPhaseMessaging:
         assert len(phases) >= 1, "No log_step calls found in deploy script"
 
     def test_all_phases_have_log_step(self, knative_deploy_text):
-        """Every phase 1-9 must have a corresponding log_step call."""
+        """Every phase 1-11 must have a corresponding log_step call."""
         found_phases = self._find_log_step_phases(knative_deploy_text)
         for phase in self.EXPECTED_PHASES:
             assert phase in found_phases, (
@@ -43,8 +43,8 @@ class TestPhaseMessaging:
                 f"Found log_step calls for phases: {sorted(found_phases)}"
             )
 
-    def test_phases_cover_exactly_1_through_9(self, knative_deploy_text):
-        """The set of log_step phase numbers should cover 1-9."""
+    def test_phases_cover_exactly_1_through_11(self, knative_deploy_text):
+        """The set of log_step phase numbers should cover 1-11."""
         found_phases = self._find_log_step_phases(knative_deploy_text)
         expected = set(self.EXPECTED_PHASES)
         assert expected.issubset(found_phases), (
@@ -55,13 +55,13 @@ class TestPhaseMessaging:
 
 # ===================================================================
 # Property 2: Distinct Exit Codes Per Failure Category
-# Feature: deploy-knative, Property 2: Distinct Exit Codes
-# Validates: Requirements 9.8, 14.4
+# Feature: knative-asset-tracker-dsm, Property 2: Distinct Exit Codes
+# Validates: Requirements 7.3, 12.3
 # ===================================================================
 
 
 class TestDistinctExitCodes:
-    """Verify exit codes 1-7 are all distinct and present in the deploy
+    """Verify exit codes 1-9 are all distinct and present in the deploy
     script, and that exit 0 appears for success."""
 
     def _extract_exit_codes(self, text: str) -> list[int]:
@@ -74,22 +74,22 @@ class TestDistinctExitCodes:
         assert len(codes) > 0, "No non-zero exit codes found in deploy script"
 
     def test_exit_codes_cover_all_failure_categories(self, knative_deploy_text):
-        """Exit codes 1-7 must all be present, covering all failure categories."""
+        """Exit codes 1-9 must all be present, covering all failure categories."""
         codes = set(self._extract_exit_codes(knative_deploy_text))
-        expected = {1, 2, 3, 4, 5, 6, 7}
+        expected = {1, 2, 3, 4, 5, 6, 7, 8, 9}
         assert expected.issubset(codes), (
             f"Missing exit codes for failure categories: {expected - codes}. "
             f"Found: {sorted(codes)}"
         )
 
-    def test_exit_codes_1_through_7_are_distinct(self, knative_deploy_text):
-        """Exit codes 1-7 must all be distinct values (no two failure
+    def test_exit_codes_1_through_9_are_distinct(self, knative_deploy_text):
+        """Exit codes 1-9 must all be distinct values (no two failure
         categories share the same code)."""
         codes = set(self._extract_exit_codes(knative_deploy_text))
-        expected = {1, 2, 3, 4, 5, 6, 7}
-        # All 7 distinct codes must be present
+        expected = {1, 2, 3, 4, 5, 6, 7, 8, 9}
+        # All 9 distinct codes must be present
         assert expected.issubset(codes), (
-            f"Expected all distinct exit codes 1-7, found: {sorted(codes)}"
+            f"Expected all distinct exit codes 1-9, found: {sorted(codes)}"
         )
 
     def test_exit_zero_present(self, knative_deploy_text):
@@ -107,65 +107,11 @@ class TestDistinctExitCodes:
         )
 
 
-# ===================================================================
-# Property 3: Default Variable Pattern
-# Feature: deploy-knative, Property 3: Default Variable Pattern
-# Validates: Requirements 9.2
-# ===================================================================
-
-
-class TestDefaultVariablePattern:
-    """For variables with defaults, verify they use the ${VAR:-default}
-    pattern with a non-empty default value."""
-
-    # Variables that must have non-empty defaults per the design doc
-    VARIABLES_WITH_DEFAULTS = [
-        "KNATIVE_SERVING_VERSION",
-        "NET_CONTOUR_VERSION",
-        "KNATIVE_NAMESPACE",
-        "DEMO_NAMESPACE",
-        "CONTAINER_REGISTRY",
-        "IMAGE_TAG",
-        "SCALE_TO_ZERO_GRACE_PERIOD",
-        "KNATIVE_TIMEOUT",
-        "POD_TIMEOUT",
-        "LB_TIMEOUT",
-        "POLL_INTERVAL",
-    ]
-
-    def _extract_default_assignments(self, text: str) -> dict[str, str]:
-        """Extract VAR="${VAR:-default}" assignments and return {var: default}."""
-        pattern = r'^(\w+)="\$\{\1:-([^}]+)\}"'
-        return {m.group(1): m.group(2) for m in re.finditer(pattern, text, re.MULTILINE)}
-
-    def test_variables_with_defaults_exist(self, knative_deploy_text):
-        """At least one variable with a default must be found."""
-        assignments = self._extract_default_assignments(knative_deploy_text)
-        assert len(assignments) > 0, "No VAR=\"${VAR:-default}\" assignments found"
-
-    def test_each_expected_variable_has_default_pattern(self, knative_deploy_text):
-        """Each variable in the expected list must use ${VAR:-default} pattern."""
-        assignments = self._extract_default_assignments(knative_deploy_text)
-        for var in self.VARIABLES_WITH_DEFAULTS:
-            assert var in assignments, (
-                f"Variable '{var}' missing ${{{var}:-default}} pattern. "
-                f"Found variables: {sorted(assignments.keys())}"
-            )
-
-    def test_defaults_are_non_empty(self, knative_deploy_text):
-        """Each variable's default value must be non-empty."""
-        assignments = self._extract_default_assignments(knative_deploy_text)
-        for var in self.VARIABLES_WITH_DEFAULTS:
-            if var in assignments:
-                assert assignments[var].strip() != "", (
-                    f"Variable '{var}' has an empty default value"
-                )
-
 
 # ===================================================================
-# Property 4: Variable Declaration Completeness
-# Feature: deploy-knative, Property 4: Variable Declaration Completeness
-# Validates: Requirements 9.4, 14.3
+# Property 3: Variable Declaration Completeness
+# Feature: knative-asset-tracker-dsm, Property 3: Variable Declaration Completeness
+# Validates: Requirements 1.7, 7.2, 7.5, 12.2
 # ===================================================================
 
 
@@ -224,26 +170,112 @@ class TestVariableDeclarationCompleteness:
                 f'{var}="${{{var}:-...}}" default assignment pattern'
             )
 
+    def test_dsm_variables_in_validated_list(self, knative_deploy_text):
+        """DSM and VCF CLI variables must be in the validate_variables list."""
+        validated_vars = self._extract_validated_variables(knative_deploy_text)
+        dsm_vars = [
+            "VCF_API_TOKEN",
+            "VCFA_ENDPOINT",
+            "TENANT_NAME",
+            "CONTEXT_NAME",
+            "SUPERVISOR_NAMESPACE",
+            "PROJECT_NAME",
+            "DSM_INFRA_POLICY",
+            "DSM_STORAGE_POLICY",
+            "ADMIN_PASSWORD",
+        ]
+        for var in dsm_vars:
+            assert var in validated_vars, (
+                f"DSM/VCF variable '{var}' not found in validate_variables required_vars"
+            )
+
+
+
+# ===================================================================
+# Property 4: Default Variable Pattern
+# Feature: knative-asset-tracker-dsm, Property 4: Default Variable Pattern
+# Validates: Requirements 7.2
+# ===================================================================
+
+
+class TestDefaultVariablePattern:
+    """For variables with defaults, verify they use the ${VAR:-default}
+    pattern with a non-empty default value."""
+
+    # Variables that must have non-empty defaults per the design doc
+    VARIABLES_WITH_DEFAULTS = [
+        "KNATIVE_SERVING_VERSION",
+        "NET_CONTOUR_VERSION",
+        "KNATIVE_NAMESPACE",
+        "DEMO_NAMESPACE",
+        "CONTAINER_REGISTRY",
+        "IMAGE_TAG",
+        "SCALE_TO_ZERO_GRACE_PERIOD",
+        "KNATIVE_TIMEOUT",
+        "POD_TIMEOUT",
+        "LB_TIMEOUT",
+        "POLL_INTERVAL",
+        "DSM_CLUSTER_NAME",
+        "DSM_VM_CLASS",
+        "DSM_STORAGE_SPACE",
+        "POSTGRES_VERSION",
+        "POSTGRES_REPLICAS",
+        "POSTGRES_DB",
+        "ADMIN_PASSWORD_SECRET_NAME",
+        "API_PORT",
+        "DSM_TIMEOUT",
+    ]
+
+    def _extract_default_assignments(self, text: str) -> dict[str, str]:
+        """Extract VAR="${VAR:-default}" assignments and return {var: default}."""
+        pattern = r'^(\w+)="\$\{\1:-([^}]+)\}"'
+        return {m.group(1): m.group(2) for m in re.finditer(pattern, text, re.MULTILINE)}
+
+    def test_variables_with_defaults_exist(self, knative_deploy_text):
+        """At least one variable with a default must be found."""
+        assignments = self._extract_default_assignments(knative_deploy_text)
+        assert len(assignments) > 0, "No VAR=\"${VAR:-default}\" assignments found"
+
+    def test_each_expected_variable_has_default_pattern(self, knative_deploy_text):
+        """Each variable in the expected list must use ${VAR:-default} pattern."""
+        assignments = self._extract_default_assignments(knative_deploy_text)
+        for var in self.VARIABLES_WITH_DEFAULTS:
+            assert var in assignments, (
+                f"Variable '{var}' missing ${{{var}:-default}} pattern. "
+                f"Found variables: {sorted(assignments.keys())}"
+            )
+
+    def test_defaults_are_non_empty(self, knative_deploy_text):
+        """Each variable's default value must be non-empty."""
+        assignments = self._extract_default_assignments(knative_deploy_text)
+        for var in self.VARIABLES_WITH_DEFAULTS:
+            if var in assignments:
+                assert assignments[var].strip() != "", (
+                    f"Variable '{var}' has an empty default value"
+                )
+
 
 
 # ===================================================================
 # Property 5: Teardown Reverse Dependency Order
-# Feature: deploy-knative, Property 5: Teardown Reverse Dependency Order
-# Validates: Requirements 10.2, 14.5
+# Feature: knative-asset-tracker-dsm, Property 5: Teardown Reverse Dependency Order
+# Validates: Requirements 8.1, 12.4
 # ===================================================================
 
 
 class TestTeardownReverseDependencyOrder:
     """Verify the teardown script deletes in order: knative-demo namespace
-    resources before net-contour, net-contour before knative-serving,
-    knative-serving before CRDs."""
+    resources before DSM PostgresCluster, DSM before net-contour,
+    net-contour before knative-serving, knative-serving before CRDs."""
 
     # Ordered markers — each must appear before the next in the teardown script
+    # Use patterns that match within the actual phase code sections (log_step calls)
     ORDERED_MARKERS = [
-        ("knative-demo resources", r'asset-audit'),
-        ("net-contour resources", r'net-contour'),
-        ("knative-serving core", r'knative-serving.*core|serving-core|Knative Core'),
-        ("knative CRDs", r'serving-crds|Knative CRDs|Knative Serving CRDs'),
+        ("knative-demo resources", r'log_step 1'),
+        ("DSM PostgresCluster", r'log_step 2'),
+        ("net-contour resources", r'log_step 3'),
+        ("knative-serving core", r'log_step 4'),
+        ("knative CRDs", r'log_step 5'),
     ]
 
     def _find_first_position(self, text: str, pattern: str) -> int:
@@ -261,7 +293,7 @@ class TestTeardownReverseDependencyOrder:
 
     def test_teardown_order_is_correct(self, knative_teardown_text):
         """Resources must be deleted in reverse dependency order:
-        knative-demo → net-contour → knative-serving → CRDs."""
+        knative-demo → DSM → net-contour → knative-serving → CRDs."""
         positions = []
         for name, pattern in self.ORDERED_MARKERS:
             pos = self._find_first_position(knative_teardown_text, pattern)
@@ -277,10 +309,11 @@ class TestTeardownReverseDependencyOrder:
             )
 
 
+
 # ===================================================================
 # Property 6: Teardown Idempotency
-# Feature: deploy-knative, Property 6: Teardown Idempotency
-# Validates: Requirements 10.3
+# Feature: knative-asset-tracker-dsm, Property 6: Teardown Idempotency
+# Validates: Requirements 8.2, 8.3
 # ===================================================================
 
 
@@ -332,16 +365,17 @@ class TestTeardownIdempotency:
         )
 
 
+
 # ===================================================================
 # Property 7: Workflow-Phase Correspondence
-# Feature: deploy-knative, Property 7: Workflow-Phase Correspondence
-# Validates: Requirements 12.6, 14.6
+# Feature: knative-asset-tracker-dsm, Property 7: Workflow-Phase Correspondence
+# Validates: Requirements 9.1, 12.5
 # ===================================================================
 
 
 class TestWorkflowPhaseCorrespondence:
     """The workflow has named steps that correspond to the deploy script
-    phases 1-9."""
+    phases 1-11."""
 
     # Mapping of deploy script phase numbers to expected workflow step
     # name keywords (case-insensitive substring match)
@@ -352,9 +386,11 @@ class TestWorkflowPhaseCorrespondence:
         4: ["contour", "net-contour"],
         5: ["ingress", "configure ingress"],
         6: ["dns", "configure dns"],
-        7: ["audit", "audit function"],
-        8: ["dashboard", "deploy dashboard"],
-        9: ["verif", "verify"],
+        7: ["dsm", "postgrescluster", "provision"],
+        8: ["api server", "deploy api"],
+        9: ["audit", "audit function"],
+        10: ["rbac", "dashboard"],
+        11: ["verif", "verify"],
     }
 
     def _extract_workflow_step_names(self, text: str) -> list[str]:
@@ -369,7 +405,7 @@ class TestWorkflowPhaseCorrespondence:
         assert len(steps) > 0, "No named steps found in workflow YAML"
 
     def test_each_phase_has_corresponding_step(self, knative_workflow_yaml_text):
-        """Every deploy script phase (1-9) must have a corresponding named
+        """Every deploy script phase (1-11) must have a corresponding named
         step in the workflow."""
         step_names = self._extract_workflow_step_names(knative_workflow_yaml_text)
         step_names_lower = [s.lower() for s in step_names]
