@@ -166,14 +166,19 @@ jobs:
       - name: Create VCF CLI Context
         run: |
           set -euo pipefail
-          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          echo "Deleting existing context '$CONTEXT_NAME'..."
+          vcf context delete "$CONTEXT_NAME" --yes || echo "Context delete returned non-zero (context may not exist)"
+          sleep 2
+          echo "Creating context '$CONTEXT_NAME'..."
           if ! vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
             --set-current; then
-            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
+            echo "Context create failed, listing existing contexts..."
+            vcf context list 2>&1 || true
+            echo "::error::Failed to create VCF CLI context '${CONTEXT_NAME}'"
             exit 1
           fi
           echo "VCF CLI context '$CONTEXT_NAME' created and activated"
