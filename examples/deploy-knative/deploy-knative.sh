@@ -303,18 +303,16 @@ kind: Service
 metadata:
   name: asset-audit
   namespace: ${DEMO_NAMESPACE}
-  annotations:
-    autoscaling.knative.dev/scale-to-zero-grace-period: "${SCALE_TO_ZERO_GRACE_PERIOD}"
 spec:
   template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/scale-to-zero-grace-period: "${SCALE_TO_ZERO_GRACE_PERIOD}"
     spec:
       containers:
         - image: ${AUDIT_IMAGE}
           ports:
             - containerPort: 8080
-          env:
-            - name: PORT
-              value: "8080"
 EOF
 
 # Wait for Knative Service to be Ready
