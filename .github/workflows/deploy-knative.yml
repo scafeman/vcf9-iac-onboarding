@@ -357,11 +357,32 @@ jobs:
 
       # Run full deploy script (phases 1-11)
       - name: Run Deploy Script
+        id: deploy
         run: |
           set -euo pipefail
-          bash examples/deploy-knative/deploy-knative.sh
+          bash examples/deploy-knative/deploy-knative.sh 2>&1 | tee /tmp/deploy-knative.log
         env:
           KUBECONFIG_FILE: ${{ env.KUBECONFIG }}
+
+      # Extract deployment details for job summary
+      - name: Extract Deployment Details
+        run: |
+          set -euo pipefail
+          # Extract dashboard IP from kubectl
+          DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "unknown")
+          echo "DASHBOARD_IP=$DASHBOARD_IP" >> "$GITHUB_ENV"
+
+          # Extract Envoy LB IP (Knative ingress)
+          ENVOY_IP=$(kubectl get svc envoy -n contour-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "unknown")
+          echo "ENVOY_IP=$ENVOY_IP" >> "$GITHUB_ENV"
+
+          # Extract audit function URL
+          AUDIT_URL=$(kubectl get ksvc asset-audit -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.url}' 2>/dev/null || echo "unknown")
+          echo "AUDIT_URL=$AUDIT_URL" >> "$GITHUB_ENV"
+
+          # Extract DSM connection from deploy log
+          DSM_CONNECTION=$(grep -oP 'DSM PostgreSQL connection: \K[^\s]+' /tmp/deploy-knative.log || echo "unknown")
+          echo "DSM_CONNECTION=$DSM_CONNECTION" >> "$GITHUB_ENV"
 
       # Write Job Summary
       - name: Write Job Summary
@@ -372,11 +393,31 @@ jobs:
 
           | Field | Value |
           |---|---|
-          | Cluster | ${CLUSTER_NAME} |
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | App Namespace | \`${DEMO_NAMESPACE}\` |
           | Knative Serving | v${KNATIVE_SERVING_VERSION} |
           | net-contour | v${NET_CONTOUR_VERSION} |
-          | DSM Infra Policy | ${DSM_INFRA_POLICY} |
+          | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
           | Environment | ${ENVIRONMENT} |
+          | Dashboard | http://${DASHBOARD_IP} |
+
+          ### Deployed Services
+          | Service | Endpoint |
+          |---|---|
+          | Dashboard | http://${DASHBOARD_IP} |
+          | DSM PostgreSQL | \`${DSM_CONNECTION}\` |
+          | API Server | \`knative-api-server.${DEMO_NAMESPACE}.svc.cluster.local:3001\` |
+          | Audit Function (Knative) | ${AUDIT_URL} |
+          | Knative Ingress (Envoy) | \`${ENVOY_IP}\` |
+          | DNS Domain | \`${ENVOY_IP}.sslip.io\` |
+
+          ### Container Images
+          | Image | Tag |
+          |---|---|
+          | \`${CONTAINER_REGISTRY}/knative-api\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/knative-audit\` | \`${IMAGE_TAG}\` |
+          | \`${CONTAINER_REGISTRY}/knative-dashboard\` | \`${IMAGE_TAG}\` |
           EOF
 
       # Write Failure Summary (if: failure())
@@ -389,7 +430,17 @@ jobs:
 
           | Field | Value |
           |---|---|
-          | Cluster | ${CLUSTER_NAME} |
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
+          | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
           | Environment | ${ENVIRONMENT} |
           | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Check cluster connectivity: \`kubectl get namespaces\`
+          3. Check Knative Serving: \`kubectl get pods -n knative-serving\`
+          4. Check DSM PostgresCluster: \`kubectl get postgrescluster -n ${SUPERVISOR_NAMESPACE}\`
+          5. Check demo namespace: \`kubectl get pods -n ${DEMO_NAMESPACE}\`
+          6. Re-run the workflow — all steps are idempotent
           EOF
