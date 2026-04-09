@@ -394,7 +394,7 @@ spec:
             - containerPort: 3000
           env:
             - name: API_HOST
-              value: "${AUDIT_FUNCTION_URL}"
+              value: "http://asset-audit.${DEMO_NAMESPACE}.svc.cluster.local"
 EOF
 
 cat <<EOF | kubectl apply -f -
