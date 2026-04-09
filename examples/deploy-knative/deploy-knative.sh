@@ -197,6 +197,9 @@ log_success "Knative Serving CRDs installed and Established"
 
 log_step 3 "Installing Knative Serving Core (v${KNATIVE_SERVING_VERSION})"
 
+# Label knative-serving namespace as privileged before installing core
+kubectl label ns "${KNATIVE_NAMESPACE}" pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
+
 # First apply creates the webhook service and deployments but may fail on the
 # Image resource because the validation webhook isn't ready yet. This is
 # expected on first install — the second apply succeeds after the webhook starts.
@@ -242,6 +245,16 @@ if ! kubectl apply -f "${CONTOUR_URL}"; then
   log_error "Failed to apply Contour from ${CONTOUR_URL}"
   exit 3
 fi
+
+# Label Contour namespaces as privileged (Envoy/Contour pods need it)
+kubectl label ns contour-external pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
+kubectl label ns contour-internal pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
+
+# Restart Contour/Envoy after labeling (pods may have failed PodSecurity)
+kubectl rollout restart deploy contour -n contour-external 2>/dev/null || true
+kubectl rollout restart ds envoy -n contour-external 2>/dev/null || true
+kubectl rollout restart deploy contour -n contour-internal 2>/dev/null || true
+kubectl rollout restart ds envoy -n contour-internal 2>/dev/null || true
 
 # Install net-contour controller (bridges Knative to Contour)
 if ! kubectl apply -f "${NET_CONTOUR_URL}"; then
