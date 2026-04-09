@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_HOST = process.env.API_HOST || 'knative-api-server.knative-demo.svc.cluster.local';
-const API_PORT = process.env.API_PORT || '3001';
-const BACKEND = `http://${API_HOST}:${API_PORT}`;
+const API_HOST = process.env.API_HOST || 'http://knative-api-server.knative-demo.svc.cluster.local:3001';
+const BACKEND = API_HOST.startsWith('http') ? API_HOST : `http://${API_HOST}:${process.env.API_PORT || '3001'}`;
 
 export const dynamic = 'force-dynamic';
 
