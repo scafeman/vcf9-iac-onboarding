@@ -83,7 +83,6 @@ jobs:
       # Priority: workflow_dispatch input > client_payload > secret > default
       CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
       ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
-      KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
 
       # --- Supervisor Namespace ---
       SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
@@ -139,31 +138,17 @@ jobs:
       - name: Create VCF CLI Context
         run: |
           set -euo pipefail
-          # Clear ALL stale state — VCF CLI config, kubeconfig, and env var
-          unset KUBECONFIG 2>/dev/null || true
-          rm -f ~/.kube/config 2>/dev/null || true
-          rm -f ~/.config/vcf/config.yaml 2>/dev/null || true
-
-          vcf context create "$CONTEXT_NAME" \
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          if ! vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current
-
-          # Switch to the namespace context for the supervisor namespace
-          NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-          if [ -z "$NAMESPACE_CONTEXT" ]; then
-            PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
-            NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
-          fi
-          if [ -n "$NAMESPACE_CONTEXT" ]; then
-            vcf context use "$NAMESPACE_CONTEXT"
-            echo "VCF CLI context ready, switched to '$NAMESPACE_CONTEXT'"
-          else
-            echo "::error::Could not find a namespace context for '${SUPERVISOR_NAMESPACE}' under context '${CONTEXT_NAME}'"
+            --set-current; then
+            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
             exit 1
           fi
+          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
 
       # Setup Kubeconfig
       - name: Setup Kubeconfig
