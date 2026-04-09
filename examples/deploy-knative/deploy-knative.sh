@@ -536,6 +536,13 @@ fi
 log_success "DSM PostgreSQL connection: ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB} (user: ${POSTGRES_USER})"
 log_success "Phase 7 complete — DSM PostgresCluster '${DSM_CLUSTER_NAME}' provisioned"
 
+# Switch kubectl back to the VKS cluster admin context (Phase 7 changed it to supervisor)
+export KUBECONFIG="${KUBECONFIG_FILE}"
+ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+if kubectl config get-contexts "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1; then
+  kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1 || true
+fi
+
 ###############################################################################
 # Phase 8: API Server Deployment
 ###############################################################################
@@ -791,7 +798,7 @@ while [[ "${VERIFY_ELAPSED}" -lt "${KNATIVE_TIMEOUT}" ]]; do
   API_HEALTH_RESPONSE=$(kubectl run api-health-test-${VERIFY_ELAPSED} --rm -i --restart=Never \
     --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
     curl -s -o /dev/null -w "%{http_code}" \
-    "${API_INTERNAL_URL}/healthz" 2>/dev/null) || true
+    "${API_INTERNAL_URL}/healthz" 2>/dev/null | head -1 | tr -d '[:space:]') || true
   if [[ "${API_HEALTH_RESPONSE}" == "200" ]]; then
     break
   fi
@@ -817,7 +824,7 @@ while [[ "${VERIFY_ELAPSED}" -lt "${KNATIVE_TIMEOUT}" ]]; do
     curl -s -o /dev/null -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -d "{\"action\":\"create\",\"asset_name\":\"test-server\",\"asset_id\":\"demo-001\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    "${AUDIT_INTERNAL_URL}" 2>/dev/null) || true
+    "${AUDIT_INTERNAL_URL}" 2>/dev/null | head -1 | tr -d '[:space:]') || true
   if [[ "${AUDIT_RESPONSE}" == "200" ]]; then
     break
   fi
@@ -836,7 +843,7 @@ log_success "Audit function responded with HTTP 200"
 # Check audit trail via /log endpoint
 AUDIT_LOG_RESPONSE=$(kubectl run audit-log-test --rm -i --restart=Never \
   --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
-  curl -s "${AUDIT_INTERNAL_URL}/log" 2>/dev/null) || true
+  curl -s "${AUDIT_INTERNAL_URL}/log" 2>/dev/null | head -1) || true
 echo "  Audit trail response: ${AUDIT_LOG_RESPONSE}"
 log_success "Audit trail /log endpoint verified"
 
