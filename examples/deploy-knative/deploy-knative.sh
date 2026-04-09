@@ -197,10 +197,27 @@ log_success "Knative Serving CRDs installed and Established"
 
 log_step 3 "Installing Knative Serving Core (v${KNATIVE_SERVING_VERSION})"
 
+# First apply creates the webhook service and deployments but may fail on the
+# Image resource because the validation webhook isn't ready yet. This is
+# expected on first install — the second apply succeeds after the webhook starts.
+kubectl apply -f "${KNATIVE_CORE_URL}" || true
+
+# Wait for the webhook deployment to be ready before re-applying
+if ! wait_for_condition "Knative webhook to be Available" \
+  "${KNATIVE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl wait --for=condition=Available deployment/webhook -n '${KNATIVE_NAMESPACE}' --timeout=5s"; then
+  log_error "Knative webhook did not reach Available condition within ${KNATIVE_TIMEOUT}s"
+  exit 2
+fi
+
+# Re-apply to pick up the Image resource that failed on first attempt
 if ! kubectl apply -f "${KNATIVE_CORE_URL}"; then
   log_error "Failed to apply Knative Serving Core from ${KNATIVE_CORE_URL}"
   exit 2
 fi
+
+# Restart deployments that may be stuck from the partial first apply
+kubectl rollout restart deploy -n "${KNATIVE_NAMESPACE}" 2>/dev/null || true
 
 if ! wait_for_condition "Knative Core deployments to be Available" \
   "${KNATIVE_TIMEOUT}" "${POLL_INTERVAL}" \
@@ -210,6 +227,9 @@ if ! wait_for_condition "Knative Core deployments to be Available" \
 fi
 
 log_success "Knative Serving Core installed and Available"
+
+# Re-apply CRDs to restore webhook configurations now that the webhook service is running
+kubectl apply -f "${KNATIVE_CRDS_URL}" >/dev/null 2>&1 || true
 
 ###############################################################################
 # Phase 4: net-contour Networking Plugin
@@ -295,6 +315,9 @@ else
   kubectl create ns "${DEMO_NAMESPACE}"
   log_success "Namespace '${DEMO_NAMESPACE}' created"
 fi
+
+# Label namespace as privileged to allow Knative pods (queue-proxy sidecar)
+kubectl label ns "${DEMO_NAMESPACE}" pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
 
 # Apply Knative Service manifest for asset-audit
 cat <<EOF | kubectl apply -f -
@@ -403,14 +426,18 @@ log_success "Dashboard deployed: http://${DASHBOARD_IP}"
 
 log_step 9 "Verifying audit function and scale-to-zero behavior"
 
-# Send a test HTTP POST to the audit function
+# Send a test HTTP POST to the audit function via kubectl run (container can't
+# reach sslip.io URLs directly — must test from inside the cluster)
+AUDIT_INTERNAL_URL="http://asset-audit.${DEMO_NAMESPACE}.svc.cluster.local"
 AUDIT_RESPONSE=""
 VERIFY_ELAPSED=0
 while [[ "${VERIFY_ELAPSED}" -lt "${KNATIVE_TIMEOUT}" ]]; do
-  AUDIT_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  AUDIT_RESPONSE=$(kubectl run audit-test-${VERIFY_ELAPSED} --rm -i --restart=Never \
+    --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
+    curl -s -o /dev/null -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -d "{\"action\":\"create\",\"asset_name\":\"test-server\",\"asset_id\":\"demo-001\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-    "${AUDIT_FUNCTION_URL}" 2>/dev/null) || true
+    "${AUDIT_INTERNAL_URL}" 2>/dev/null) || true
   if [[ "${AUDIT_RESPONSE}" == "200" ]]; then
     break
   fi
@@ -425,10 +452,12 @@ if [[ "${AUDIT_RESPONSE}" != "200" ]]; then
 fi
 
 # Log the full response body
-AUDIT_BODY=$(curl -s -X POST \
+AUDIT_BODY=$(kubectl run audit-body-test --rm -i --restart=Never \
+  --image=curlimages/curl:latest -n "${DEMO_NAMESPACE}" -- \
+  curl -s -X POST \
   -H "Content-Type: application/json" \
   -d "{\"action\":\"create\",\"asset_name\":\"test-server\",\"asset_id\":\"demo-001\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-  "${AUDIT_FUNCTION_URL}" 2>/dev/null) || true
+  "${AUDIT_INTERNAL_URL}" 2>/dev/null) || true
 echo "  Audit function response: ${AUDIT_BODY}"
 log_success "Audit function responded with HTTP 200"
 
