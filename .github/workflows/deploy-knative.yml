@@ -139,6 +139,10 @@ jobs:
       - name: Create VCF CLI Context
         run: |
           set -euo pipefail
+          # Clear any stale kubeconfig references that cause VCF CLI errors
+          unset KUBECONFIG 2>/dev/null || true
+          rm -f ~/.kube/config 2>/dev/null || true
+
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
           sleep 1
           vcf context create "$CONTEXT_NAME" \
