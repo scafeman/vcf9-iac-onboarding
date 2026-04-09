@@ -338,6 +338,12 @@ if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
   log_success "Namespace 'tkg-packages' created"
 fi
 
+# Strip kapp ownership labels from shared resources BEFORE vault-injector install.
+# If prometheus (or another package) already claimed these resources, vault-injector
+# install will fail with kapp ownership errors.
+kubectl label ns tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
+kubectl label limitrange ns-limit-range -n tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
+
 # --- Install vault-injector via VKS standard package ---
 log_step "4b" "Installing vault-injector package"
 
