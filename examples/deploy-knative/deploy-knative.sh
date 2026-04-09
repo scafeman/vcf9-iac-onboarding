@@ -211,6 +211,12 @@ if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
   exit 2
 fi
 
+# Switch to the VKS cluster admin context (the kubeconfig may contain multiple contexts)
+ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+if kubectl config get-contexts "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1; then
+  kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1 || true
+fi
+
 if ! kubectl get namespaces >/dev/null 2>&1; then
   log_error "Unable to reach cluster '${CLUSTER_NAME}' using kubeconfig at '${KUBECONFIG_FILE}'. Verify the cluster is running and the kubeconfig is valid."
   exit 2
@@ -288,7 +294,7 @@ kubectl apply -f "${KNATIVE_CRDS_URL}" >/dev/null 2>&1 || true
 log_step 4 "Installing Contour and net-contour networking plugin (v${NET_CONTOUR_VERSION})"
 
 # Install Contour into contour-external and contour-internal namespaces
-if ! kubectl apply -f "${CONTOUR_URL}"; then
+if ! kubectl apply --server-side --force-conflicts -f "${CONTOUR_URL}"; then
   log_error "Failed to apply Contour from ${CONTOUR_URL}"
   exit 3
 fi

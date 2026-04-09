@@ -153,6 +153,12 @@ if [[ ! -f "${KUBECONFIG_FILE}" ]]; then
   log_warn "Kubeconfig file not found at '${KUBECONFIG_FILE}'. Some cleanup steps may be skipped."
 fi
 
+# Switch to the VKS cluster admin context
+ADMIN_CONTEXT="${CLUSTER_NAME}-admin@${CLUSTER_NAME}"
+if kubectl config get-contexts "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1; then
+  kubectl config use-context "${ADMIN_CONTEXT}" --kubeconfig="${KUBECONFIG_FILE}" >/dev/null 2>&1 || true
+fi
+
 if ! kubectl get namespaces >/dev/null 2>&1; then
   log_warn "Unable to reach cluster '${CLUSTER_NAME}' — will attempt cleanup anyway"
 fi
