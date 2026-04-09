@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains eight GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
+This repository contains ten GitHub Actions workflows that automate the end-to-end deployment and teardown of VCF 9 VKS infrastructure and application stacks. Each workflow runs on a self-hosted runner built from `Dockerfile.runner` with VCF CLI, kubectl, Helm, jq, and openssl baked in. There is no `container:` directive — all `run:` steps execute directly on the runner.
 
 | Workflow | File | Description |
 |---|---|---|
@@ -14,7 +14,8 @@ This repository contains eight GitHub Actions workflows that automate the end-to
 | Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
 | Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
 | Deploy HA VM App — HA Three-Tier Application on VMs | `deploy-ha-vm-app.yml` | Deploys a traditional HA three-tier application using VCF VM Service VMs: 2× web VMs (Next.js) + LoadBalancer, 2× API VMs (Express) + LoadBalancer, DSM PostgresCluster |
-| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down GitOps, Metrics, Hybrid App, and Cluster stacks in reverse dependency order |
+| Deploy Knative — Serverless Asset Tracker | `deploy-knative.yml` | Deploys Knative Serving with serverless audit function, Express API server, and DSM PostgresCluster on an existing VKS cluster |
+| Teardown — Teardown VCF Stacks | `teardown.yml` | Selectively tears down all deployment pattern stacks in reverse dependency order |
 
 ## Execution Order
 
@@ -27,6 +28,7 @@ Deploy Cluster (deploy-vks.yml)  ← must run first
     ├── Deploy Hybrid App (deploy-hybrid-app.yml)
     ├── Deploy Managed DB App (deploy-managed-db-app.yml)
     ├── Deploy HA VM App (deploy-ha-vm-app.yml)
+    ├── Deploy Knative (deploy-knative.yml)
     ├── Deploy Secrets Demo (deploy-secrets-demo.yml)
     └── Deploy Bastion VM (deploy-bastion-vm.yml)  ← no VKS cluster required
 
@@ -38,6 +40,7 @@ Teardown (teardown.yml)  ← reverses the deploy order
     ├── Phase F: Bastion VM Teardown
     ├── Phase G: Managed DB App Teardown
     ├── Phase H: HA VM App Teardown
+    ├── Phase I: Knative Teardown
     └── Phase C: Cluster Stack Teardown
 ```
 
