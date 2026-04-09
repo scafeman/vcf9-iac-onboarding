@@ -139,18 +139,17 @@ jobs:
       - name: Create VCF CLI Context
         run: |
           set -euo pipefail
-          # Clear any stale kubeconfig references that cause VCF CLI errors
+          # Clear ALL stale state — VCF CLI config, kubeconfig, and env var
           unset KUBECONFIG 2>/dev/null || true
           rm -f ~/.kube/config 2>/dev/null || true
+          rm -f ~/.config/vcf/config.yaml 2>/dev/null || true
 
-          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
-          sleep 1
           vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current 2>/dev/null || echo "Context '$CONTEXT_NAME' already exists, reusing..."
+            --set-current
 
           # Switch to the namespace context for the supervisor namespace
           NAMESPACE_CONTEXT=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
