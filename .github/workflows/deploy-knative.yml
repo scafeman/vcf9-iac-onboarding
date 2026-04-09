@@ -32,6 +32,14 @@ on:
         description: "VKS cluster name (e.g., my-dev-project-01-clus-01)"
         required: true
         type: string
+      supervisor_namespace:
+        description: "Supervisor namespace for DSM provisioning (e.g., my-project-ns-xxxxx)"
+        required: true
+        type: string
+      project_name:
+        description: "VCF Project name (e.g., my-dev-project-01)"
+        required: true
+        type: string
       environment:
         description: "Environment label for the deployment"
         required: false
@@ -39,33 +47,24 @@ on:
         default: "demo"
       dsm_infra_policy:
         description: "DSM infrastructure policy name"
-        required: true
-        type: string
-      dsm_storage_policy:
-        description: "DSM storage policy name"
-        required: true
-        type: string
-      supervisor_namespace:
-        description: "Supervisor namespace for DSM provisioning"
-        required: true
-        type: string
-      project_name:
-        description: "VCF project name"
-        required: true
-        type: string
-      context_name:
-        description: "VCF CLI context name"
         required: false
         type: string
-        default: "vcf-knative"
-      tenant_name:
-        description: "VCF tenant name"
-        required: true
+        default: "shared-dsm-01"
+      dsm_storage_policy:
+        description: "vSphere storage policy name for DSM"
+        required: false
         type: string
-      vcfa_endpoint:
-        description: "VCF Automation endpoint (hostname only)"
-        required: true
+        default: "NFS"
+      dsm_cluster_name:
+        description: "PostgresCluster resource name (default: pg-clus-01)"
+        required: false
         type: string
+        default: "pg-clus-01"
+      postgres_db:
+        description: "Database name (default: assetdb)"
+        required: false
+        type: string
+        default: "assetdb"
 
   repository_dispatch:
     types: [deploy-knative]
@@ -85,33 +84,52 @@ jobs:
       CLUSTER_NAME: ${{ github.event.inputs.cluster_name || github.event.client_payload.cluster_name }}
       ENVIRONMENT: ${{ github.event.inputs.environment || github.event.client_payload.environment || 'demo' }}
       KUBECONFIG_PATH: ${{ github.event.client_payload.kubeconfig_path || secrets.KUBECONFIG_PATH || '' }}
-      KNATIVE_SERVING_VERSION: ${{ github.event.client_payload.knative_serving_version || secrets.KNATIVE_SERVING_VERSION || '1.21.2' }}
-      NET_CONTOUR_VERSION: ${{ github.event.client_payload.net_contour_version || secrets.NET_CONTOUR_VERSION || '1.21.1' }}
-      KNATIVE_NAMESPACE: ${{ github.event.client_payload.knative_namespace || secrets.KNATIVE_NAMESPACE || 'knative-serving' }}
-      DEMO_NAMESPACE: ${{ github.event.client_payload.demo_namespace || secrets.DEMO_NAMESPACE || 'knative-demo' }}
-      CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
-      IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
-      SCALE_TO_ZERO_GRACE_PERIOD: ${{ github.event.client_payload.scale_to_zero_grace_period || secrets.SCALE_TO_ZERO_GRACE_PERIOD || '30s' }}
-      KNATIVE_TIMEOUT: ${{ github.event.client_payload.knative_timeout || secrets.KNATIVE_TIMEOUT || '300' }}
-      POD_TIMEOUT: ${{ github.event.client_payload.pod_timeout || secrets.POD_TIMEOUT || '300' }}
-      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || secrets.LB_TIMEOUT || '300' }}
-      DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || secrets.DSM_TIMEOUT || '1800' }}
-      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || secrets.POLL_INTERVAL || '10' }}
-
-      # --- VCF CLI Connection ---
-      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
-      VCFA_ENDPOINT: ${{ github.event.inputs.vcfa_endpoint || github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
-      TENANT_NAME: ${{ github.event.inputs.tenant_name || github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
-      CONTEXT_NAME: ${{ github.event.inputs.context_name || github.event.client_payload.context_name || 'vcf-knative' }}
 
       # --- Supervisor Namespace ---
       SUPERVISOR_NAMESPACE: ${{ github.event.inputs.supervisor_namespace || github.event.client_payload.supervisor_namespace || secrets.SUPERVISOR_NAMESPACE }}
       PROJECT_NAME: ${{ github.event.inputs.project_name || github.event.client_payload.project_name || secrets.PROJECT_NAME }}
 
       # --- DSM Configuration ---
-      DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY }}
-      DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY }}
+      DSM_INFRA_POLICY: ${{ github.event.inputs.dsm_infra_policy || github.event.client_payload.dsm_infra_policy || secrets.DSM_INFRA_POLICY || 'shared-dsm-01' }}
+      DSM_STORAGE_POLICY: ${{ github.event.inputs.dsm_storage_policy || github.event.client_payload.dsm_storage_policy || secrets.DSM_STORAGE_POLICY || 'NFS' }}
+      DSM_CLUSTER_NAME: ${{ github.event.inputs.dsm_cluster_name || github.event.client_payload.dsm_cluster_name || secrets.DSM_CLUSTER_NAME || 'pg-clus-01' }}
+      DSM_VM_CLASS: ${{ github.event.client_payload.dsm_vm_class || secrets.DSM_VM_CLASS || 'best-effort-large' }}
+      DSM_STORAGE_SPACE: ${{ github.event.client_payload.dsm_storage_space || secrets.DSM_STORAGE_SPACE || '20Gi' }}
+      POSTGRES_VERSION: ${{ github.event.client_payload.postgres_version || secrets.POSTGRES_VERSION || '17.7+vmware.v9.0.2.0' }}
+      POSTGRES_REPLICAS: ${{ github.event.client_payload.postgres_replicas || secrets.POSTGRES_REPLICAS || '0' }}
+      POSTGRES_DB: ${{ github.event.inputs.postgres_db || github.event.client_payload.postgres_db || secrets.POSTGRES_DB || 'assetdb' }}
+      ADMIN_PASSWORD_SECRET_NAME: ${{ github.event.client_payload.admin_password_secret_name || secrets.ADMIN_PASSWORD_SECRET_NAME || 'admin-pw-pg-clus-01' }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      DSM_MAINTENANCE_WINDOW_DAY: ${{ github.event.client_payload.dsm_maintenance_window_day || 'SATURDAY' }}
+      DSM_MAINTENANCE_WINDOW_TIME: ${{ github.event.client_payload.dsm_maintenance_window_time || '04:59' }}
+      DSM_MAINTENANCE_WINDOW_DURATION: ${{ github.event.client_payload.dsm_maintenance_window_duration || '6h0m0s' }}
+      DSM_SHARED_MEMORY: ${{ github.event.client_payload.dsm_shared_memory || '64Mi' }}
+
+      # --- Knative Configuration ---
+      KNATIVE_SERVING_VERSION: ${{ github.event.client_payload.knative_serving_version || secrets.KNATIVE_SERVING_VERSION || '1.21.2' }}
+      NET_CONTOUR_VERSION: ${{ github.event.client_payload.net_contour_version || secrets.NET_CONTOUR_VERSION || '1.21.1' }}
+      KNATIVE_NAMESPACE: ${{ github.event.client_payload.knative_namespace || 'knative-serving' }}
+      DEMO_NAMESPACE: ${{ github.event.client_payload.demo_namespace || 'knative-demo' }}
+      SCALE_TO_ZERO_GRACE_PERIOD: ${{ github.event.client_payload.scale_to_zero_grace_period || '30s' }}
+
+      # --- Application Parameters ---
+      CONTAINER_REGISTRY: ${{ github.event.client_payload.container_registry || secrets.CONTAINER_REGISTRY || 'scafeman' }}
+      IMAGE_TAG: ${{ github.event.client_payload.image_tag || secrets.IMAGE_TAG || 'latest' }}
+
+      # --- Timeouts and Polling ---
+      KNATIVE_TIMEOUT: ${{ github.event.client_payload.knative_timeout || '300' }}
+      POD_TIMEOUT: ${{ github.event.client_payload.pod_timeout || '300' }}
+      LB_TIMEOUT: ${{ github.event.client_payload.lb_timeout || '300' }}
+      DSM_TIMEOUT: ${{ github.event.client_payload.dsm_timeout || secrets.DSM_TIMEOUT || '1800' }}
+      POLL_INTERVAL: ${{ github.event.client_payload.poll_interval || '10' }}
+
+      # --- Secrets only (truly sensitive — cannot be passed via client_payload) ---
+      VCF_API_TOKEN: ${{ secrets.VCF_API_TOKEN }}
+      VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
+      TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
+
+      # --- Static Configuration ---
+      CONTEXT_NAME: vcf-knative
 
     steps:
       - name: Checkout Repository
