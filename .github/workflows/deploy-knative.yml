@@ -140,16 +140,30 @@ jobs:
         run: |
           set -euo pipefail
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          sleep 1
           if ! vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current; then
-            echo "::error::Failed to create VCF CLI context for endpoint '$VCFA_ENDPOINT' and tenant '$TENANT_NAME'"
-            exit 1
+            --set-current 2>/dev/null; then
+            echo "Context create failed (may already exist), attempting to reuse..."
+            # Find the namespace context under the existing context and switch to it
+            NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+            if [ -z "$NS_CTX" ]; then
+              PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
+              NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${PROJECT_PATTERN}" | awk '{print $1}' | head -1 || true)
+            fi
+            if [ -n "$NS_CTX" ]; then
+              vcf context use "$NS_CTX"
+              echo "Reusing existing context, switched to '$NS_CTX'"
+            else
+              echo "::error::Failed to create or reuse VCF CLI context '${CONTEXT_NAME}'"
+              exit 1
+            fi
+          else
+            echo "VCF CLI context '$CONTEXT_NAME' created and activated"
           fi
-          echo "VCF CLI context '$CONTEXT_NAME' created and activated"
 
       # Phase 1: Setup Kubeconfig
       - name: Setup Kubeconfig
