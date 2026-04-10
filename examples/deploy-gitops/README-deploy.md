@@ -17,9 +17,12 @@ The self-contained ArgoCD Consumption Model has a strict dependency chain. Each 
 ```
 Kubeconfig Setup
   └─► Self-Signed Certificate Generation (CA + wildcard cert via openssl)
+      │   When USE_SSLIP_DNS=true: deferred to Phase 3b (after envoy-lb IP known)
+      │   When USE_SSLIP_DNS=false: generated now with lab.local domain
         └─► VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
+            │   When USE_SSLIP_DNS=true: overrides DOMAIN to IP.sslip.io, generates certs in Phase 3b
               └─► Harbor Installation (Helm, TLS via Contour Ingress)
-                    └─► CoreDNS Configuration (static DNS using Contour LB IP)
+                    └─► CoreDNS Configuration (skipped when USE_SSLIP_DNS=true)
                           └─► ArgoCD Installation (Helm, ingress via Contour)
                                 └─► ArgoCD CLI Installation (auto-download)
                                       └─► Certificate Distribution (Harbor CA, GitLab TLS)
@@ -57,11 +60,17 @@ Sets the `KUBECONFIG` environment variable to the admin kubeconfig file produced
 
 ### Phase 2: Self-Signed Certificate Generation
 
-Generates a self-signed CA certificate and a wildcard TLS certificate for `*.${DOMAIN}` using openssl. If the CA certificate already exists in `CERT_DIR`, the entire phase is skipped (idempotent). Creates: CA key+cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert. Exits with code 3 on failure.
+When `USE_SSLIP_DNS=false`, generates a self-signed CA certificate and a wildcard TLS certificate for `*.${DOMAIN}` using openssl. If the CA certificate already exists in `CERT_DIR`, the entire phase is skipped (idempotent). Creates: CA key+cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert. Exits with code 3 on failure.
+
+When `USE_SSLIP_DNS=true` (default), certificate generation is deferred to Phase 3b — after the envoy-lb IP is known — so the wildcard certificate covers `*.IP.sslip.io` instead of `*.lab.local`.
 
 ### Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
 
 Installs cert-manager and Contour as VKS standard packages (the same packages used by Deploy Metrics). If Deploy Metrics has already been deployed, these packages already exist and installation is skipped. Creates the package namespace and registers the VKS standard package repository if not already present. Creates a separate `envoy-lb` LoadBalancer service in `tanzu-system-ingress` to provide external access — the VKS Contour package creates Envoy as a DaemonSet with NodePort service by default, and kapp-controller reverts direct patches. Waits for the envoy-lb service to receive an external IP address. Stores the IP in `CONTOUR_LB_IP` for use in CoreDNS configuration. Exits with code 4 if package installation fails or the LB IP is not assigned within the timeout.
+
+When `USE_SSLIP_DNS=true`, after the envoy-lb IP is known, the script overrides `HARBOR_HOSTNAME`, `GITLAB_HOSTNAME`, `ARGOCD_HOSTNAME` to sslip.io hostnames (e.g., `harbor.<IP>.sslip.io`) and overrides the `DOMAIN` variable to `<IP>.sslip.io`. It then re-runs the values file preparation with the updated hostnames.
+
+**Phase 3b (sslip.io only):** Self-signed certificates are still generated, but use the dynamic sslip.io domain (`*.<IP>.sslip.io`) instead of `*.lab.local`. Previous certificates are removed and regenerated with a dynamically created OpenSSL config matching the sslip.io domain. These self-signed certs are used by Harbor, GitLab, and ArgoCD for internal TLS (Helm chart configuration), while Let's Encrypt provides the public-facing Ingress TLS if a ClusterIssuer is available.
 
 ### Phase 4: Harbor Installation
 
@@ -69,7 +78,9 @@ Creates Harbor TLS and CA secrets in the Harbor namespace from the generated cer
 
 ### Phase 5: CoreDNS Configuration
 
-When `USE_SSLIP_DNS=true` (default), the script skips CoreDNS patching and self-signed certificate generation — Harbor, GitLab, and ArgoCD are instead exposed via sslip.io hostnames (e.g., `harbor.<IP>.sslip.io`, `gitlab.<IP>.sslip.io`, `argocd.<IP>.sslip.io`) with optional Let's Encrypt TLS certificates. When `USE_SSLIP_DNS=false`, the script falls back to the original behavior: patches the CoreDNS ConfigMap in `kube-system` to add static host entries for Harbor, GitLab, and ArgoCD hostnames, all pointing to the auto-detected Contour LB IP. Restarts CoreDNS pods and waits for them to reach Running state. Exits with code 6 if the patch fails or CoreDNS pods do not restart.
+When `USE_SSLIP_DNS=true` (default), this phase is skipped entirely — Harbor, GitLab, and ArgoCD are exposed via sslip.io hostnames (e.g., `harbor.<IP>.sslip.io`, `gitlab.<IP>.sslip.io`, `argocd.<IP>.sslip.io`) with optional Let's Encrypt TLS certificates. No CoreDNS patching is needed because sslip.io resolves externally.
+
+When `USE_SSLIP_DNS=false`, the script patches the CoreDNS ConfigMap in `kube-system` to add static host entries for Harbor, GitLab, and ArgoCD hostnames, all pointing to the auto-detected Contour LB IP. Restarts CoreDNS pods and waits for them to reach Running state. Exits with code 6 if the patch fails or CoreDNS pods do not restart.
 
 ### Phase 6: ArgoCD Installation
 
@@ -297,7 +308,11 @@ A successful run produces output similar to:
 
 ## Certificate Generation
 
-The script generates self-signed certificates using openssl. If certificates already exist in `CERT_DIR`, the generation phase is skipped entirely (idempotent).
+The script generates self-signed certificates using openssl. The behavior depends on `USE_SSLIP_DNS`:
+
+**When `USE_SSLIP_DNS=false`:** If certificates already exist in `CERT_DIR`, the generation phase is skipped entirely (idempotent). The wildcard certificate covers `*.${DOMAIN}` and `${DOMAIN}` (SANs configured in `examples/deploy-gitops/wildcard.cnf`).
+
+**When `USE_SSLIP_DNS=true` (default):** Certificate generation is deferred to Phase 3b, after the envoy-lb IP is known. Previous certificates are removed and regenerated with a dynamically created OpenSSL config covering `*.IP.sslip.io`. The `DOMAIN` variable is overridden to `IP.sslip.io`.
 
 Generated files in `CERT_DIR`:
 - `ca.key` — CA private key
@@ -307,8 +322,6 @@ Generated files in `CERT_DIR`:
 - `wildcard.crt` — Signed wildcard certificate
 - `fullchain.crt` — Wildcard cert + CA cert concatenated
 
-The wildcard certificate covers `*.${DOMAIN}` and `${DOMAIN}` (SANs configured in `examples/deploy-gitops/wildcard.cnf`).
-
 To use your own certificates instead, pre-populate `CERT_DIR` with `ca.crt`, `wildcard.key`, `wildcard.crt`, and `fullchain.crt` before running the script.
 
 ---
@@ -316,7 +329,7 @@ To use your own certificates instead, pre-populate `CERT_DIR` with `ca.crt`, `wi
 ## Known Limitations
 
 - **DockerHub rate limits**: GitLab component images default to DockerHub. The script configures Harbor as a proxy cache to avoid rate limits. If Harbor proxy is not configured, image pulls may fail with `429 Too Many Requests`.
-- **CoreDNS restart timing**: After patching the CoreDNS ConfigMap, pods need a few seconds to restart. DNS resolution may be briefly unavailable during the restart window.
+- **CoreDNS restart timing**: When `USE_SSLIP_DNS=false`, after patching the CoreDNS ConfigMap, pods need a few seconds to restart. DNS resolution may be briefly unavailable during the restart window. When `USE_SSLIP_DNS=true`, CoreDNS is not patched.
 - **GitLab pod startup time**: The GitLab webservice pod can take 5–10+ minutes to reach Ready state. This is normal — the Helm chart provisions multiple sub-components sequentially.
-- **Self-signed certificates**: The generated certificates are self-signed and not trusted by browsers or external clients. For production use, replace with certificates from a trusted CA.
+- **Self-signed certificates**: When `USE_SSLIP_DNS=true`, self-signed certificates are still generated for `*.IP.sslip.io` (used by Helm chart internal TLS), but Let's Encrypt provides trusted public-facing certificates via Ingress annotations. When `USE_SSLIP_DNS=false`, the generated certificates are self-signed for `*.lab.local` and not trusted by browsers.
 - **Single cluster target**: The script targets one VKS cluster at a time. To deploy to multiple clusters, run the script once per cluster with different `CLUSTER_NAME` and `KUBECONFIG_FILE` values.

@@ -53,8 +53,8 @@ Every deployment pattern starts with a running VKS cluster. The Deploy Cluster w
 4. **VKS Cluster Deployment** — Cluster API manifest with autoscaling worker pools
 5. **Kubeconfig Retrieval** — Admin kubeconfig via VCF CLI with guest cluster connectivity verification
 6. **Cluster Autoscaler Installation** — VKS standard package for automatic node scaling based on pod resource demands
-7. **cert-manager, Contour & Let's Encrypt** — TLS certificate lifecycle management, Envoy-based ingress controller, and Let's Encrypt ClusterIssuer for automated trusted certificates via sslip.io DNS
-8. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
+7. **cert-manager, Contour & Let's Encrypt** — TLS certificate lifecycle management, Envoy-based ingress controller, CoreDNS sslip.io forwarding rule (for cert-manager HTTP-01 self-checks), and Let's Encrypt ClusterIssuer for automated trusted certificates via sslip.io DNS
+8. **Functional Validation** — PVC, Deployment (custom `scafeman/vks-test-app:latest` image), and LoadBalancer Service to validate storage, compute, and networking
 
 > [!TIP]
 > **The Context Bridge** is the critical step that most engineers miss. In VCF 9, Cluster API resources are hidden from the global context. This toolkit automates the switch to the namespace-scoped context, effectively "unlocking" `kubectl get clusters`. Without it, the command returns nothing — even though the cluster exists.

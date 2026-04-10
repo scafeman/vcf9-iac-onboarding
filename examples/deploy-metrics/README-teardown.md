@@ -43,8 +43,8 @@ Removes all orphaned cluster-scoped resources left behind by the packages. Since
 
 Resources cleaned up include:
 - Telegraf, cert-manager, Contour, and Prometheus ClusterRoles and ClusterRoleBindings
-- cert-manager CRDs, webhooks, and leader election Roles in `kube-system`
-- Contour CRDs and the `tanzu-system-ingress` namespace
+- cert-manager CRDs (finalizers stripped before deletion to prevent hanging), webhooks, and leader election Roles in `kube-system`
+- Contour CRDs (finalizers stripped before deletion to prevent hanging) and the `tanzu-system-ingress` namespace
 - The `cert-manager` namespace (created by the cert-manager package, separate from `tkg-packages`)
 
 ---

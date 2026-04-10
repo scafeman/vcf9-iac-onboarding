@@ -61,7 +61,7 @@ kubectl delete ns knative-serving --ignore-not-found
 
 ### Phase 5: Delete Knative CRDs
 
-Deletes the Knative Serving CRDs using the upstream manifest, then cleans up any remaining Knative CRDs, webhooks, ClusterRoles, and ClusterRoleBindings.
+Strips finalizers from all Knative CRDs first to prevent hanging, then deletes the Knative Serving CRDs using the upstream manifest. Cleans up any remaining Knative CRDs (also with finalizer stripping), webhooks, ClusterRoles, and ClusterRoleBindings.
 
 ```
 kubectl delete -f <serving-crds-url> --ignore-not-found

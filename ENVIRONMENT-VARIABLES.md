@@ -42,6 +42,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `PACKAGE_NAMESPACE` | No | Namespace for VKS packages and Cluster Autoscaler (default: `tkg-packages`) |
 | `PACKAGE_REPO_URL` | No | VKS standard packages OCI repository URL |
 | `PACKAGE_TIMEOUT` | No | Timeout for package reconciliation in seconds (default: `600`) |
+| `CONTAINER_REGISTRY` | No | Docker registry prefix for the test app image (default: `scafeman`) |
+| `IMAGE_TAG` | No | Container image tag for the test app (default: `latest`) |
 
 ---
 
@@ -217,6 +219,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 ## sslip.io DNS & Let's Encrypt TLS
 
 These variables control the sslip.io DNS integration and optional Let's Encrypt TLS certificate provisioning. They apply to Deploy Cluster (infrastructure setup) and are consumed by all deployment patterns that create Ingress resources.
+
+When `USE_SSLIP_DNS=true` (default), dashboard services (hybrid-app, managed-db-app, secrets-demo, knative) use ClusterIP instead of LoadBalancer, with traffic routed through the shared envoy-lb Ingress. Only deploy-cluster keeps both a raw LoadBalancer IP (for NSX validation) and the envoy-lb Ingress route. No DNS entries or `/etc/hosts` changes are needed — sslip.io resolves automatically.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|

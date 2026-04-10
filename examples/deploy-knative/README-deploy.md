@@ -82,7 +82,7 @@ Deploys the `asset-audit` Knative Service with DSM PostgreSQL connection environ
 
 ### Phase 10: RBAC and Dashboard Deployment
 
-Creates RBAC resources (ServiceAccount, Role, RoleBinding) for dashboard pod count access. Deploys the Next.js dashboard as a Deployment with LoadBalancer Service, configured with the API server URL. Waits for the pod and LoadBalancer IP.
+Creates RBAC resources (ServiceAccount, Role, RoleBinding) for dashboard pod count access. Deploys the Next.js dashboard as a Deployment with a Service — when `USE_SSLIP_DNS=true` (default), uses ClusterIP with traffic routed through the shared envoy-lb Ingress. When `USE_SSLIP_DNS=false`, uses LoadBalancer type. Configured with the API server URL. Waits for the pod and LoadBalancer IP (or Ingress readiness).
 
 ### Phase 11: Verification & Scale-to-Zero Demo
 

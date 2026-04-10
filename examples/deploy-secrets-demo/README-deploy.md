@@ -85,6 +85,7 @@ Validates the guest cluster kubeconfig file exists and the cluster is reachable 
 2. Copies the supervisor service account token (base64 `token` + `ca.crt`) into the guest cluster namespace as an Opaque Secret
 3. Installs the `vault-injector` VKS standard package with values pointing to the Secret Store IP
 4. Waits for the vault-injector pod to reach Running state (timeout: 300s)
+5. Waits for the vault-injector mutating webhook (`vault-agent-injector-cfg`) to be registered (up to 120s with 10s polling), then sleeps 5s to allow the webhook to stabilize. This ensures the webhook is active before creating pods with vault annotations.
 
 ### Phase 5: Deploy Data Tier (Redis + PostgreSQL)
 
@@ -101,13 +102,13 @@ Builds the dashboard Docker image from `examples/deploy-secrets-demo/dashboard/`
 1. Creates a `test-service-account` ServiceAccount and token in the guest cluster namespace
 2. Deploys the `secrets-dashboard` Deployment with vault annotations that trigger secret injection
 3. The pod mounts the supervisor service account token at `/var/run/secrets/kubernetes.io/serviceaccount` (overriding the default)
-4. Creates a LoadBalancer Service on port 80 → 3000
+4. Creates a Service — when `USE_SSLIP_DNS=true` (default), uses ClusterIP with traffic routed through the shared envoy-lb Ingress. When `USE_SSLIP_DNS=false`, uses LoadBalancer type on port 80 → 3000.
 
 Waits for the dashboard pod to reach Running state (timeout: 300s).
 
-### Phase 8: Verify LoadBalancer IP and HTTP Connectivity
+### Phase 8: Verify Connectivity
 
-Waits for the LoadBalancer to receive an external IP (timeout: 300s), then performs an HTTP GET to verify the dashboard returns status 200.
+When `USE_SSLIP_DNS=true` (default), verifies the sslip.io Ingress is serving traffic and performs an HTTP GET to verify the dashboard returns status 200. When `USE_SSLIP_DNS=false`, waits for the LoadBalancer to receive an external IP (timeout: 300s), then performs the HTTP check.
 
 ### sslip.io DNS & TLS
 
@@ -470,6 +471,10 @@ The secrets in the Secret Store contain passwords from a previous deployment run
 The vault-injector container is failing to start, usually due to image pull issues or incorrect container arguments.
 
 **Fix:** Check pod logs: `kubectl logs -l app.kubernetes.io/name=vault-injector -n secrets-demo`. Verify the `agentInjectVaultImage` is accessible from the cluster. Ensure the vault-injector container args include `agent-inject` (this is handled automatically by the package, but custom overrides may break it).
+
+### Dashboard pod CrashLoopBackOff (vault-agent not injected)
+
+If the dashboard pod goes into CrashLoopBackOff because the vault-injector webhook wasn't registered when the pod was first created, the script automatically restarts the deployment to trigger re-injection. If this still fails, manually restart: `kubectl rollout restart deployment/secrets-dashboard -n secrets-demo`.
 
 ### Monitor during deployment
 

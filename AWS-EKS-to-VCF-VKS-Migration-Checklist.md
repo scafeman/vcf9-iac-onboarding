@@ -301,7 +301,7 @@ Common causes: storage class name mismatch, CSI driver not running, NFS backend 
 
 **EKS Equivalent:** Pod scheduling on managed node groups with Pod Security Standards
 
-In AWS, pods are scheduled on EC2 instances in managed node groups. Security is enforced via Pod Security Standards (PSS) or third-party admission controllers. VKS enforces the same Kubernetes Pod Security Standards. The validation deploys a hardened nginx container to confirm scheduling and security enforcement work correctly.
+In AWS, pods are scheduled on EC2 instances in managed node groups. Security is enforced via Pod Security Standards (PSS) or third-party admission controllers. VKS enforces the same Kubernetes Pod Security Standards. The validation deploys a hardened test app container (`scafeman/vks-test-app:latest`) to confirm scheduling and security enforcement work correctly.
 
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
@@ -332,7 +332,7 @@ In AWS, LoadBalancer services provision an NLB or ALB via the AWS Load Balancer 
 | 9.1 | LoadBalancer service created | `kubectl get svc vks-test-lb` | Service exists with type `LoadBalancer` |
 | 9.2 | External IP assigned | `kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}'` | Returns a valid IP address (not empty or `<pending>`) |
 | 9.3 | HTTP connectivity | `curl -s -o /dev/null -w '%{http_code}' http://<EXTERNAL_IP>` | Returns `200` |
-| 9.4 | Response content valid | `curl -s http://<EXTERNAL_IP>` | Returns HTML content from the nginx test app |
+| 9.4 | Response content valid | `curl -s http://<EXTERNAL_IP>` | Returns HTML content from the test app |
 
 ### LoadBalancer Mapping
 

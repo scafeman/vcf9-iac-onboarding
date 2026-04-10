@@ -67,9 +67,9 @@ The script waits for the API pod to reach Running state (timeout: 300s).
 Deploys the Next.js dashboard:
 
 1. **Frontend Deployment** (`apps/v1`) — Next.js container configured to proxy API requests to the API ClusterIP Service via cluster DNS (`hybrid-app-api.<APP_NAMESPACE>.svc.cluster.local`).
-2. **Frontend LoadBalancer Service** (`v1`) — Exposes the dashboard on port 80 (mapping to container port 3000) with an NSX-provisioned external IP.
+2. **Frontend Service** (`v1`) — When `USE_SSLIP_DNS=true` (default), the service uses ClusterIP and traffic routes through the shared envoy-lb Ingress with an sslip.io hostname. When `USE_SSLIP_DNS=false`, the service uses LoadBalancer type with an NSX-provisioned external IP on port 80.
 
-The script waits for the Frontend pod to reach Running state and the LoadBalancer to receive an external IP (timeout: 300s).
+The script waits for the Frontend pod to reach Running state and (if using LoadBalancer) for the external IP (timeout: 300s).
 
 ### Phase 5: Connectivity Verification
 

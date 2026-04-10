@@ -26,9 +26,9 @@ If no namespace is found (already deleted or never created), the script skips cl
 
 Switches to the namespace-scoped context, retrieves the admin kubeconfig for the VKS guest cluster, and deletes the functional validation workloads deployed in Phase 6 of the deploy script:
 
-1. **Ingress** `vks-test-ingress` — removes the sslip.io Ingress resource and associated TLS Certificate (if created)
+1. **Ingress** `vks-test-sslip-ingress` — removes the sslip.io Ingress resource and associated TLS Certificate (if created)
 2. **Service** `vks-test-lb` — releases the NSX LoadBalancer external IP
-3. **Deployment** `vks-test-app` — terminates the nginx pod
+3. **Deployment** `vks-test-app` — terminates the test app pod
 4. **PersistentVolumeClaim** `vks-test-pvc` — releases the NFS volume
 
 If `USE_SSLIP_DNS` was enabled during deployment, the script also cleans up the ClusterIssuer, cert-manager, and Contour VKS packages installed in Phases 5g–5i:

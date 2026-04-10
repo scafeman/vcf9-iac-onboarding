@@ -64,6 +64,11 @@ spec:
 #
 # An init container writes a test HTML page to the PVC-backed volume,
 # and the main nginx container serves it on port 8080.
+#
+# Note: The deploy-cluster.sh script uses a custom image
+# (scafeman/vks-test-app:latest) with built-in HTML content instead.
+# This sample uses the upstream nginx-unprivileged image for standalone
+# use without a custom registry.
 # -----------------------------------------------------------------------------
 apiVersion: apps/v1
 kind: Deployment

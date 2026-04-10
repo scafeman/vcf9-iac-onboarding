@@ -299,7 +299,7 @@ Deploy Metrics, Deploy GitOps, Deploy Hybrid App, Deploy Managed DB App, and Dep
 
 ## Deploy Cluster: Full Stack Deploy
 
-Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, cluster lifecycle, Cluster Autoscaler installation, cert-manager, Contour ingress controller, and Let's Encrypt ClusterIssuer — from zero to a running Kubernetes cluster with LoadBalancer support, `nfs` storageClass, automatic node scaling, and sslip.io DNS with optional TLS.
+Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, cluster lifecycle, Cluster Autoscaler installation, cert-manager, Contour ingress controller, CoreDNS sslip.io forwarding, and Let's Encrypt ClusterIssuer — from zero to a running Kubernetes cluster with LoadBalancer support, `nfs` storageClass, automatic node scaling, and sslip.io DNS with optional TLS. The functional test workload uses a custom container image (`scafeman/vks-test-app:latest`) with HTML content.
 
 | | |
 |---|---|

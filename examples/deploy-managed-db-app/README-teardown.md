@@ -30,7 +30,7 @@ Ensures the VCF CLI context is active, then deletes the PostgresCluster resource
 kubectl delete postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
 ```
 
-Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 1800s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time.
+Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 1800s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time. If the PostgresCluster gets stuck in `Deleting` state (e.g., due to PV cleanup failure), the script strips the finalizer to force deletion.
 
 If the PostgresCluster does not exist, this phase is skipped.
 

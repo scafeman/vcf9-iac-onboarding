@@ -297,7 +297,7 @@ curl -X POST \
 | 6e | **Register Package Repository** | Registers the VKS standard packages repository and waits for reconciliation |
 | 6f | **Install Cluster Autoscaler** | Installs the Cluster Autoscaler package to enable automatic node scaling |
 | 6g | **Wait for Autoscaler Ready** | Confirms the autoscaler deployment in `kube-system` is ready |
-| 7 | **Deploy Functional Test Workload** | Deploys a PVC, nginx Deployment, and LoadBalancer Service to validate the cluster |
+| 7 | **Deploy Functional Test Workload** | Deploys a PVC, test app Deployment (`scafeman/vks-test-app:latest`), and LoadBalancer Service to validate the cluster |
 | 7b | **Wait for PVC Bound** | Waits for the PersistentVolumeClaim to bind (300s timeout) |
 | 7c | **Wait for LoadBalancer IP** | Waits for the Service to receive an external IP (300s timeout) |
 | 7d | **HTTP Connectivity Test** | Curls the LoadBalancer IP and verifies HTTP 200 |
@@ -432,8 +432,8 @@ curl -X POST \
 | 8 | **Install cert-manager** | Installs the cert-manager VKS package; polls until reconciled; skips if already installed |
 | 9 | **Install Contour** | Installs the Contour VKS package; polls until reconciled; skips if already installed |
 | 10 | **Create Envoy LoadBalancer** | Creates `envoy-lb` LoadBalancer service in `tanzu-system-ingress`; waits for external IP; stores IP in `CONTOUR_LB_IP` |
-| 11 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR, signed wildcard cert, and fullchain cert; skips if certs already exist |
-| 12 | **Configure CoreDNS** | Patches CoreDNS ConfigMap with `grafana.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server |
+| 11 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR, signed wildcard cert, and fullchain cert; skips if certs already exist. When `USE_SSLIP_DNS=true`: skipped (cert-manager provides TLS) |
+| 12 | **Configure CoreDNS** | When `USE_SSLIP_DNS=false`: patches CoreDNS ConfigMap with `grafana.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server. When `USE_SSLIP_DNS=true`: skipped (sslip.io resolves externally) |
 | 13 | **Install Prometheus** | Installs the Prometheus VKS package with specified values file; polls until reconciled |
 | 14 | **Install Grafana Operator** | Creates Grafana namespace with baseline PodSecurity; installs Grafana Operator via Helm; waits for pod Running |
 | 15 | **Configure Grafana Instance** | Creates TLS secret, applies Grafana instance/datasource/dashboard manifests, creates Contour Ingress; waits for pod Running |
@@ -537,14 +537,14 @@ curl -X POST \
 | 1 | **Checkout Repository** | Checks out the repository using `actions/checkout@v5` |
 | 2 | **Setup Kubeconfig** | Sets `KUBECONFIG` env var to the provided path; fails if file not found |
 | 3 | **Verify Cluster Connectivity** | Runs `kubectl get namespaces` to verify the cluster is reachable; fails if unreachable |
-| 4 | **Generate Self-Signed Certificates** | Generates CA cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist |
+| 4 | **Generate Self-Signed Certificates** | When `USE_SSLIP_DNS=false`: generates CA cert, wildcard CSR (using `examples/deploy-gitops/wildcard.cnf`), signed wildcard cert, and fullchain cert; skips if certs exist. When `USE_SSLIP_DNS=true`: deferred to after envoy-lb IP is known (Phase 3b) |
 | 5 | **Create Package Namespace** | Creates the package namespace with privileged PodSecurity label; skips if exists |
 | 6 | **Register Package Repository** | Registers the VKS standard packages OCI repository; polls until reconciled; skips if already registered |
 | 7 | **Install cert-manager** | Installs the cert-manager VKS package; polls until reconciled; skips if already installed |
 | 8 | **Install Contour** | Installs the Contour VKS package; polls until reconciled; skips if already installed |
 | 9 | **Create Envoy LoadBalancer** | Creates `envoy-lb` LoadBalancer service; waits for external IP; stores IP in `CONTOUR_LB_IP` |
 | 10 | **Install Harbor** | Creates Harbor namespace, TLS/CA secrets, installs Harbor via Helm; skips if release exists; waits for pods Running |
-| 11 | **Configure CoreDNS** | Patches CoreDNS ConfigMap with `harbor/gitlab/argocd.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server |
+| 11 | **Configure CoreDNS** | When `USE_SSLIP_DNS=false`: patches CoreDNS ConfigMap with `harbor/gitlab/argocd.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server. When `USE_SSLIP_DNS=true`: skipped (sslip.io resolves externally) |
 | 12 | **Install ArgoCD** | Installs ArgoCD via Helm with hostname substitution; retrieves admin password from `argocd-initial-admin-secret`; waits for pods Running |
 | 13 | **Install ArgoCD CLI** | Downloads ArgoCD CLI from GitHub releases if not in PATH; adds to `$GITHUB_PATH` |
 | 14 | **Distribute Certificates** | Creates TLS secrets in ArgoCD, GitLab, and Runner namespaces using `--dry-run=client -o yaml \| kubectl apply -f -` |
