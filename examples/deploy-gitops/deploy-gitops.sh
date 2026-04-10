@@ -1296,9 +1296,11 @@ if [[ -n "${FRONTEND_LB_IP}" ]]; then
 else
   echo "    Online Boutique:  http://${CONTOUR_LB_IP}  (microservices-demo — frontend-external LB IP not yet assigned)"
 fi
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
 echo ""
 echo "  DNS / hosts file entries (add to your local machine):"
 echo "    ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME} ${GITLAB_HOSTNAME} ${ARGOCD_HOSTNAME}"
+fi
 echo ""
 echo "  Login credentials:"
 echo "    GitLab:    root  / ${GITLAB_ROOT_PASSWORD}"
