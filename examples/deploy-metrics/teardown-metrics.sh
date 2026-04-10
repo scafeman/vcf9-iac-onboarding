@@ -336,11 +336,12 @@ done
 # cert-manager webhooks
 kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
 kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
-# cert-manager CRDs
+# cert-manager CRDs — strip finalizers first to prevent hanging
 for crd in certificaterequests.cert-manager.io certificates.cert-manager.io \
            challenges.acme.cert-manager.io clusterissuers.cert-manager.io \
            issuers.cert-manager.io orders.acme.cert-manager.io; do
-  kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+  kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+  kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
 done
 # cert-manager roles in kube-system
 kubectl delete role cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
@@ -357,11 +358,12 @@ done
 for crb in contour envoy contour-tkg-packages-cluster-rolebinding; do
   kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
 done
-# Contour CRDs
+# Contour CRDs — strip finalizers first to prevent hanging
 for crd in contourconfigurations.projectcontour.io contourdeployments.projectcontour.io \
            extensionservices.projectcontour.io httpproxies.projectcontour.io \
            tlscertificatedelegations.projectcontour.io; do
-  kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+  kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+  kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
 done
 # Contour namespace (tanzu-system-ingress, created by the package)
 kubectl delete ns tanzu-system-ingress --ignore-not-found 2>/dev/null || true

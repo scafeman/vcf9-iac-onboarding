@@ -393,9 +393,14 @@ fi
 
 log_step 5 "Deleting Knative CRDs"
 
+# Strip finalizers from all Knative CRDs first to prevent hanging
+for crd in $(kubectl get crd -o name 2>/dev/null | grep knative || true); do
+  kubectl patch "${crd}" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+done
+
 # Delete Knative Serving CRDs using the upstream manifest
 if kubectl get crd services.serving.knative.dev >/dev/null 2>&1; then
-  kubectl delete -f "${KNATIVE_CRDS_URL}" --ignore-not-found 2>/dev/null || true
+  kubectl delete -f "${KNATIVE_CRDS_URL}" --ignore-not-found --timeout=30s 2>/dev/null || true
   log_success "Knative Serving CRDs deleted"
   PHASE_STATUS["phase5"]="deleted"
 else
@@ -405,7 +410,8 @@ fi
 
 # Clean up any remaining Knative CRDs that may not be in the manifest
 for crd in $(kubectl get crd -o name 2>/dev/null | grep knative || true); do
-  kubectl delete "${crd}" --ignore-not-found 2>/dev/null || true
+  kubectl patch "${crd}" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+  kubectl delete "${crd}" --ignore-not-found --timeout=10s 2>/dev/null || true
 done
 
 # Clean up Knative webhooks
