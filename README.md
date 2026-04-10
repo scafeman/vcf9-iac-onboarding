@@ -32,6 +32,8 @@ Coming from AWS EKS? Here's how the core concepts map to VCF 9 and where this to
 | RDS (PostgreSQL) | Data Services Manager (DSM) | Fully managed PostgresCluster via DSM CRD in `examples/deploy-managed-db-app/` |
 | Lambda | Knative Service | Scale-to-zero serverless functions in `examples/deploy-knative/` |
 | API Gateway | Contour (net-contour) | HTTP routing via Envoy proxy for Knative Services |
+| Route 53 | sslip.io Magic DNS | Wildcard DNS via `<IP>.sslip.io` — no external DNS provider required |
+| ACM (Certificate Manager) | Let's Encrypt + cert-manager | Automated trusted TLS certificates via ACME HTTP-01 challenge |
 | DynamoDB Streams | HTTP Webhook | Direct HTTP invocation from API server to Knative audit function |
 | EC2 (HA multi-tier) | VM Service VMs | 2× web + 2× API VMs with LoadBalancers in `examples/deploy-ha-vm-app/` |
 
@@ -51,7 +53,8 @@ Every deployment pattern starts with a running VKS cluster. The Deploy Cluster w
 4. **VKS Cluster Deployment** — Cluster API manifest with autoscaling worker pools
 5. **Kubeconfig Retrieval** — Admin kubeconfig via VCF CLI with guest cluster connectivity verification
 6. **Cluster Autoscaler Installation** — VKS standard package for automatic node scaling based on pod resource demands
-7. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
+7. **cert-manager, Contour & Let's Encrypt** — TLS certificate lifecycle management, Envoy-based ingress controller, and Let's Encrypt ClusterIssuer for automated trusted certificates via sslip.io DNS
+8. **Functional Validation** — PVC, Deployment, and LoadBalancer Service to validate storage, compute, and networking
 
 > [!TIP]
 > **The Context Bridge** is the critical step that most engineers miss. In VCF 9, Cluster API resources are hidden from the global context. This toolkit automates the switch to the namespace-scoped context, effectively "unlocking" `kubectl get clusters`. Without it, the command returns nothing — even though the cluster exists.

@@ -88,6 +88,17 @@ Creates RBAC resources (ServiceAccount, Role, RoleBinding) for dashboard pod cou
 
 Tests the API server healthz endpoint, sends a test audit event, verifies the audit trail via `/log`, waits for scale-to-zero, and verifies the pod count reaches zero.
 
+### sslip.io DNS & TLS (Dashboard)
+
+The Knative Service routing uses sslip.io for Knative domain resolution (Phase 6). Separately, when `USE_SSLIP_DNS=true` (default), the dashboard LoadBalancer Service also gets a Contour Ingress with an sslip.io hostname (e.g., `knative-dashboard.<IP>.sslip.io`). If a Let's Encrypt ClusterIssuer is available, the Ingress includes TLS annotations for automatic certificate provisioning.
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_SSLIP_DNS` | `true` | Enable/disable sslip.io DNS for the dashboard |
+| `SSLIP_HOSTNAME_PREFIX` | `knative-dashboard` | Hostname prefix for sslip.io DNS name |
+| `CLUSTER_ISSUER_NAME` | `letsencrypt-prod` | ClusterIssuer for TLS certificate requests |
+| `CERT_WAIT_TIMEOUT` | `300` | Seconds to wait for TLS certificate Ready |
+
 ---
 
 ## Required Environment Variables

@@ -103,6 +103,11 @@ ARGOCD_APP_MANIFEST="${ARGOCD_APP_MANIFEST:-examples/deploy-gitops/argocd-micros
 PACKAGE_TIMEOUT="${PACKAGE_TIMEOUT:-900}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
 
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
 ###############################################################################
 # Derived Variables (computed from DOMAIN — do not edit)
 ###############################################################################
@@ -110,6 +115,12 @@ POLL_INTERVAL="${POLL_INTERVAL:-15}"
 HARBOR_HOSTNAME="harbor.${DOMAIN}"
 GITLAB_HOSTNAME="gitlab.${DOMAIN}"
 ARGOCD_HOSTNAME="argocd.${DOMAIN}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -346,16 +357,19 @@ prepare_values_files
 
 ###############################################################################
 # Phase 2: Self-Signed Certificate Generation
+# When USE_SSLIP_DNS=true, certs are generated AFTER envoy-lb IP is known
+# (moved to Phase 3b below). When false, generate now with lab.local domain.
 ###############################################################################
 
-log_step 2 "Generating self-signed certificates"
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+
+log_step 2 "Generating self-signed certificates for *.${DOMAIN}"
 
 if [[ -f "${CERT_DIR}/ca.crt" ]]; then
   log_success "CA certificate already exists at '${CERT_DIR}/ca.crt', skipping certificate generation"
 else
   mkdir -p "${CERT_DIR}"
 
-  # Generate self-signed CA certificate and key
   if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
     -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
     -days 3650 -subj "/CN=Self-Signed CA"; then
@@ -364,7 +378,6 @@ else
   fi
   log_success "Self-signed CA certificate generated"
 
-  # Generate wildcard certificate CSR using the OpenSSL config
   if ! openssl req -new -nodes -newkey rsa:2048 \
     -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
     -config examples/deploy-gitops/wildcard.cnf; then
@@ -373,7 +386,6 @@ else
   fi
   log_success "Wildcard certificate CSR generated"
 
-  # Sign the wildcard certificate with the CA
   if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
     -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
     -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
@@ -383,12 +395,15 @@ else
   fi
   log_success "Wildcard certificate signed by CA"
 
-  # Create fullchain certificate (wildcard + CA)
   cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
   log_success "Fullchain certificate created"
 fi
 
 log_success "Certificates ready in '${CERT_DIR}'"
+
+else
+  log_step 2 "Deferring certificate generation until envoy-lb IP is known (USE_SSLIP_DNS=true)"
+fi
 
 ###############################################################################
 # Phase 3: VKS Package Prerequisites (cert-manager, Contour, envoy-lb)
@@ -523,6 +538,80 @@ fi
 CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_INGRESS_NAMESPACE}" envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "Contour installed and Envoy LoadBalancer IP: ${CONTOUR_LB_IP}"
 
+# Override hostnames with sslip.io when USE_SSLIP_DNS=true
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  HARBOR_HOSTNAME=$(construct_sslip_hostname "harbor" "${CONTOUR_LB_IP}")
+  GITLAB_HOSTNAME=$(construct_sslip_hostname "gitlab" "${CONTOUR_LB_IP}")
+  ARGOCD_HOSTNAME=$(construct_sslip_hostname "argocd" "${CONTOUR_LB_IP}")
+  # Override DOMAIN so GitLab global.hosts.domain uses sslip.io
+  DOMAIN="${CONTOUR_LB_IP}.sslip.io"
+  log_success "sslip.io hostnames: ${HARBOR_HOSTNAME}, ${GITLAB_HOSTNAME}, ${ARGOCD_HOSTNAME}"
+  log_success "sslip.io domain: ${DOMAIN}"
+
+  # Re-run prepare_values_files with updated hostnames and domain
+  prepare_values_files
+
+  # Phase 3b: Generate self-signed certificates for sslip.io domain
+  log_step "3b" "Generating self-signed certificates for *.${DOMAIN}"
+
+  # Remove stale certs from previous runs (domain may have changed)
+  rm -rf "${CERT_DIR}"
+  mkdir -p "${CERT_DIR}"
+
+  if ! openssl req -x509 -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+    -days 3650 -subj "/CN=Self-Signed CA"; then
+    log_error "Failed to generate self-signed CA certificate"
+    exit 3
+  fi
+  log_success "Self-signed CA certificate generated"
+
+  # Generate dynamic OpenSSL config for the sslip.io domain
+  SSLIP_WILDCARD_CNF=$(mktemp /tmp/sslip-wildcard-XXXXXX.cnf)
+  cat > "${SSLIP_WILDCARD_CNF}" <<CNFEOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+req_extensions = v3_req
+
+[dn]
+CN = *.${DOMAIN}
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = *.${DOMAIN}
+DNS.2 = ${DOMAIN}
+CNFEOF
+
+  if ! openssl req -new -nodes -newkey rsa:2048 \
+    -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+    -config "${SSLIP_WILDCARD_CNF}"; then
+    log_error "Failed to generate wildcard certificate CSR"
+    rm -f "${SSLIP_WILDCARD_CNF}"
+    exit 3
+  fi
+  log_success "Wildcard certificate CSR generated for *.${DOMAIN}"
+
+  if ! openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+    -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+    -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+    -days 3650 -extensions v3_req -extfile "${SSLIP_WILDCARD_CNF}"; then
+    log_error "Failed to sign wildcard certificate"
+    rm -f "${SSLIP_WILDCARD_CNF}"
+    exit 3
+  fi
+  log_success "Wildcard certificate signed for *.${DOMAIN}"
+
+  rm -f "${SSLIP_WILDCARD_CNF}"
+
+  cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+  log_success "Certificates ready in '${CERT_DIR}' for *.${DOMAIN}"
+fi
+
 ###############################################################################
 # Phase 4: Harbor Installation
 ###############################################################################
@@ -576,8 +665,10 @@ fi
 log_success "Harbor installed and running in namespace '${HARBOR_NAMESPACE}'"
 
 ###############################################################################
-# Phase 5: CoreDNS Configuration
+# Phase 5: CoreDNS Configuration (skipped when USE_SSLIP_DNS=true)
 ###############################################################################
+
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
 
 log_step 5 "Configuring CoreDNS with static host entries"
 
@@ -586,17 +677,11 @@ kubectl get configmap coredns -n kube-system -o yaml > /tmp/coredns-backup.yaml
 log_success "CoreDNS ConfigMap backed up to /tmp/coredns-backup.yaml"
 
 # Patch CoreDNS ConfigMap with static host entries for Harbor, GitLab, and ArgoCD
-# This allows pods to resolve all service hostnames without external DNS
 CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
 
-# Check if hosts block already contains our entries
 if echo "${CURRENT_COREFILE}" | grep -q "${GITLAB_HOSTNAME}"; then
   log_success "CoreDNS already contains entry for '${GITLAB_HOSTNAME}', skipping patch"
 else
-  # First, remove any stale hosts blocks left by previous teardowns or
-  # other deployments. Without this, repeated teardown/deploy cycles accumulate
-  # empty hosts { fallthrough } blocks, causing CoreDNS to crash with
-  # "this plugin can only be used once per Server Block".
   CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
 import re, sys
 corefile = sys.stdin.read()
@@ -605,13 +690,10 @@ cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
 print(cleaned, end="")
 ')
 
-  # Build the hosts block to inject (all 3 hostnames use the Contour LB IP)
   HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME}\n            ${CONTOUR_LB_IP} ${GITLAB_HOSTNAME}\n            ${CONTOUR_LB_IP} ${ARGOCD_HOSTNAME}\n            fallthrough\n        }"
 
-  # Inject the hosts block before the first "ready" directive
   PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
 
-  # Apply the patched ConfigMap
   kubectl patch configmap coredns -n kube-system --type merge -p "{
     \"data\": {
       \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
@@ -638,8 +720,11 @@ fi
 log_success "CoreDNS configured and running with static host entries"
 
 # After CoreDNS restart, the API server may be briefly unreachable.
-# Wait for connectivity to stabilize before proceeding.
 wait_for_api_server
+
+else
+  log_step 5 "Skipping CoreDNS patching (USE_SSLIP_DNS=true — sslip.io resolves externally)"
+fi
 
 ###############################################################################
 # Phase 6: ArgoCD Installation
@@ -714,10 +799,7 @@ log_success "ArgoCD CLI is available"
 
 log_step 8 "Distributing certificates to application namespaces"
 
-# Create ArgoCD TLS secret from wildcard certificate (idempotent)
-# The ArgoCD Helm chart creates an Ingress that references 'argocd-server-tls'
-# by default when tls is enabled. This secret must exist before the Ingress
-# can serve HTTPS traffic through Contour.
+# Create ArgoCD TLS secret from wildcard certificate
 kubectl create secret tls argocd-server-tls \
   --cert="${CERT_DIR}/wildcard.crt" \
   --key="${CERT_DIR}/wildcard.key" \
@@ -751,6 +833,7 @@ kubectl label ns "${GITLAB_RUNNER_NAMESPACE}" \
   pod-security.kubernetes.io/warn=privileged \
   --overwrite >/dev/null 2>&1 || true
 
+# Create Harbor CA and GitLab TLS secrets
 # Create Harbor CA secret in GitLab namespace (idempotent)
 if ! kubectl create secret generic harbor-ca-cert \
   --from-file=ca.crt="${CERT_DIR}/ca.crt" \
@@ -779,7 +862,7 @@ if ! kubectl create secret tls gitlab-wildcard-tls \
   exit 9
 fi
 
-log_success "Certificates distributed: Harbor CA in '${GITLAB_NAMESPACE}' and '${GITLAB_RUNNER_NAMESPACE}', GitLab wildcard TLS in '${GITLAB_NAMESPACE}'"
+log_success "Certificates distributed to all namespaces for *.${DOMAIN}"
 
 ###############################################################################
 # Phase 9: GitLab Installation

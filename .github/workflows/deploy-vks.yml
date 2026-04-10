@@ -94,6 +94,16 @@ on:
         required: false
         type: string
         default: "node-pool-01"
+      use_sslip_dns:
+        description: "Use sslip.io for automatic DNS resolution (default: true)"
+        required: false
+        type: string
+        default: "true"
+      letsencrypt_email:
+        description: "Email for Let's Encrypt certificate registration (optional)"
+        required: false
+        type: string
+        default: ""
 
   repository_dispatch:
     types: [deploy-vks]
@@ -148,6 +158,12 @@ jobs:
       PACKAGE_NAMESPACE: ${{ github.event.client_payload.package_namespace || secrets.PACKAGE_NAMESPACE || 'tkg-packages' }}
       PACKAGE_REPO_URL: ${{ github.event.client_payload.package_repo_url || secrets.PACKAGE_REPO_URL || 'projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211' }}
       PACKAGE_TIMEOUT: ${{ github.event.client_payload.package_timeout || secrets.PACKAGE_TIMEOUT || '600' }}
+
+      # --- sslip.io DNS and Let's Encrypt TLS ---
+      USE_SSLIP_DNS: ${{ github.event.inputs.use_sslip_dns || github.event.client_payload.use_sslip_dns || 'true' }}
+      LETSENCRYPT_EMAIL: ${{ github.event.inputs.letsencrypt_email || github.event.client_payload.letsencrypt_email || '' }}
+      CLUSTER_ISSUER_NAME: "letsencrypt-prod"
+      CERT_WAIT_TIMEOUT: "300"
 
       # --- Static Configuration ---
       CONTEXT_NAME: gh-actions-deploy

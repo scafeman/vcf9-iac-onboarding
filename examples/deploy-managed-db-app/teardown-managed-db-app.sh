@@ -218,6 +218,10 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
     kubectl config use-context "$(kubectl config get-contexts -o name --kubeconfig="${KUBECONFIG_FILE}" | head -1)" --kubeconfig="${KUBECONFIG_FILE}" 2>/dev/null || true
 
   if kubectl get ns "${APP_NAMESPACE}" >/dev/null 2>&1; then
+    # Delete sslip.io Ingress and Certificate resources
+    kubectl delete ingress managed-db-dashboard-sslip-ingress -n "${APP_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    kubectl delete certificate managed-db-dashboard-sslip-ingress-tls -n "${APP_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+
     if kubectl delete ns "${APP_NAMESPACE}" --ignore-not-found; then
       log_success "Namespace '${APP_NAMESPACE}' deleted (includes Frontend + API Deployments and Services)"
       RESOURCE_STATUS["namespace"]="deleted"

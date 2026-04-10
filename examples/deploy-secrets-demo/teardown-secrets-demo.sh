@@ -75,6 +75,10 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
 
   log_step 2 "Deleting secrets-demo namespace and cluster-scoped resources"
 
+  # Delete sslip.io Ingress and Certificate resources
+  kubectl delete ingress secrets-dashboard-sslip-ingress -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+  kubectl delete certificate secrets-dashboard-sslip-ingress-tls -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+
   kubectl delete ns "${NAMESPACE}" --ignore-not-found || true
   log_success "Namespace '${NAMESPACE}' deleted (or already removed by package teardown)"
 

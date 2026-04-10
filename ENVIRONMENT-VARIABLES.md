@@ -214,6 +214,21 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 
 ---
 
+## sslip.io DNS & Let's Encrypt TLS
+
+These variables control the sslip.io DNS integration and optional Let's Encrypt TLS certificate provisioning. They apply to Deploy Cluster (infrastructure setup) and are consumed by all deployment patterns that create Ingress resources.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `USE_SSLIP_DNS` | No | `true` | Enable/disable sslip.io DNS integration for all patterns |
+| `LETSENCRYPT_EMAIL` | No | (empty) | ACME account registration email for Let's Encrypt certificate issuance |
+| `CLUSTER_ISSUER_NAME` | No | `letsencrypt-prod` | ClusterIssuer resource name to use for TLS certificate requests |
+| `SSLIP_HOSTNAME_PREFIX` | No | (pattern-specific) | Hostname prefix for sslip.io DNS names (e.g., `dashboard`, `grafana`) |
+| `CERT_WAIT_TIMEOUT` | No | `300` | Seconds to wait for TLS certificate to reach Ready status |
+| `CONTOUR_INGRESS_NAMESPACE` | No | `tanzu-system-ingress` | Namespace where Contour/Envoy LoadBalancer service runs |
+
+---
+
 ## GitHub Actions Runner
 
 | Variable | Required | Description |

@@ -150,6 +150,10 @@ jobs:
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      SSLIP_HOSTNAME_PREFIX: "ha-web"
+
       # --- Static Configuration ---
       CONTEXT_NAME: ha-vm-app-deploy
 

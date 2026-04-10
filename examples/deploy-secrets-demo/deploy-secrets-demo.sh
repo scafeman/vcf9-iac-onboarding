@@ -72,6 +72,18 @@ POD_TIMEOUT="${POD_TIMEOUT:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
 
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+SSLIP_HOSTNAME_PREFIX="${SSLIP_HOSTNAME_PREFIX:-secrets-dashboard}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
+
 ###############################################################################
 # Helper Functions
 ###############################################################################
@@ -388,6 +400,16 @@ if ! wait_for_condition "vault-injector pod to be ready" \
   exit 5
 fi
 
+# Wait for vault-injector mutating webhook to be registered
+if ! wait_for_condition "vault-injector webhook to be registered" \
+  120 10 \
+  "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
+  log_warn "Vault-injector webhook not found — vault-agent sidecar may not be injected"
+fi
+
+# Brief pause to ensure webhook is fully ready to intercept pod creation
+sleep 5
+
 log_success "Phase 4 complete — vault-injector deployed and running in namespace '${NAMESPACE}'"
 
 ###############################################################################
@@ -609,14 +631,28 @@ spec:
       - name: vault-token
         secret:
           secretName: internal-app-token
----
+EOF
+then
+  log_error "Failed to deploy web dashboard"
+  exit 8
+fi
+
+log_success "Dashboard Deployment applied"
+
+# Deploy Dashboard Service (ClusterIP when using Ingress, LoadBalancer otherwise)
+DASHBOARD_SVC_TYPE="LoadBalancer"
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  DASHBOARD_SVC_TYPE="ClusterIP"
+fi
+
+if ! cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
 metadata:
   name: secrets-dashboard-lb
   namespace: ${NAMESPACE}
 spec:
-  type: LoadBalancer
+  type: ${DASHBOARD_SVC_TYPE}
   selector:
     app: secrets-dashboard
   ports:
@@ -625,19 +661,27 @@ spec:
     protocol: TCP
 EOF
 then
-  log_error "Failed to deploy web dashboard"
+  log_error "Failed to deploy Dashboard Service"
   exit 8
 fi
 
-log_success "Dashboard Deployment and LoadBalancer Service applied"
+log_success "Dashboard Service applied (type: ${DASHBOARD_SVC_TYPE})"
 
 # Wait for dashboard pod readiness
 if ! wait_for_condition "dashboard pod to be ready" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
   "kubectl get pods -n '${NAMESPACE}' -l app=secrets-dashboard --no-headers 2>/dev/null | grep -q 'Running'"; then
-  log_error "Dashboard pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${NAMESPACE}" -l app=secrets-dashboard -o wide 2>/dev/null || true
-  exit 8
+  # Pod may be in CrashLoopBackOff if vault-injector sidecar wasn't injected on first create.
+  # Restart the deployment to trigger re-injection, then wait again.
+  log_warn "Dashboard pod not running — restarting deployment to trigger vault-agent sidecar injection"
+  kubectl rollout restart deployment/secrets-dashboard -n "${NAMESPACE}" 2>/dev/null || true
+  if ! wait_for_condition "dashboard pod to be ready (after restart)" \
+    "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get pods -n '${NAMESPACE}' -l app=secrets-dashboard --no-headers 2>/dev/null | grep -q 'Running'"; then
+    log_error "Dashboard pod did not reach Running state within ${POD_TIMEOUT}s"
+    kubectl get pods -n "${NAMESPACE}" -l app=secrets-dashboard -o wide 2>/dev/null || true
+    exit 8
+  fi
 fi
 
 log_success "Phase 7 complete — web dashboard deployed with vault annotations"
@@ -648,24 +692,80 @@ log_success "Phase 7 complete — web dashboard deployed with vault annotations"
 
 log_step 8 "Waiting for LoadBalancer IP and verifying HTTP connectivity"
 
-# Wait for LoadBalancer external IP to be assigned
-if ! wait_for_condition "LoadBalancer 'secrets-dashboard-lb' to receive external IP" \
-  "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
-  "[[ -n \$(kubectl get svc secrets-dashboard-lb -n '${NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
-  log_error "LoadBalancer 'secrets-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
-  kubectl get svc secrets-dashboard-lb -n "${NAMESPACE}" -o wide 2>/dev/null || true
+# Get dashboard access URL
+DASHBOARD_IP=""
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+  # Wait for LoadBalancer external IP to be assigned (only when not using Ingress)
+  if ! wait_for_condition "LoadBalancer 'secrets-dashboard-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc secrets-dashboard-lb -n '${NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    log_error "LoadBalancer 'secrets-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
+    kubectl get svc secrets-dashboard-lb -n "${NAMESPACE}" -o wide 2>/dev/null || true
+    exit 9
+  fi
+
+  DASHBOARD_IP=$(kubectl get svc secrets-dashboard-lb -n "${NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  log_success "LoadBalancer 'secrets-dashboard-lb' assigned external IP: ${DASHBOARD_IP}"
+fi
+
+###############################################################################
+# Phase 8b: sslip.io DNS + TLS (guarded by USE_SSLIP_DNS)
+###############################################################################
+
+SSLIP_HOSTNAME=""
+SSLIP_URL=""
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  # sslip.io hostname must use the Contour envoy-lb IP (Ingress routes through Contour)
+  if ! wait_for_condition "Envoy LoadBalancer 'envoy-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    echo "  ⚠ WARNING: Envoy LoadBalancer did not receive an external IP — skipping sslip.io"
+  else
+    CONTOUR_LB_IP=$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    SSLIP_HOSTNAME=$(construct_sslip_hostname "${SSLIP_HOSTNAME_PREFIX}" "${CONTOUR_LB_IP}")
+    log_success "sslip.io hostname: ${SSLIP_HOSTNAME}"
+
+    # Determine TLS capability
+    TLS_ENABLED=false
+    if check_cert_manager_available && check_cluster_issuer_ready "${CLUSTER_ISSUER_NAME}"; then
+      TLS_ENABLED=true
+    fi
+
+    # Create Ingress
+    create_ingress_with_tls "secrets-dashboard-sslip-ingress" "${NAMESPACE}" \
+      "${SSLIP_HOSTNAME}" "secrets-dashboard-lb" 80 "${TLS_ENABLED}" "${CLUSTER_ISSUER_NAME}"
+
+    log_success "sslip.io Ingress created (TLS: ${TLS_ENABLED})"
+
+    if [[ "${TLS_ENABLED}" == "true" ]]; then
+      if wait_for_certificate "secrets-dashboard-sslip-ingress-tls" "${NAMESPACE}" "${CERT_WAIT_TIMEOUT}"; then
+        SSLIP_URL="https://${SSLIP_HOSTNAME}"
+      else
+        echo "  ⚠ WARNING: TLS certificate not ready — falling back to HTTP"
+        SSLIP_URL="http://${SSLIP_HOSTNAME}"
+      fi
+    else
+      SSLIP_URL="http://${SSLIP_HOSTNAME}"
+    fi
+  fi
+fi
+
+# HTTP connectivity test
+if [[ -n "${SSLIP_URL}" ]]; then
+  TEST_URL="${SSLIP_URL}"
+elif [[ -n "${DASHBOARD_IP}" ]]; then
+  TEST_URL="http://${DASHBOARD_IP}"
+else
+  log_error "No dashboard URL available for connectivity test"
   exit 9
 fi
 
-DASHBOARD_IP=$(kubectl get svc secrets-dashboard-lb -n "${NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-log_success "LoadBalancer 'secrets-dashboard-lb' assigned external IP: ${DASHBOARD_IP}"
-
-# HTTP connectivity test
-HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${DASHBOARD_IP}" --max-time 10 || true)
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
 if [[ "${HTTP_STATUS}" == "200" ]]; then
-  log_success "HTTP connectivity test passed — received status 200 from http://${DASHBOARD_IP}"
+  log_success "HTTP connectivity test passed — received status 200 from ${TEST_URL}"
 else
-  log_error "HTTP test returned status ${HTTP_STATUS} from http://${DASHBOARD_IP} (expected 200)"
+  log_error "HTTP test returned status ${HTTP_STATUS} from ${TEST_URL} (expected 200)"
   exit 9
 fi
 
@@ -687,7 +787,12 @@ echo "  Deployed Services:"
 echo "    - Redis:      redis.${NAMESPACE}.svc.cluster.local:6379"
 echo "    - PostgreSQL: postgres.${NAMESPACE}.svc.cluster.local:5432"
 echo "    - Vault Injector: vault-agent-injector-svc.${NAMESPACE}.svc.cluster.local:443"
+if [[ -n "${DASHBOARD_IP}" ]]; then
 echo "    - Dashboard:  http://${DASHBOARD_IP}"
+fi
+if [[ -n "${SSLIP_URL}" ]]; then
+echo "    - sslip.io:   ${SSLIP_URL}"
+fi
 echo "============================================="
 echo ""
 

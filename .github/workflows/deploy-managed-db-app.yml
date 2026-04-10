@@ -137,6 +137,10 @@ jobs:
       # --- Secret Store (vault-injector) ---
       SECRET_STORE_IP: ${{ github.event.client_payload.secret_store_ip || secrets.SECRET_STORE_IP }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      SSLIP_HOSTNAME_PREFIX: "managed-db-dashboard"
+
       # --- Static Configuration ---
       CONTEXT_NAME: managed-db-app-deploy
 

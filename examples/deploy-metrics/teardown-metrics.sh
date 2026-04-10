@@ -152,6 +152,7 @@ log_step 2 "Deleting Grafana"
 
 # Remove Grafana Ingress and TLS secret
 kubectl delete ingress grafana-ingress -n "${GRAFANA_NAMESPACE}" 2>/dev/null || true
+kubectl delete certificate grafana-ingress-tls -n "${GRAFANA_NAMESPACE}" --ignore-not-found 2>/dev/null || true
 kubectl delete secret grafana-tls -n "${GRAFANA_NAMESPACE}" 2>/dev/null || true
 
 # Remove Grafana CRs first (dashboards, datasource, instance)

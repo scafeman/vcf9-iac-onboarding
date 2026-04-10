@@ -39,6 +39,16 @@ CLUSTER_DELETE_TIMEOUT="${CLUSTER_DELETE_TIMEOUT:-1800}"
 NS_DELETE_TIMEOUT="${NS_DELETE_TIMEOUT:-600}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
 
+# --- Package Configuration ---
+PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
+CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
+
 ###############################################################################
 # Helper Functions
 ###############################################################################
@@ -179,7 +189,42 @@ if [[ "${SKIP_CLUSTER_TEARDOWN}" == "false" ]]; then
     kubectl delete deployment vks-test-app --ignore-not-found 2>/dev/null || true
     kubectl delete pvc vks-test-pvc --ignore-not-found 2>/dev/null || true
 
-    log_success "Guest cluster workloads deleted"
+    # Delete sslip.io Ingress and Certificate resources
+    kubectl delete ingress vks-test-sslip-ingress --ignore-not-found 2>/dev/null || true
+    kubectl delete certificate vks-test-sslip-ingress-tls --ignore-not-found 2>/dev/null || true
+
+    log_success "Guest cluster workloads and sslip.io resources deleted"
+
+    # --- Phase 1b: Delete ClusterIssuers and sslip.io infrastructure ---
+    log_step "1b" "Deleting ClusterIssuers and sslip.io infrastructure"
+
+    kubectl delete clusterissuer letsencrypt-prod --ignore-not-found 2>/dev/null || true
+    kubectl delete clusterissuer letsencrypt-staging --ignore-not-found 2>/dev/null || true
+    log_success "ClusterIssuers deleted"
+
+    # Check if other patterns still need cert-manager/Contour
+    SSLIP_DEPS=0
+    if kubectl get ingress --all-namespaces -o jsonpath='{.items[*].spec.rules[*].host}' 2>/dev/null | grep -q 'sslip.io'; then
+      SSLIP_DEPS=1
+    fi
+    for ns in harbor argocd gitlab-system grafana; do
+      if kubectl get ns "${ns}" >/dev/null 2>&1; then
+        SSLIP_DEPS=1
+      fi
+    done
+
+    if [[ "${SSLIP_DEPS}" -eq 0 ]]; then
+      # Delete envoy-lb service
+      kubectl delete svc envoy-lb -n "${CONTOUR_INGRESS_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+      log_success "Envoy LoadBalancer service deleted"
+
+      # Delete cert-manager and Contour VKS packages
+      vcf package installed delete cert-manager -n "${PACKAGE_NAMESPACE}" --yes 2>/dev/null || true
+      vcf package installed delete contour -n "${PACKAGE_NAMESPACE}" --yes 2>/dev/null || true
+      log_success "cert-manager and Contour VKS packages deleted"
+    else
+      log_warn "Other patterns still depend on cert-manager/Contour — skipping package removal"
+    fi
 
     # Unset so subsequent kubectl commands use the VCF CLI context
     unset KUBECONFIG

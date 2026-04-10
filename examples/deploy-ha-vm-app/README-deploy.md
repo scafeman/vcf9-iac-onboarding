@@ -91,6 +91,10 @@ Performs end-to-end validation:
 
 Prints a deployment summary with the Web LB external IP, all VM names and IPs, and the DSM connection endpoint.
 
+### sslip.io DNS Alias
+
+When `USE_SSLIP_DNS=true` (default), the deployment summary includes an sslip.io alias for the Web LB IP (e.g., `ha-web.<IP>.sslip.io`). Since the HA VM App uses VirtualMachineService LoadBalancers (not Kubernetes Ingress), no Ingress or TLS certificate is created — the sslip.io hostname is a convenience alias that resolves to the Web LB external IP without requiring `/etc/hosts` entries.
+
 ---
 
 ## Required Environment Variables

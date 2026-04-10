@@ -111,6 +111,10 @@ DSM_TIMEOUT="${DSM_TIMEOUT:-1800}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
 
+# --- sslip.io ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+SSLIP_HOSTNAME_PREFIX="${SSLIP_HOSTNAME_PREFIX:-ha-web}"
+
 ###############################################################################
 # Exit Codes
 #   0 = Success
@@ -122,6 +126,12 @@ POLL_INTERVAL="${POLL_INTERVAL:-30}"
 #   6 = Web VirtualMachineService / LB IP failure
 #   7 = Connectivity verification failure
 ###############################################################################
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -805,6 +815,14 @@ fi
 
 WEB_LB_IP=$(kubectl get virtualmachineservice "${WEB_LB_NAME}" -n "${SUPERVISOR_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "Web LB external IP: ${WEB_LB_IP}"
+
+# Construct sslip.io hostname (DNS alias only — no Ingress/TLS for VM-based LBs)
+SSLIP_HOSTNAME=""
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  SSLIP_HOSTNAME=$(construct_sslip_hostname "${SSLIP_HOSTNAME_PREFIX}" "${WEB_LB_IP}")
+  log_success "sslip.io hostname: ${SSLIP_HOSTNAME} (DNS alias only — no Ingress/TLS for VM-based LoadBalancers)"
+fi
+
 log_success "Phase 5 complete — Web tier LoadBalancer created at ${WEB_LB_IP}"
 
 ###############################################################################
@@ -862,6 +880,9 @@ echo "============================================="
 echo "  VCF 9 HA VM App — Deployment Complete"
 echo "============================================="
 echo "  Web LB IP:     http://${WEB_LB_IP}"
+if [[ -n "${SSLIP_HOSTNAME}" ]]; then
+echo "  sslip.io:      http://${SSLIP_HOSTNAME}"
+fi
 echo "  Web VM 01:     ${WEB_VM_NAMES[0]} (${WEB_VM_IPS[0]})"
 echo "  Web VM 02:     ${WEB_VM_NAMES[1]} (${WEB_VM_IPS[1]})"
 echo "  API VM 01:     ${API_VM_NAMES[0]} (${API_VM_IPS[0]})"

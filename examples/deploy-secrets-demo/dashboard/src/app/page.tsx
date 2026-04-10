@@ -42,7 +42,7 @@ function CheckItem({ label, passed, error }: { label: string; passed: boolean | 
       padding: '12px 0',
       borderBottom: '1px solid #1e293b',
     }}>
-      <span style={{ fontSize: '18px', flexShrink: 0 }}>
+      <span style={{ fontSize: '18px', flexShrink: 0, color: passed === null ? '#94a3b8' : passed ? '#4ade80' : '#f87171' }}>
         {passed === null ? '⏳' : passed ? '✓' : '✗'}
       </span>
       <span style={{

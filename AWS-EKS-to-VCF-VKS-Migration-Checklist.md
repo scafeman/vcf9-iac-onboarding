@@ -528,7 +528,7 @@ This script executes all phases non-interactively and reports pass/fail status f
 | **Secrets Management** | Secrets Manager | VCF Secret Store + vault-injector |
 | **VM Workloads** | EC2 instances | VM Service (VirtualMachine CRD) |
 | **Bastion / Jump Host** | EC2 + Security Groups | VM Service + VirtualMachineService LoadBalancer |
-| **DNS** | Route 53 | CoreDNS with static host entries |
-| **Certificates** | ACM (AWS Certificate Manager) | Self-signed CA + wildcard certs (cert-manager optional) |
+| **DNS** | Route 53 | sslip.io magic DNS (`<IP>.sslip.io`) — no external DNS provider required |
+| **Certificates** | ACM (AWS Certificate Manager) | Let's Encrypt + cert-manager (automated ACME HTTP-01 certificates) |
 | **CLI** | `aws` + `eksctl` + `kubectl` | `vcf` + `kubectl` |
 | **IaC** | CloudFormation / Terraform | YAML manifests via `kubectl apply` (CCI APIs) |

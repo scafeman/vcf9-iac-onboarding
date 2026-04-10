@@ -67,6 +67,8 @@ All three workflows follow the same patterns:
 |---|---|---|
 | `VCFA_ENDPOINT` | `vcfa_endpoint` | VCFA hostname (without `https://` prefix) |
 | `TENANT_NAME` | `tenant_name` | SSO tenant/organization name |
+| `USE_SSLIP_DNS` | `use_sslip_dns` | Enable/disable sslip.io DNS integration (default: `true`) |
+| `LETSENCRYPT_EMAIL` | `letsencrypt_email` | ACME account registration email for Let's Encrypt certificate issuance |
 
 Configure secrets in your repository under **Settings → Secrets and variables → Actions → New repository secret**.
 

@@ -174,6 +174,10 @@ log_step 1 "Deleting dashboard, RBAC, API server, audit function, and '${DEMO_NA
 if kubectl get ns "${DEMO_NAMESPACE}" >/dev/null 2>&1; then
   # Delete Dashboard Deployment
   if kubectl get deployment knative-dashboard -n "${DEMO_NAMESPACE}" >/dev/null 2>&1; then
+    # Delete sslip.io Ingress and Certificate resources for dashboard
+    kubectl delete ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    kubectl delete certificate knative-dashboard-sslip-ingress-tls -n "${DEMO_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+
     kubectl delete deployment knative-dashboard -n "${DEMO_NAMESPACE}" --ignore-not-found
     log_success "Dashboard Deployment 'knative-dashboard' deleted"
   else

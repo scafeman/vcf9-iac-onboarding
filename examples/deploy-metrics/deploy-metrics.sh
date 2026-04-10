@@ -74,11 +74,22 @@ POLL_INTERVAL="${POLL_INTERVAL:-15}"
 # --- Contour Ingress (VKS package) ---
 CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
 
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
 ###############################################################################
 # Derived Variables (computed from DOMAIN — do not edit)
 ###############################################################################
 
 GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -415,8 +426,10 @@ EOF
 fi
 
 ###############################################################################
-# Phase 7b: Self-Signed Certificate Generation
+# Phase 7b: Self-Signed Certificate Generation (skipped when USE_SSLIP_DNS=true)
 ###############################################################################
+
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
 
 log_step "7b" "Generating self-signed certificates"
 
@@ -474,11 +487,16 @@ fi
 
 log_success "Certificates ready in '${CERT_DIR}'"
 
+else
+  log_step "7b" "Skipping self-signed certificate generation (USE_SSLIP_DNS=true)"
+  log_success "Let's Encrypt will provide TLS certificates via cert-manager"
+fi
+
 ###############################################################################
-# Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
+# Phase 7c: Contour LoadBalancer IP & DNS Configuration
 ###############################################################################
 
-log_step "7c" "Retrieving Contour LoadBalancer IP and configuring CoreDNS"
+log_step "7c" "Retrieving Contour LoadBalancer IP and configuring DNS"
 
 # The VKS Contour package creates an 'envoy' NodePort service in
 # tanzu-system-ingress. We created a separate 'envoy-lb' LoadBalancer
@@ -493,17 +511,19 @@ fi
 CONTOUR_LB_IP=$(kubectl get svc -n "${CONTOUR_INGRESS_NAMESPACE}" envoy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "Contour Envoy LoadBalancer IP: ${CONTOUR_LB_IP}"
 
-# Patch CoreDNS with a static host entry for grafana.<DOMAIN>
-CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
-
-if echo "${CURRENT_COREFILE}" | grep -q "${GRAFANA_HOSTNAME}"; then
-  log_success "CoreDNS already contains entry for '${GRAFANA_HOSTNAME}', skipping patch"
+# When USE_SSLIP_DNS=true, use sslip.io hostname and skip CoreDNS patching
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  GRAFANA_HOSTNAME=$(construct_sslip_hostname "grafana" "${CONTOUR_LB_IP}")
+  log_success "sslip.io hostname for Grafana: ${GRAFANA_HOSTNAME}"
+  log_success "Skipping CoreDNS patching (sslip.io resolves externally)"
 else
-  # First, remove any stale empty hosts blocks left by previous teardowns.
-  # Without this, repeated teardown/deploy cycles accumulate empty
-  # hosts { fallthrough } blocks, causing CoreDNS to crash with
-  # "this plugin can only be used once per Server Block".
-  CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
+  # Patch CoreDNS with a static host entry for grafana.<DOMAIN>
+  CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+
+  if echo "${CURRENT_COREFILE}" | grep -q "${GRAFANA_HOSTNAME}"; then
+    log_success "CoreDNS already contains entry for '${GRAFANA_HOSTNAME}', skipping patch"
+  else
+    CLEAN_COREFILE=$(echo "${CURRENT_COREFILE}" | python3 -c '
 import re, sys
 corefile = sys.stdin.read()
 cleaned = re.sub(r"\s*hosts\s*\{[^}]*\}\s*", "\n        ", corefile)
@@ -511,36 +531,34 @@ cleaned = re.sub(r"\n(\s*\n)+", "\n", cleaned)
 print(cleaned, end="")
 ')
 
-  HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}\n            fallthrough\n        }"
+    HOSTS_BLOCK="hosts {\n            ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}\n            fallthrough\n        }"
 
-  # Inject the hosts block before the first "ready" directive
-  PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
+    PATCHED_COREFILE=$(echo "${CLEAN_COREFILE}" | sed "s|ready|${HOSTS_BLOCK}\n        ready|")
 
-  kubectl patch configmap coredns -n kube-system --type merge -p "{
-    \"data\": {
-      \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+    kubectl patch configmap coredns -n kube-system --type merge -p "{
+      \"data\": {
+        \"Corefile\": $(echo "${PATCHED_COREFILE}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+      }
+    }" || {
+      log_error "Failed to patch CoreDNS ConfigMap"
+      exit 7
     }
-  }" || {
-    log_error "Failed to patch CoreDNS ConfigMap"
-    exit 7
-  }
 
-  # Restart CoreDNS pods to pick up the new configuration
-  kubectl rollout restart deployment/coredns -n kube-system
+    kubectl rollout restart deployment/coredns -n kube-system
 
-  if ! wait_for_condition "CoreDNS pods to be running" \
-    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
-    "test \"\$(kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers 2>/dev/null | grep -cv 'Running')\" = '0'"; then
-    log_error "CoreDNS pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
-    exit 7
+    if ! wait_for_condition "CoreDNS pods to be running" \
+      "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+      "test \"\$(kubectl get pods -n kube-system -l k8s-app=kube-dns --no-headers 2>/dev/null | grep -cv 'Running')\" = '0'"; then
+      log_error "CoreDNS pods did not reach Running state within ${PACKAGE_TIMEOUT}s"
+      exit 7
+    fi
+
+    log_success "CoreDNS patched with static entry for '${GRAFANA_HOSTNAME}' → ${CONTOUR_LB_IP}"
   fi
 
-  log_success "CoreDNS patched with static entry for '${GRAFANA_HOSTNAME}' → ${CONTOUR_LB_IP}"
+  # After CoreDNS restart, the API server may be briefly unreachable.
+  wait_for_api_server
 fi
-
-# After CoreDNS restart, the API server may be briefly unreachable.
-# Wait for connectivity to stabilize before proceeding.
-wait_for_api_server
 
 ###############################################################################
 # Phase 8: Prometheus Installation
@@ -609,13 +627,15 @@ log_success "Grafana Operator installed and running"
 
 log_step 10 "Configuring Grafana instance, datasource and dashboards"
 
-# Create Grafana TLS secret from wildcard certificate (idempotent)
-kubectl create secret tls grafana-tls \
-  --cert="${CERT_DIR}/fullchain.crt" \
-  --key="${CERT_DIR}/wildcard.key" \
-  --namespace "${GRAFANA_NAMESPACE}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-log_success "Grafana TLS secret created in namespace '${GRAFANA_NAMESPACE}'"
+# Create Grafana TLS secret — use self-signed cert when USE_SSLIP_DNS=false
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+  kubectl create secret tls grafana-tls \
+    --cert="${CERT_DIR}/fullchain.crt" \
+    --key="${CERT_DIR}/wildcard.key" \
+    --namespace "${GRAFANA_NAMESPACE}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  log_success "Grafana TLS secret created from self-signed certificate"
+fi
 
 # Prepare the Grafana instance manifest with runtime values
 TEMP_GRAFANA_INSTANCE=$(mktemp)
@@ -637,7 +657,29 @@ kubectl apply -f "${GRAFANA_DATASOURCE_FILE}" || { log_error "Failed to apply Gr
 kubectl apply -f "${GRAFANA_DASHBOARDS_FILE}" || { log_error "Failed to apply Grafana dashboards manifest"; exit 10; }
 
 # Create Grafana Ingress for external access via Contour
-cat <<EOF | kubectl apply -f -
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  # Use cert-manager for TLS with sslip.io hostname
+  TLS_ENABLED=false
+  if check_cluster_issuer_ready "${CLUSTER_ISSUER_NAME}"; then
+    TLS_ENABLED=true
+  fi
+
+  create_ingress_with_tls "grafana-ingress" "${GRAFANA_NAMESPACE}" \
+    "${GRAFANA_HOSTNAME}" "grafana-service" 80 "${TLS_ENABLED}" "${CLUSTER_ISSUER_NAME}"
+
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    if wait_for_certificate "grafana-ingress-tls" "${GRAFANA_NAMESPACE}" "${CERT_WAIT_TIMEOUT}"; then
+      log_success "Grafana Ingress created with Let's Encrypt TLS for ${GRAFANA_HOSTNAME}"
+    else
+      echo "  ⚠ WARNING: TLS certificate not ready — Grafana accessible via HTTP only"
+      log_success "Grafana Ingress created for http://${GRAFANA_HOSTNAME}"
+    fi
+  else
+    log_success "Grafana Ingress created for http://${GRAFANA_HOSTNAME} (cert-manager not ready)"
+  fi
+else
+  # Use self-signed certificate with DOMAIN-based hostname
+  cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -661,8 +703,8 @@ spec:
                 port:
                   number: 80
 EOF
-
-log_success "Grafana Ingress created for https://${GRAFANA_HOSTNAME}"
+  log_success "Grafana Ingress created for https://${GRAFANA_HOSTNAME} (self-signed)"
+fi
 
 log_success "Grafana instance, Prometheus datasource and K8s dashboards configured"
 
@@ -729,12 +771,18 @@ echo ""
 echo "  Contour LoadBalancer IP: ${CONTOUR_LB_IP}"
 echo ""
 echo "  Access instructions:"
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+echo "    Grafana:     https://${GRAFANA_HOSTNAME}  (sslip.io + Let's Encrypt)"
+else
 echo "    Grafana:     https://${GRAFANA_HOSTNAME}  (${CONTOUR_LB_IP})"
+fi
 echo "    Prometheus:  http://prometheus-server.${PACKAGE_NAMESPACE}.svc.cluster.local:80  (cluster-internal)"
 echo ""
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
 echo "  DNS / hosts file entries (add to your local machine):"
 echo "    ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}"
 echo ""
+fi
 echo "  Login credentials:"
 echo "    Grafana:   admin / ${GRAFANA_ADMIN_PASSWORD}"
 echo ""

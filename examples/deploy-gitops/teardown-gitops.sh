@@ -325,7 +325,12 @@ done
 # Delete GitLab wildcard TLS secret
 kubectl delete secret gitlab-wildcard-tls -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
 
-log_success "Certificate secrets deleted from all namespaces"
+# Delete sslip.io Certificate resources created by cert-manager
+for ns in "${HARBOR_NAMESPACE}" "${ARGOCD_NAMESPACE}" "${GITLAB_NAMESPACE}"; do
+  kubectl delete certificate --all -n "${ns}" --ignore-not-found 2>/dev/null || true
+done
+
+log_success "Certificate secrets and sslip.io resources deleted from all namespaces"
 
 ###############################################################################
 # Phase 9: Clean Up Certificate Files

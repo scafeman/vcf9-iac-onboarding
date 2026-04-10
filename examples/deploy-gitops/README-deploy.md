@@ -69,7 +69,7 @@ Creates Harbor TLS and CA secrets in the Harbor namespace from the generated cer
 
 ### Phase 5: CoreDNS Configuration
 
-Patches the CoreDNS ConfigMap in `kube-system` to add static host entries for Harbor, GitLab, and ArgoCD hostnames, all pointing to the auto-detected Contour LB IP. Restarts CoreDNS pods and waits for them to reach Running state. Exits with code 6 if the patch fails or CoreDNS pods do not restart.
+When `USE_SSLIP_DNS=true` (default), the script skips CoreDNS patching and self-signed certificate generation — Harbor, GitLab, and ArgoCD are instead exposed via sslip.io hostnames (e.g., `harbor.<IP>.sslip.io`, `gitlab.<IP>.sslip.io`, `argocd.<IP>.sslip.io`) with optional Let's Encrypt TLS certificates. When `USE_SSLIP_DNS=false`, the script falls back to the original behavior: patches the CoreDNS ConfigMap in `kube-system` to add static host entries for Harbor, GitLab, and ArgoCD hostnames, all pointing to the auto-detected Contour LB IP. Restarts CoreDNS pods and waits for them to reach Running state. Exits with code 6 if the patch fails or CoreDNS pods do not restart.
 
 ### Phase 6: ArgoCD Installation
 

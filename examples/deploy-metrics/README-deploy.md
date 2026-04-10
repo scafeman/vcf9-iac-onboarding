@@ -60,7 +60,7 @@ Generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DO
 
 ### Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
 
-Waits for the Contour Envoy LoadBalancer service (in `tanzu-system-ingress`) to receive an external IP from NSX. Patches the CoreDNS ConfigMap with a static host entry mapping `grafana.<DOMAIN>` to the Contour LB IP, then restarts CoreDNS pods. Skips the patch if the entry already exists.
+Waits for the Contour Envoy LoadBalancer service (in `tanzu-system-ingress`) to receive an external IP from NSX. When `USE_SSLIP_DNS=true` (default), the script skips the self-signed certificate generation and CoreDNS patching entirely — Grafana is instead exposed via an sslip.io hostname (e.g., `grafana.<IP>.sslip.io`) with optional Let's Encrypt TLS. When `USE_SSLIP_DNS=false`, the script falls back to the original behavior: patches the CoreDNS ConfigMap with a static host entry mapping `grafana.<DOMAIN>` to the Contour LB IP, then restarts CoreDNS pods. Skips the patch if the entry already exists.
 
 ### Phase 8: Prometheus Installation
 

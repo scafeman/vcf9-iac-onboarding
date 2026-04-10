@@ -91,6 +91,17 @@ Performs end-to-end validation:
 
 Prints a deployment summary with the Frontend LoadBalancer IP, DSM PostgreSQL host, cluster name, and namespace.
 
+### sslip.io DNS & TLS
+
+When `USE_SSLIP_DNS=true` (default), the script creates a Contour Ingress resource with an sslip.io hostname (e.g., `managed-db.<IP>.sslip.io`) pointing to the Envoy LoadBalancer IP. This provides a human-readable DNS name without requiring external DNS configuration. If a Let's Encrypt ClusterIssuer is available (installed by Deploy Cluster Phase 5i), the Ingress includes a `cert-manager.io/cluster-issuer` annotation to automatically provision a trusted TLS certificate.
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_SSLIP_DNS` | `true` | Enable/disable sslip.io DNS integration |
+| `SSLIP_HOSTNAME_PREFIX` | `managed-db` | Hostname prefix for sslip.io DNS name |
+| `CLUSTER_ISSUER_NAME` | `letsencrypt-prod` | ClusterIssuer for TLS certificate requests |
+| `CERT_WAIT_TIMEOUT` | `300` | Seconds to wait for TLS certificate Ready |
+
 ---
 
 ## AWS to VCF Mapping

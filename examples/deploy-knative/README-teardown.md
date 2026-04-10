@@ -12,7 +12,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 ### Phase 1: Delete Dashboard, RBAC, API Server, Audit Function, and knative-demo Namespace
 
-Deletes resources in order: Dashboard Deployment/Service, RBAC resources (RoleBinding, Role, ServiceAccount), API Server Deployment/Service, Knative Service `asset-audit`, and the `knative-demo` namespace.
+Deletes resources in order: sslip.io Ingress and TLS Certificate (if `USE_SSLIP_DNS` was enabled), Dashboard Deployment/Service, RBAC resources (RoleBinding, Role, ServiceAccount), API Server Deployment/Service, Knative Service `asset-audit`, and the `knative-demo` namespace.
 
 ```
 kubectl delete deployment knative-dashboard -n knative-demo --ignore-not-found
