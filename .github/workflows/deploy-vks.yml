@@ -756,11 +756,31 @@ jobs:
 
           | Field | Value |
           |---|---|
-          | Cluster | ${{ env.CLUSTER_NAME }} |
-          | Namespace | ${{ env.DYNAMIC_NS_NAME }} |
-          | Kubeconfig | Retrieve via: \`vcf cluster kubeconfig get ${{ env.CLUSTER_NAME }} --admin --export-file kubeconfig-${{ env.CLUSTER_NAME }}.yaml\` |
-          | External IP | ${{ steps.get-lb-ip.outputs.external_ip }} |
-          | Environment | ${{ env.ENVIRONMENT }} |
+          | Project | \`${PROJECT_NAME}\` |
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${DYNAMIC_NS_NAME}\` |
+          | Kubernetes Version | \`${K8S_VERSION}\` |
+          | Control Plane | ${CONTROL_PLANE_REPLICAS} node(s) |
+          | Worker Nodes | ${MIN_NODES}–${MAX_NODES} (autoscaler) |
+          | VM Class | \`${VM_CLASS}\` |
+          | Storage Class | \`${STORAGE_CLASS}\` |
+          | Environment | ${ENVIRONMENT} |
+          | Test App | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+
+          ### Cluster Access
+          | Method | Command |
+          |---|---|
+          | Retrieve Kubeconfig | \`vcf cluster kubeconfig get ${CLUSTER_NAME} --admin --export-file kubeconfig-${CLUSTER_NAME}.yaml\` |
+          | Set Context | \`export KUBECONFIG=./kubeconfig-${CLUSTER_NAME}.yaml\` |
+          | Switch Context | \`kubectl config use-context ${CLUSTER_NAME}-admin@${CLUSTER_NAME}\` |
+          | Verify | \`kubectl get namespaces\` |
+
+          ### Functional Test
+          | Service | Endpoint |
+          |---|---|
+          | VKS Test App (nginx) | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+          | LoadBalancer Service | \`vks-test-lb\` (port 80 → 8080) |
+          | PVC | \`vks-test-pvc\` (1Gi, \`${STORAGE_CLASS}\`) |
           EOF
 
       # Write Failure Summary (if: failure())
@@ -772,8 +792,17 @@ jobs:
 
           | Field | Value |
           |---|---|
-          | Cluster | ${{ env.CLUSTER_NAME }} |
-          | Namespace | ${{ env.DYNAMIC_NS_NAME }} |
-          | Environment | ${{ env.ENVIRONMENT }} |
+          | Project | \`${PROJECT_NAME}\` |
+          | Cluster | \`${CLUSTER_NAME}\` |
+          | Supervisor Namespace | \`${DYNAMIC_NS_NAME:-unknown}\` |
+          | Kubernetes Version | \`${K8S_VERSION}\` |
+          | Environment | ${ENVIRONMENT} |
           | Error | Check the failed step above for details |
+
+          **Troubleshooting steps:**
+          1. Review the failed step in the workflow run logs
+          2. Check VCFA connectivity: \`curl -k https://${VCFA_ENDPOINT}/health\`
+          3. Verify VCF CLI context: \`vcf context list\`
+          4. Check cluster status: \`kubectl get clusters -n ${DYNAMIC_NS_NAME:-unknown}\`
+          5. Re-run the workflow — all steps are idempotent
           EOF
