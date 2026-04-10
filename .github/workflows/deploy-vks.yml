@@ -153,7 +153,7 @@ jobs:
       CONTEXT_NAME: gh-actions-deploy
 
     steps:
-      # Checkout repo so www/ directory is available for web app image build
+      # Checkout repo so examples/deploy-cluster/www/ directory is available for web app image build
       - name: Checkout Repository
         uses: actions/checkout@v5
 
@@ -602,7 +602,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-          docker build -f www/Dockerfile.web -t scafeman/vks-test-app:latest www/
+          docker build -f examples/deploy-cluster/www/Dockerfile.web -t scafeman/vks-test-app:latest examples/deploy-cluster/www/
           docker push scafeman/vks-test-app:latest
           echo "Web app image pushed to scafeman/vks-test-app:latest"
 
