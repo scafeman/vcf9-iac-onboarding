@@ -710,7 +710,11 @@ jobs:
       - name: Write Job Summary
         run: |
           set -euo pipefail
-          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${CONTOUR_LB_IP:-}" ]]; then
+            GRAFANA_HOSTNAME="grafana.${CONTOUR_LB_IP}.sslip.io"
+          else
+            GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          fi
 
           # Collect installed package versions
           PACKAGE_VERSIONS=$(vcf package installed list -n "$PACKAGE_NAMESPACE" 2>/dev/null || echo "Unable to retrieve package list")
