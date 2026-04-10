@@ -735,6 +735,10 @@ jobs:
           ${PACKAGE_VERSIONS}
           \`\`\`
 
+          EOF
+
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            cat >> $GITHUB_STEP_SUMMARY <<DNSEOF
           ### DNS / Hosts File Instructions
 
           Add the following entry to your local \`/etc/hosts\` file or DNS server:
@@ -742,7 +746,8 @@ jobs:
           \`\`\`
           ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}
           \`\`\`
-          EOF
+          DNSEOF
+          fi
 
       # Write Failure Summary (if: failure())
       - name: Write Failure Summary
