@@ -4,6 +4,8 @@
 
 `deploy-managed-db-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates managed database connectivity within a VCF 9 namespace. It provisions a PostgreSQL database via the VCF Database Service Manager (DSM) PostgresCluster CRD, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-managed-db-app.md) for a visual overview of this deployment pattern.
+
 This is the VCF equivalent of deploying an application on AWS EKS backed by RDS:
 
 - **DSM PostgresCluster** — provisioned via `databases.dataservices.vmware.com/v1alpha1 PostgresCluster` CRD, fully managed by DSM (patching, maintenance, connection management)

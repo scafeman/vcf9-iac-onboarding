@@ -262,6 +262,32 @@ docker exec vcf9-dev bash examples/deploy-bastion-vm/deploy-bastion-vm.sh
 
 **AWS Equivalent:** EC2 bastion + Security Groups
 
+### Deploy HA VM App — HA Three-Tier Application on VMs
+
+Deploys a traditional HA three-tier application entirely on VMs: 2× web VMs + LoadBalancer, 2× API VMs + LoadBalancer, and a DSM-managed PostgresCluster. No containers involved.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-ha-vm-app/deploy-ha-vm-app.sh
+```
+
+**AWS Equivalent:** 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ
+
+### Deploy Knative — Serverless FaaS + DBaaS
+
+Deploys Knative Serving with a serverless audit function (scale-to-zero), Express API server, DSM-managed PostgresCluster, and a Next.js dashboard.
+
+```bash
+docker exec vcf9-dev bash examples/deploy-knative/deploy-knative.sh
+```
+
+**AWS Equivalent:** Lambda + API Gateway + RDS
+
+---
+
+## Architecture Diagrams
+
+Each deployment pattern has a detailed high-level design document with Mermaid architecture diagrams, component details, and AWS equivalence mapping. See [docs/architecture/](docs/architecture/) for the full set.
+
 ---
 
 ## Teardown
@@ -270,6 +296,8 @@ Each deployment has a corresponding teardown script. Tear down in reverse order.
 
 ```bash
 # Application stacks (any order)
+docker exec vcf9-dev bash examples/deploy-knative/teardown-knative.sh
+docker exec vcf9-dev bash examples/deploy-ha-vm-app/teardown-ha-vm-app.sh
 docker exec vcf9-dev bash examples/deploy-managed-db-app/teardown-managed-db-app.sh
 docker exec vcf9-dev bash examples/deploy-hybrid-app/teardown-hybrid-app.sh
 docker exec vcf9-dev bash examples/deploy-secrets-demo/teardown-secrets-demo.sh

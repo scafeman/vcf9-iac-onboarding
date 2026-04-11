@@ -168,6 +168,7 @@ This is the deployment that resonates most with teams migrating from AWS. If you
 ## Documentation
 
 - [Getting Started Guide](GETTING-STARTED.md) — Setup, configuration, and deployment commands
+- [Architecture Diagrams](docs/architecture/) — High-level design documents with Mermaid diagrams for each deployment pattern
 - [Environment Variables Reference](ENVIRONMENT-VARIABLES.md) — All configurable variables for every deployment
 - [GitHub Actions Workflows](.github/workflows/README.md) — Workflow parameters, triggers, credential retrieval, and troubleshooting
 - [IaC Onboarding Guide](vcf9-iac-onboarding-guide.md) — Full VCF 9 walkthrough with annotated manifests and CLI commands

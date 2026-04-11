@@ -4,6 +4,8 @@
 
 `deploy-bastion-vm.sh` deploys a minimal Ubuntu 24.04 bastion VM as an SSH jump host in a VCF 9 supervisor namespace. It provisions the VM via the VCF VM Service with cloud-init, exposes SSH on port 22 through a `VirtualMachineService` LoadBalancer with `loadBalancerSourceRanges` to restrict ingress to allowed source IPs, and verifies SSH connectivity through the auto-assigned external IP.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-bastion-vm.md) for a visual overview of this deployment pattern.
+
 The bastion VM provides a secure entry point for accessing internal resources within the VCF namespace:
 
 - **Bastion VM** — provisioned via `vmoperator.vmware.com/v1alpha3 VirtualMachine` CRD with cloud-init for automated SSH configuration

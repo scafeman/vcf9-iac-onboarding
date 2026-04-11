@@ -295,6 +295,8 @@ Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
 
 Deploy Metrics, Deploy GitOps, Deploy Hybrid App, Deploy Managed DB App, and Deploy Knative all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
 
+> See the [Architecture Diagrams](../docs/architecture/) for detailed high-level design documents with Mermaid diagrams for each pattern.
+
 ---
 
 ## Deploy Cluster: Full Stack Deploy

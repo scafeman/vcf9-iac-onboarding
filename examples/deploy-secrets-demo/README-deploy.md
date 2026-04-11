@@ -4,6 +4,8 @@
 
 `deploy-secrets-demo.sh` deploys a secrets management demo that demonstrates VCF Secret Store Service integration with a VKS guest cluster. It walks through the full secret lifecycle: secret creation in the supervisor namespace → vault-injector deployment → automatic secret injection into pods → application reads credentials from mounted files.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-secrets-demo.md) for a visual overview of this deployment pattern.
+
 This is the VCF equivalent of AWS Secrets Manager. Instead of pulling secrets via SDK calls at runtime, VCF uses a vault-injector sidecar that automatically mounts secrets as files inside the pod at `/vault/secrets/`. The application simply reads files from disk — no SDK, no API calls, no secret-handling code.
 
 The demo deploys:

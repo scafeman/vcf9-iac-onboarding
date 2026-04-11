@@ -4,6 +4,8 @@
 
 `deploy-cluster.sh` automates the complete VCF 9 provisioning workflow from zero to a fully validated VKS cluster with running workloads. It is the "spin up" half of the dev environment lifecycle — pair it with `teardown-cluster.sh` to tear everything down.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-cluster.md) for a visual overview of this deployment pattern.
+
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
 ---

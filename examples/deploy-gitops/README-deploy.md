@@ -4,6 +4,8 @@
 
 `deploy-gitops.sh` installs the full ArgoCD Consumption Model stack on an existing VKS cluster provisioned by Deploy Cluster. Infrastructure services (cert-manager, Contour) are installed as VKS standard packages shared with Deploy Metrics. Application services (Harbor, ArgoCD, GitLab) are installed via Helm.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-gitops.md) for a visual overview of this deployment pattern.
+
 The script orchestrates: self-signed certificate generation, VKS package installation (cert-manager, Contour), envoy-lb LoadBalancer service creation, Harbor container registry installation, ArgoCD GitOps controller installation, ArgoCD CLI auto-download, CoreDNS configuration for internal DNS resolution, GitLab and GitLab Runner deployment for CI/CD, ArgoCD application synchronization, and Google Microservices Demo (Online Boutique) deployment via GitOps.
 
 The script is fully non-interactive. All configuration is driven by environment variables defined in the variable block at the top of the script. No user input or confirmation prompts are required during execution.

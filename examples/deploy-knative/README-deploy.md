@@ -4,6 +4,8 @@
 
 `deploy-knative.sh` installs Knative Serving on an existing VKS cluster and deploys a full Asset Tracker with DSM PostgreSQL persistence, an API server, a serverless audit function, and a Next.js dashboard — the VCF equivalent of deploying an AWS Lambda function with API Gateway backed by RDS PostgreSQL. The audit function receives HTTP POST requests logging asset changes and demonstrates Knative's scale-to-zero behavior, while the API server provides full CRUD operations on assets.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-knative.md) for a visual overview of this deployment pattern.
+
 **Architecture:**
 - **Knative Serving:** CRDs, core controllers, and net-contour networking plugin installed from upstream YAML manifests
 - **DSM PostgresCluster:** Managed PostgreSQL instance provisioned via VCF Database Service Manager for persistent storage of assets and audit entries

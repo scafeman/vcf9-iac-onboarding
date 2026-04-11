@@ -2,7 +2,11 @@
 
 ## Overview
 
-`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Deploy Cluster. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Deploy Cluster.
+
+> See the [Architecture Diagram](../../docs/architecture/deploy-metrics.md) for a visual overview of this deployment pattern.
+
+It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
 
 Grafana is exposed externally via a Contour Ingress with TLS termination. When `USE_SSLIP_DNS=true` (default), Grafana uses an sslip.io hostname with optional Let's Encrypt TLS — no DNS entries or hosts file changes needed. When `USE_SSLIP_DNS=false`, a self-signed wildcard certificate is used with CoreDNS patching for internal resolution. Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
 
