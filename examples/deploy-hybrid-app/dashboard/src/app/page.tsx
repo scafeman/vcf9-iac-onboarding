@@ -203,13 +203,13 @@ export default function DashboardPage() {
         </span>
         <h2 style={{
           fontSize: '28px', fontWeight: 700, margin: '0 0 6px 0',
-          background: 'linear-gradient(135deg, #58a6ff, #3fb950)',
+          background: 'linear-gradient(135deg, #f97316, #eab308)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>
-          VCF 9 Managed DB App — EKS + RDS Equivalent
+          VCF 9 Hybrid App — EC2 + EKS Equivalent
         </h2>
         <p style={{ color: '#8b949e', fontSize: '15px', margin: '0 0 28px 0' }}>
-          Fully managed PostgreSQL via Data Services Manager (DSM) — zero database administration
+          VM-based PostgreSQL + containerized API and frontend — VM-to-container connectivity over NSX VPC
         </p>
 
         {/* Metric Grid — Row 1: Infrastructure */}
@@ -218,8 +218,8 @@ export default function DashboardPage() {
         }}>
           {[
             ['Compute', 'VKS + VM Service'],
-            ['Database', 'DSM PostgresCluster'],
-            ['Networking', 'NSX VPC + SSL'],
+            ['Database', 'PostgreSQL VM'],
+            ['Networking', 'NSX VPC'],
           ].map(([label, value]) => (
             <div key={label as string} style={{
               background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px',
@@ -227,7 +227,7 @@ export default function DashboardPage() {
               <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
                 {label as string}
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 600, color: '#58a6ff' }}>
+              <div style={{ fontSize: '20px', fontWeight: 600, color: '#f97316' }}>
                 {value as string}
               </div>
             </div>
@@ -240,7 +240,7 @@ export default function DashboardPage() {
         }}>
           <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
             <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>App Tier</div>
-            <div style={{ fontSize: '20px', fontWeight: 600, color: '#58a6ff' }}>VKS Containers</div>
+            <div style={{ fontSize: '20px', fontWeight: 600, color: '#f97316' }}>VKS Containers</div>
           </div>
           <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
             <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>API Status</div>
@@ -260,14 +260,13 @@ export default function DashboardPage() {
         <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0' }}>
           {[
             'VCF CLI context created and authenticated to VCFA',
-            'DSM PostgresCluster provisioned via CRD (replaces AWS RDS)',
-            'Connection details extracted from status.connection',
-            'Credentials stored in VCF Secret Store (KeyValueSecret)',
-            'ServiceAccount + token created for vault authentication',
-            'Container images built and pushed to registry',
-            'Vault-injector installed — credentials injected via sidecar',
-            'API deployed with vault-mounted credentials (no plaintext passwords)',
-            'Frontend deployed with NSX LoadBalancer external IP',
+            'PostgreSQL VM provisioned via VM Service (cloud-init bootstrap)',
+            'VM powered on and PostgreSQL 16 listening on port 5432',
+            'API container image built and pushed to registry',
+            'Frontend container image built and pushed to registry',
+            'API deployed — connects to VM PostgreSQL over NSX VPC',
+            'Frontend deployed with sslip.io Ingress routing',
+            'VM-to-container connectivity verified over private network',
             'End-to-end HTTP connectivity verified',
           ].map((step) => (
             <li key={step} style={{
@@ -280,21 +279,21 @@ export default function DashboardPage() {
           ))}
         </ul>
 
-        {/* AWS Migration Benefits */}
+        {/* AWS Migration Mapping */}
         <div style={{
           background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px',
         }}>
-          <h3 style={{ fontSize: '14px', color: '#58a6ff', margin: '0 0 12px 0', fontWeight: 600 }}>
-            AWS RDS → VCF DSM Migration
+          <h3 style={{ fontSize: '14px', color: '#f97316', margin: '0 0 12px 0', fontWeight: 600 }}>
+            AWS EC2 + EKS → VCF Hybrid App Migration
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
             {[
-              ['RDS Instance', 'DSM PostgresCluster CRD'],
-              ['RDS Instance Class', 'vmClass (best-effort-large)'],
-              ['RDS Multi-AZ', 'replicas (0=Single, 1=HA)'],
-              ['RDS Endpoint', 'status.connection.host:port'],
-              ['RDS Maintenance Window', 'maintenanceWindow spec'],
-              ['RDS Master Password', 'adminPasswordRef (K8s Secret)'],
+              ['EC2 Instance (DB)', 'VM Service VirtualMachine'],
+              ['EC2 User Data', 'cloud-init Secret'],
+              ['EC2 Security Group', 'NSX VPC + SubnetSet'],
+              ['EKS Pod', 'VKS Deployment'],
+              ['ALB / NLB', 'NSX LoadBalancer + Contour Ingress'],
+              ['VPC Peering (EC2↔EKS)', 'Shared NSX VPC (native)'],
             ].map(([aws, vcf]) => (
               <div key={aws} style={{ display: 'contents' }}>
                 <span style={{ color: '#8b949e', padding: '4px 0' }}>{aws}</span>
@@ -309,11 +308,14 @@ export default function DashboardPage() {
       <div style={{ textAlign: 'center', marginBottom: '24px' }}>
         <h1 style={{
           fontSize: '36px', fontWeight: 700, margin: '0',
-          background: 'linear-gradient(135deg, #38bdf8, #818cf8)',
+          background: 'linear-gradient(135deg, #f97316, #eab308)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>
           VCF Infrastructure Asset Tracker
         </h1>
+        <p style={{ color: '#8b949e', fontSize: '14px', marginTop: '8px' }}>
+          Hybrid Architecture — VM PostgreSQL + VKS Containers
+        </p>
       </div>
 
       {/* Create Form */}
@@ -424,7 +426,7 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <footer style={{ marginTop: '48px', textAlign: 'center', color: '#484f58', fontSize: '12px' }}>
-        Powered by <a href="https://github.com/scafeman/vcf9-iac-onboarding" style={{ color: '#58a6ff', textDecoration: 'none' }}>vcf9-iac-onboarding</a> &middot; VCF Data Services Manager — Managed Database Demo
+        Powered by <a href="https://github.com/scafeman/vcf9-iac-onboarding" style={{ color: '#f97316', textDecoration: 'none' }}>vcf9-iac-onboarding</a> &middot; VCF Hybrid App — VM + Container Connectivity Demo
       </footer>
     </div>
   );
