@@ -350,6 +350,54 @@ jobs:
           fi
           echo "Envoy LoadBalancer setup complete"
 
+      # Phase 3f: Override DOMAIN for sslip.io (when USE_SSLIP_DNS=true)
+      - name: Override DOMAIN for sslip.io
+        if: env.USE_SSLIP_DNS == 'true'
+        run: |
+          set -euo pipefail
+          CERT_DIR="./certs"
+
+          # Override DOMAIN to use sslip.io with the envoy-lb IP
+          SSLIP_DOMAIN="${CONTOUR_LB_IP}.sslip.io"
+          echo "DOMAIN=${SSLIP_DOMAIN}" >> "$GITHUB_ENV"
+          echo "Overriding DOMAIN to '${SSLIP_DOMAIN}' for sslip.io DNS"
+
+          # Regenerate wildcard cert for *.IP.sslip.io (Helm charts need internal TLS)
+          rm -rf "${CERT_DIR}"
+          mkdir -p "${CERT_DIR}"
+
+          # Generate self-signed CA
+          openssl req -x509 -new -nodes -newkey rsa:2048 \
+            -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+            -days 3650 -subj "/CN=Self-Signed CA"
+
+          # Generate wildcard CSR for *.IP.sslip.io
+          cat > /tmp/wildcard-sslip.cnf <<CNFEOF
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          distinguished_name = dn
+          req_extensions     = v3_req
+
+          [dn]
+          CN = *.${SSLIP_DOMAIN}
+
+          [v3_req]
+          subjectAltName = DNS:*.${SSLIP_DOMAIN},DNS:${SSLIP_DOMAIN}
+          CNFEOF
+
+          openssl req -new -nodes -newkey rsa:2048 \
+            -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+            -config /tmp/wildcard-sslip.cnf
+
+          openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+            -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+            -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+            -days 3650 -extensions v3_req -extfile /tmp/wildcard-sslip.cnf
+
+          cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+          echo "Regenerated wildcard cert for *.${SSLIP_DOMAIN}"
+
       # Phase 4: Install Harbor
       - name: Install Harbor
         run: |
@@ -436,8 +484,9 @@ jobs:
           fi
           echo "Harbor setup complete"
 
-      # Phase 5: Configure CoreDNS
+      # Phase 5: Configure CoreDNS (skipped when USE_SSLIP_DNS=true — sslip.io resolves externally)
       - name: Configure CoreDNS
+        if: env.USE_SSLIP_DNS != 'true'
         run: |
           set -euo pipefail
           HARBOR_HOSTNAME="harbor.${DOMAIN}"
