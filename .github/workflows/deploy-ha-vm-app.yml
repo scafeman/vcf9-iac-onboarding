@@ -253,6 +253,12 @@ jobs:
       # Step 5: Write Job Summary
       - name: Write Job Summary
         run: |
+          # Construct sslip.io hostname (DNS alias only — no Ingress/TLS for VM-based LBs)
+          SSLIP_HOSTNAME=""
+          if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${WEB_LB_IP}" ]] && [[ "${WEB_LB_IP}" != "unknown" ]]; then
+            SSLIP_HOSTNAME="${SSLIP_HOSTNAME_PREFIX}.${WEB_LB_IP}.sslip.io"
+          fi
+
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ HA VM App Deployment Complete
 
@@ -264,6 +270,15 @@ jobs:
           | VM Image | \`${VM_IMAGE}\` |
           | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
           | Frontend | http://${WEB_LB_IP} |
+          EOF
+
+          if [ -n "$SSLIP_HOSTNAME" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | sslip.io | http://${SSLIP_HOSTNAME} |
+          EOF
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           ### VM Details
           | VM | IP Address | Role |
@@ -277,6 +292,15 @@ jobs:
           | Service | Endpoint |
           |---|---|
           | Web LB (ha-web-lb) | http://${WEB_LB_IP} |
+          EOF
+
+          if [ -n "$SSLIP_HOSTNAME" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | sslip.io (DNS alias) | http://${SSLIP_HOSTNAME} |
+          EOF
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           | API LB (ha-api-lb) | \`ha-api-lb.${SUPERVISOR_NAMESPACE}.svc:${API_PORT}\` |
           | DSM PostgreSQL | \`${DSM_ENDPOINT}\` |
           EOF

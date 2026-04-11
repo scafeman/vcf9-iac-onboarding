@@ -613,6 +613,30 @@ jobs:
           echo "::warning::Cluster Autoscaler deployment did not reach Ready within ${TIMEOUT}s — autoscaling may not be active"
           kubectl get deployments -A 2>/dev/null | head -20 || true
 
+      # Phase 5h: CoreDNS sslip.io Forwarding Rule
+      - name: CoreDNS sslip.io Forwarding Rule
+        if: ${{ env.USE_SSLIP_DNS == 'true' }}
+        run: |
+          set -euo pipefail
+          # Ensure CoreDNS can resolve sslip.io hostnames (required for cert-manager HTTP-01 self-checks)
+          CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+          if echo "${CURRENT_COREFILE}" | grep -q 'sslip.io'; then
+            echo "CoreDNS already has sslip.io forwarding rule, skipping"
+          else
+            kubectl get configmap coredns -n kube-system -o json | python3 -c "
+          import json, sys
+          cm = json.load(sys.stdin)
+          corefile = cm['data']['Corefile']
+          sslip_block = 'sslip.io:53 {\n    forward . 8.8.8.8 1.1.1.1\n    cache 30\n}\n\n'
+          cm['data']['Corefile'] = sslip_block + corefile
+          json.dump(cm, sys.stdout)
+          " | kubectl apply -f - >/dev/null 2>&1
+            kubectl rollout restart deployment/coredns -n kube-system >/dev/null 2>&1
+            echo "CoreDNS patched with sslip.io forwarding rule (→ 8.8.8.8, 1.1.1.1)"
+            # Wait for CoreDNS to be ready after restart
+            sleep 10
+          fi
+
       # Phase 7: Build and Push Web App Image
       - name: Build and Push Web App Image
         run: |
