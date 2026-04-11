@@ -222,9 +222,9 @@ docker exec vcf9-dev bash examples/deploy-gitops/deploy-gitops.sh
 
 **AWS Equivalent:** ECR + CodePipeline + ArgoCD
 
-### Deploy Hybrid App — VM-to-Container Connectivity
+### Deploy Hybrid App — Container-to-VM Connectivity
 
-Provisions a PostgreSQL VM via VM Service and deploys a Next.js/Node.js app on VKS, proving VM-to-container connectivity over NSX VPC.
+Provisions a PostgreSQL VM via VM Service and deploys a Next.js/Node.js app on VKS, proving container-to-VM connectivity over NSX VPC.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh

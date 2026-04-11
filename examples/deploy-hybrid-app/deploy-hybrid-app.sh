@@ -5,7 +5,7 @@ set -euo pipefail
 # VCF 9 Deploy Hybrid App — Infrastructure Asset Tracker Deploy Script
 #
 # This script deploys a full-stack Infrastructure Asset Tracker demo that
-# demonstrates VM-to-container connectivity within a VCF 9 namespace:
+# demonstrates container-to-VM connectivity within a VCF 9 namespace:
 #   Phase 1: Provision PostgreSQL VM via VM Service
 #   Phase 2: Build & Push Container Images
 #   Phase 3: Deploy API Service to VKS Cluster

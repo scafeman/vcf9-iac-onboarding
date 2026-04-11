@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'VCF Infrastructure Asset Tracker',
-  description: 'VM-to-Container connectivity demo — Infrastructure Asset Tracker dashboard',
+  description: 'Container-to-VM connectivity demo — Infrastructure Asset Tracker dashboard',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

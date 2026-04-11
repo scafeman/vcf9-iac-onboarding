@@ -9,7 +9,7 @@ This repository contains ten GitHub Actions workflows that automate the end-to-e
 | Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
 | Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
-| Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating VM-to-container connectivity |
+| Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating container-to-VM connectivity |
 | Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
 | Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
 | Deploy Managed DB App — DSM PostgresCluster Asset Tracker | `deploy-managed-db-app.yml` | Provisions a DSM-managed PostgresCluster (VCF equivalent of AWS RDS), deploys a Node.js API and Next.js frontend to the VKS cluster, and verifies end-to-end connectivity |
@@ -619,7 +619,7 @@ Deploy Metrics and Deploy GitOps share these components, all handled idempotentl
 
 ## Overview
 
-Deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. Both the VM and containers reside in the same VCF namespace and NSX VPC, communicating over Layer 3 networking.
+Deploys a full-stack Infrastructure Asset Tracker demo that demonstrates container-to-VM connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. Both the VM and containers reside in the same VCF namespace and NSX VPC, communicating over Layer 3 networking.
 
 ## Triggering the Workflow
 

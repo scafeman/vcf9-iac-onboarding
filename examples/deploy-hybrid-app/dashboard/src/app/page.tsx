@@ -209,7 +209,7 @@ export default function DashboardPage() {
           VCF 9 Hybrid App — EC2 + EKS Equivalent
         </h2>
         <p style={{ color: '#8b949e', fontSize: '15px', margin: '0 0 28px 0' }}>
-          VM-based PostgreSQL + containerized API and frontend — VM-to-container connectivity over NSX VPC
+          VM-based PostgreSQL + containerized API and frontend — container-to-VM connectivity over NSX VPC
         </p>
 
         {/* Metric Grid — Row 1: Infrastructure */}
@@ -266,7 +266,7 @@ export default function DashboardPage() {
             'Frontend container image built and pushed to registry',
             'API deployed — connects to VM PostgreSQL over NSX VPC',
             'Frontend deployed with sslip.io Ingress routing',
-            'VM-to-container connectivity verified over private network',
+            'Container-to-VM connectivity verified over private network',
             'End-to-end HTTP connectivity verified',
           ].map((step) => (
             <li key={step} style={{

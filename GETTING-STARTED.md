@@ -110,7 +110,7 @@ See the [Deploy GitOps README](examples/deploy-gitops/README-deploy.md) for deta
 
 ### Deploy Hybrid App
 
-Provisions a PostgreSQL VM via VCF VM Service and deploys a Next.js/Node.js application on VKS, demonstrating VM-to-container connectivity over NSX VPC.
+Provisions a PostgreSQL VM via VCF VM Service and deploys a Next.js/Node.js application on VKS, demonstrating container-to-VM connectivity over NSX VPC.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh

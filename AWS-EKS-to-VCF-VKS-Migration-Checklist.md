@@ -365,7 +365,7 @@ Common causes: NSX Edge cluster at capacity, VPC connectivity profile blocks ext
 
 Once the VKS cluster passes Phases 1–9, you can deploy application workloads using the toolkit's deployment patterns. Each pattern validates a different VCF capability.
 
-### Deploy Hybrid App — VM-to-Container Connectivity
+### Deploy Hybrid App — Container-to-VM Connectivity
 
 **EKS Equivalent:** EC2 instance + EKS pods in the same VPC
 

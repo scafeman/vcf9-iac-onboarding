@@ -2,7 +2,7 @@
 
 ## Overview
 
-Deploy Hybrid App demonstrates VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. Both tiers communicate over the NSX VPC private network.
+Deploy Hybrid App demonstrates container-to-VM connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. Both tiers communicate over the NSX VPC private network.
 
 This is the VCF equivalent of running an EC2 database instance alongside EKS containers in the same AWS VPC.
 
@@ -109,7 +109,7 @@ graph TB
 
 ## Key Design Decisions
 
-1. **VM-to-container connectivity** — The PostgreSQL VM and VKS worker nodes share the same NSX VPC, enabling direct TCP communication without NAT or VPN. This is the same pattern as EC2 + EKS in the same AWS VPC.
+1. **Container-to-VM connectivity** — The PostgreSQL VM and VKS worker nodes share the same NSX VPC, enabling direct TCP communication without NAT or VPN. This is the same pattern as EC2 + EKS in the same AWS VPC.
 
 2. **cloud-init bootstrap** — The VM is fully configured at boot time via cloud-init: PostgreSQL installation, `pg_hba.conf` configuration for remote access, user/database creation. No SSH required after provisioning.
 

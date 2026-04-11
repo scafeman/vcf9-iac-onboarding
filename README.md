@@ -67,7 +67,7 @@ Once the VKS cluster is running, the toolkit offers eight additional deployment 
 |---|---|---|
 | **Deploy Metrics** | VKS standard packages (Telegraf, Prometheus, Grafana) | EKS Add-ons + CloudWatch |
 | **Deploy GitOps** | Full CI/CD stack (Harbor, ArgoCD, GitLab) on VKS | ECR + CodePipeline + ArgoCD |
-| **Deploy Hybrid App** | VM-to-container connectivity over NSX VPC | EC2 + EKS in same VPC |
+| **Deploy Hybrid App** | Container-to-VM connectivity over NSX VPC | EC2 + EKS in same VPC |
 | **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
 | **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
 | **Deploy HA VM App** | Traditional HA three-tier app on VMs (web, API, managed DB) | 2× EC2 + 2× ALB + RDS PostgreSQL Multi-AZ |

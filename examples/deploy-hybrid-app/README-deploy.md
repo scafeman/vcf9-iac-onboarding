@@ -2,7 +2,7 @@
 
 ## Overview
 
-`deploy-hybrid-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
+`deploy-hybrid-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates container-to-VM connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
 
 The system spans two compute models in the same VCF namespace and NSX VPC:
 

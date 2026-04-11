@@ -286,7 +286,7 @@ These end-to-end scripts orchestrate full deployments across multiple VCF resour
 Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
   ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
-  ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
+  ├─► Deploy Hybrid App: Infrastructure Asset Tracker (container-to-VM connectivity)
   ├─► Deploy Managed DB App: DSM PostgresCluster Asset Tracker (managed database)
   ├─► Deploy HA VM App: HA Three-Tier Application on VMs (VM-based HA with managed DB)
   ├─► Deploy Knative: Serverless Asset Tracker with DSM PostgreSQL (Knative Serving FaaS)
@@ -346,7 +346,7 @@ Deploys a minimal Ubuntu 24.04 bastion VM as a secure SSH jump host in a VCF 9 s
 
 ## Deploy Hybrid App: Infrastructure Asset Tracker
 
-Deploys a full-stack demo application demonstrating VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. The dashboard is accessible via an sslip.io hostname with optional Let's Encrypt TLS.
+Deploys a full-stack demo application demonstrating container-to-VM connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. The dashboard is accessible via an sslip.io hostname with optional Let's Encrypt TLS.
 
 | | |
 |---|---|
