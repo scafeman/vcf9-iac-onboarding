@@ -168,6 +168,31 @@ export default function DashboardPage() {
             Last updated: {new Date(data.timestamp).toLocaleString()}
           </p>
         )}
+
+        {/* AWS Migration Mapping */}
+        <div style={{
+          background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
+          padding: '20px', marginTop: '28px',
+        }}>
+          <h3 style={{ fontSize: '14px', color: '#38bdf8', margin: '0 0 12px 0', fontWeight: 600 }}>
+            AWS Secrets Manager → VCF Secret Store Migration
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+            {[
+              ['Secrets Manager', 'VCF Secret Store (KeyValueSecret)'],
+              ['IRSA / Pod Identity', 'ServiceAccount + vault-injector sidecar'],
+              ['SDK GetSecretValue()', '/vault/secrets/* file mount'],
+              ['Secret Rotation', 'KeyValueSecret update + pod restart'],
+              ['IAM Policy (secret access)', 'ServiceAccount token + vault role'],
+              ['EKS Pod (consumer)', 'VKS Pod + vault-agent container'],
+            ].map(([aws, vcf]) => (
+              <div key={aws} style={{ display: 'contents' }}>
+                <span style={{ color: '#94a3b8', padding: '4px 0' }}>{aws}</span>
+                <span style={{ color: '#e2e8f0', padding: '4px 0' }}>→ {vcf}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
