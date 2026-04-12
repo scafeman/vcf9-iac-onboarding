@@ -980,7 +980,7 @@ jobs:
         if: ${{ env.USE_SSLIP_DNS == 'true' && env.ENVOY_LB_IP != '' }}
         run: |
           set -euo pipefail
-          SSLIP_HOST="test.${ENVOY_LB_IP}.sslip.io"
+          SSLIP_HOST="vks-test.${ENVOY_LB_IP}.sslip.io"
 
           # Create sslip.io Ingress for the test app
           cat <<EOF | kubectl apply -f -
