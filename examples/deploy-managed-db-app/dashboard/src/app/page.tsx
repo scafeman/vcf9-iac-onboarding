@@ -135,7 +135,7 @@ export default function DashboardPage() {
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-          {[['Compute', 'VKS Containers'], ['Database', 'DSM PostgresCluster'], ['Networking', 'NSX VPC + SSL']].map(([label, value]) => (
+          {[['Compute', 'vSphere Kubernetes Service (VKS)'], ['Database', 'DSM PostgresCluster'], ['Networking', 'NSX VPC + SSL']].map(([label, value]) => (
             <div key={label as string} style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '18px' }}>
               <div style={{ fontSize: '11px', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{label as string}</div>
               <div style={{ fontSize: '20px', fontWeight: 600, color: '#58a6ff' }}>{value as string}</div>
