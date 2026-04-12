@@ -317,6 +317,12 @@ log_success "Harbor removed (namespace '${HARBOR_NAMESPACE}' deleted)"
 
 log_step 8 "Deleting certificate secrets"
 
+# Delete Let's Encrypt Ingress resources (created by Phase 14b)
+kubectl delete ingress harbor-letsencrypt-ingress -n "${HARBOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+kubectl delete ingress argocd-letsencrypt-ingress -n "${ARGOCD_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+kubectl delete ingress gitlab-letsencrypt-ingress -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+log_success "Let's Encrypt Ingress resources deleted"
+
 # Delete Harbor CA certificate secret from all relevant namespaces
 for ns in "${GITLAB_NAMESPACE}" "${GITLAB_RUNNER_NAMESPACE}"; do
   kubectl delete secret harbor-ca-cert -n "${ns}" --ignore-not-found 2>/dev/null || true

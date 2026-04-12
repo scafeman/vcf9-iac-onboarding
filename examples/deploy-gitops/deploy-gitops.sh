@@ -24,6 +24,7 @@ set -euo pipefail
 #   Phase 12: ArgoCD Cluster Registration
 #   Phase 13: ArgoCD Application Bootstrap
 #   Phase 14: Microservices Demo Verification
+#   Phase 14b: Let's Encrypt TLS Ingress (external-facing trusted certs)
 #   Phase 15: Summary
 #
 # Prerequisites:
@@ -1238,6 +1239,177 @@ else
 fi
 
 log_success "Microservices Demo verification complete"
+
+###############################################################################
+# Phase 14b: Let's Encrypt TLS Ingress (when USE_SSLIP_DNS=true)
+#
+# The Helm charts (Harbor, GitLab, ArgoCD) manage their own internal TLS
+# using the self-signed wildcard cert. This phase creates separate Contour
+# Ingress resources with cert-manager annotations for the external-facing
+# hostnames. Traffic from the internet gets trusted Let's Encrypt TLS at
+# the Envoy proxy, then Envoy proxies to the backend over internal TLS.
+###############################################################################
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  log_step "14b" "Creating Let's Encrypt TLS Ingress resources for external access"
+
+  # Check if ClusterIssuer is ready
+  TLS_ENABLED="false"
+  if check_cluster_issuer_ready "${CLUSTER_ISSUER_NAME}" 2>/dev/null; then
+    TLS_ENABLED="true"
+    log_success "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready — creating Ingress with TLS"
+  else
+    log_warn "ClusterIssuer '${CLUSTER_ISSUER_NAME}' not ready — creating Ingress without TLS"
+  fi
+
+  # Harbor Ingress with Let's Encrypt
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: harbor-letsencrypt-ingress
+  namespace: ${HARBOR_NAMESPACE}
+  annotations:
+    cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - ${HARBOR_HOSTNAME}
+      secretName: harbor-letsencrypt-tls
+  rules:
+    - host: ${HARBOR_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-portal
+                port:
+                  number: 80
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-core
+                port:
+                  number: 80
+          - path: /service/
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-core
+                port:
+                  number: 80
+          - path: /v2/
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-core
+                port:
+                  number: 80
+          - path: /chartrepo/
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-core
+                port:
+                  number: 80
+          - path: /c/
+            pathType: Prefix
+            backend:
+              service:
+                name: harbor-core
+                port:
+                  number: 80
+EOF
+    log_success "Harbor Let's Encrypt Ingress created for ${HARBOR_HOSTNAME}"
+  fi
+
+  # ArgoCD Ingress with Let's Encrypt
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-letsencrypt-ingress
+  namespace: ${ARGOCD_NAMESPACE}
+  annotations:
+    cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - ${ARGOCD_HOSTNAME}
+      secretName: argocd-letsencrypt-tls
+  rules:
+    - host: ${ARGOCD_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: argocd-server
+                port:
+                  number: 80
+EOF
+    log_success "ArgoCD Let's Encrypt Ingress created for ${ARGOCD_HOSTNAME}"
+  fi
+
+  # GitLab Ingress with Let's Encrypt
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitlab-letsencrypt-ingress
+  namespace: ${GITLAB_NAMESPACE}
+  annotations:
+    cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - ${GITLAB_HOSTNAME}
+      secretName: gitlab-letsencrypt-tls
+  rules:
+    - host: ${GITLAB_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitlab-webservice-default
+                port:
+                  number: 8181
+EOF
+    log_success "GitLab Let's Encrypt Ingress created for ${GITLAB_HOSTNAME}"
+  fi
+
+  # Wait for certificates to be issued
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    log_success "Waiting for Let's Encrypt certificates to be issued..."
+    for CERT_NAME in harbor-letsencrypt-tls argocd-letsencrypt-tls gitlab-letsencrypt-tls; do
+      CERT_NS="default"
+      case "${CERT_NAME}" in
+        harbor*) CERT_NS="${HARBOR_NAMESPACE}" ;;
+        argocd*) CERT_NS="${ARGOCD_NAMESPACE}" ;;
+        gitlab*) CERT_NS="${GITLAB_NAMESPACE}" ;;
+      esac
+      if wait_for_certificate "${CERT_NAME}" "${CERT_NS}" "${CERT_WAIT_TIMEOUT}"; then
+        log_success "Certificate '${CERT_NAME}' is Ready"
+      else
+        log_warn "Certificate '${CERT_NAME}' not ready within ${CERT_WAIT_TIMEOUT}s — HTTPS may use self-signed cert"
+      fi
+    done
+  fi
+
+  log_success "Let's Encrypt TLS Ingress resources created"
+fi
 
 ###############################################################################
 # Phase 15: Summary Banner

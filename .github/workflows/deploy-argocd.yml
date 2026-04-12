@@ -1108,6 +1108,174 @@ jobs:
           fi
           echo "Microservices Demo verification complete"
 
+      # Phase 14b: Create Let's Encrypt TLS Ingress (external-facing trusted certs)
+      - name: Create Let's Encrypt TLS Ingress
+        if: env.USE_SSLIP_DNS == 'true'
+        run: |
+          set -euo pipefail
+          HARBOR_NAMESPACE="harbor"
+          ARGOCD_NAMESPACE="argocd"
+          GITLAB_NAMESPACE="gitlab-system"
+          HARBOR_HOSTNAME="harbor.${DOMAIN}"
+          ARGOCD_HOSTNAME="argocd.${DOMAIN}"
+          GITLAB_HOSTNAME="gitlab.${DOMAIN}"
+          CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+
+          # Check if ClusterIssuer is ready
+          TLS_ENABLED="false"
+          if kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+            TLS_ENABLED="true"
+            echo "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready — creating Ingress with TLS"
+          else
+            echo "::warning::ClusterIssuer '${CLUSTER_ISSUER_NAME}' not ready — skipping Let's Encrypt Ingress"
+            exit 0
+          fi
+
+          # Harbor Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: harbor-letsencrypt-ingress
+            namespace: ${HARBOR_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${HARBOR_HOSTNAME}
+                secretName: harbor-letsencrypt-tls
+            rules:
+              - host: ${HARBOR_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-portal
+                          port:
+                            number: 80
+                    - path: /api/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /service/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /v2/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /chartrepo/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /c/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+          EOF
+          echo "Harbor Let's Encrypt Ingress created for ${HARBOR_HOSTNAME}"
+
+          # ArgoCD Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argocd-letsencrypt-ingress
+            namespace: ${ARGOCD_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${ARGOCD_HOSTNAME}
+                secretName: argocd-letsencrypt-tls
+            rules:
+              - host: ${ARGOCD_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: argocd-server
+                          port:
+                            number: 80
+          EOF
+          echo "ArgoCD Let's Encrypt Ingress created for ${ARGOCD_HOSTNAME}"
+
+          # GitLab Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: gitlab-letsencrypt-ingress
+            namespace: ${GITLAB_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${GITLAB_HOSTNAME}
+                secretName: gitlab-letsencrypt-tls
+            rules:
+              - host: ${GITLAB_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: gitlab-webservice-default
+                          port:
+                            number: 8181
+          EOF
+          echo "GitLab Let's Encrypt Ingress created for ${GITLAB_HOSTNAME}"
+
+          # Wait for certificates
+          echo "Waiting for Let's Encrypt certificates..."
+          CERT_TIMEOUT=300
+          for CERT in harbor-letsencrypt-tls:${HARBOR_NAMESPACE} argocd-letsencrypt-tls:${ARGOCD_NAMESPACE} gitlab-letsencrypt-tls:${GITLAB_NAMESPACE}; do
+            CERT_NAME="${CERT%%:*}"
+            CERT_NS="${CERT##*:}"
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$CERT_TIMEOUT" ]; do
+              READY=$(kubectl get certificate "${CERT_NAME}" -n "${CERT_NS}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+              if [ "$READY" = "True" ]; then
+                echo "Certificate '${CERT_NAME}' is Ready"
+                break
+              fi
+              echo "Waiting for ${CERT_NAME}... (${ELAPSED}s/${CERT_TIMEOUT}s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            if [ "$ELAPSED" -ge "$CERT_TIMEOUT" ]; then
+              echo "::warning::Certificate '${CERT_NAME}' not ready within ${CERT_TIMEOUT}s"
+            fi
+          done
+          echo "Let's Encrypt TLS Ingress setup complete"
+
       # Phase 15: Write Job Summary
       - name: Write Job Summary
         run: |
