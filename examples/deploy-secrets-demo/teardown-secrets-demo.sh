@@ -63,7 +63,15 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
   export KUBECONFIG="${KUBECONFIG_FILE}"
 
   if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+    # Strip finalizers first to prevent stuck "Deletion failed" state
+    kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+    kubectl patch app vault-injector -n tkg-packages --type merge \
+      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
     vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+    # Clean up any remaining resources
+    kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+    kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
     log_success "vault-injector package deleted (cascades namespace deletion)"
   else
     log_success "vault-injector package not installed, skipping"

@@ -598,9 +598,25 @@ jobs:
           kubectl label limitrange ns-limit-range -n tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
 
           # Install vault-injector (idempotent — shared with secrets-demo)
+          VAULT_INSTALLED=false
           if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-            echo "vault-injector package already installed, skipping"
-          else
+            if kubectl get pods -A -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "vault-injector package already installed and pod is running, skipping"
+              VAULT_INSTALLED=true
+            else
+              echo "vault-injector package exists but pod is not running — removing and reinstalling"
+              kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl patch app vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+              kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              sleep 5
+            fi
+          fi
+
+          if [ "$VAULT_INSTALLED" != "true" ]; then
             VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
             cat > "${VAULT_VALUES_FILE}" <<VALEOF
           externalIP: "${SECRET_STORE_IP}"
