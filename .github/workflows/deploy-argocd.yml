@@ -796,11 +796,12 @@ jobs:
             echo "::warning::Harbor proxy cache is not configured in '$GITLAB_VALUES_FILE'. DockerHub rate limits may cause image pull failures."
           fi
 
-          # Check if Harbor hostname is referenced in the values file
-          if ! grep -q "$HARBOR_HOSTNAME" "$GITLAB_VALUES_FILE" 2>/dev/null; then
-            echo "::warning::Harbor hostname '$HARBOR_HOSTNAME' not found in '$GITLAB_VALUES_FILE'. Harbor proxy may not be configured correctly."
+          # Check if Harbor hostname placeholder is referenced in the values file
+          # (the placeholder gets substituted at runtime by sed in the Helm install step)
+          if ! grep -q "HARBOR_HOSTNAME\|${HARBOR_HOSTNAME}" "$GITLAB_VALUES_FILE" 2>/dev/null; then
+            echo "::warning::Harbor hostname placeholder not found in '$GITLAB_VALUES_FILE'. Harbor proxy may not be configured correctly."
           fi
-          echo "Harbor proxy configuration check complete" || true
+          echo "Harbor proxy configuration check complete"
 
       # Phase 11: Install GitLab Runner
       - name: Install GitLab Runner
