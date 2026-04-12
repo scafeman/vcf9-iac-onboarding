@@ -1002,6 +1002,7 @@ jobs:
           ARGOCD_NAMESPACE="argocd"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
           HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
+          ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-HEAD}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
 
           # Get the ArgoCD server pod name
@@ -1021,6 +1022,7 @@ jobs:
           TEMP_ARGOCD_APP=$(mktemp /tmp/argocd-app-XXXXXX.yaml)
           sed \
             -e "s|HELM_CHARTS_REPO_URL|${HELM_CHARTS_REPO_URL}|g" \
+            -e "s|ARGOCD_TARGET_REVISION|${ARGOCD_TARGET_REVISION}|g" \
             -e "s|APP_NAMESPACE|${APP_NAMESPACE}|g" \
             -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g" \
             examples/deploy-gitops/argocd-microservices-demo.yaml > "$TEMP_ARGOCD_APP"

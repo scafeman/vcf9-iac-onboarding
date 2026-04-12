@@ -27,8 +27,8 @@ spec:
     # The overlay references upstream Google manifests and applies VCF-specific
     # patches (e.g., frontend-external changed from LoadBalancer to ClusterIP).
     repoURL: HELM_CHARTS_REPO_URL
-    # Track the latest commit on the default branch
-    targetRevision: HEAD
+    # Track the current branch (defaults to main after PR merge)
+    targetRevision: ARGOCD_TARGET_REVISION
     # Path within the repository where the Kustomize overlay lives
     path: examples/deploy-gitops/microservices-overlay
 

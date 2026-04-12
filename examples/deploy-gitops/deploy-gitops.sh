@@ -87,6 +87,7 @@ APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
 # Git repository containing the microservices demo Helm chart for ArgoCD.
 # Defaults to the Google Cloud Platform microservices-demo public repo.
 HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
+ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-HEAD}"
 
 # --- Package Repository (shared with Deploy Metrics) ---
 PACKAGE_NAMESPACE="${PACKAGE_NAMESPACE:-tkg-packages}"
@@ -277,6 +278,7 @@ prepare_values_files() {
     -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g"
     -e "s|GITLAB_DOMAIN|${gitlab_domain}|g"
     -e "s|HELM_CHARTS_REPO_URL|${HELM_CHARTS_REPO_URL}|g"
+    -e "s|ARGOCD_TARGET_REVISION|${ARGOCD_TARGET_REVISION}|g"
     -e "s|APP_NAMESPACE|${APP_NAMESPACE}|g"
     -e "s|Harbor12345|${HARBOR_ADMIN_PASSWORD}|g"
     -e "s|not-a-secure-key|${HARBOR_SECRET_KEY}|g"
