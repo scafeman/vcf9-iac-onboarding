@@ -271,7 +271,12 @@ jobs:
           if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
             SSLIP_HOST=$(kubectl get ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
             if [[ -n "${SSLIP_HOST}" ]]; then
-              DASHBOARD_URL="http://${SSLIP_HOST}"
+              TLS_HOST=$(kubectl get ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" -o jsonpath='{.spec.tls[0].hosts[0]}' 2>/dev/null || true)
+              if [[ -n "${TLS_HOST}" ]]; then
+                DASHBOARD_URL="https://${SSLIP_HOST}"
+              else
+                DASHBOARD_URL="http://${SSLIP_HOST}"
+              fi
             fi
           fi
           if [[ -z "${DASHBOARD_URL}" ]]; then

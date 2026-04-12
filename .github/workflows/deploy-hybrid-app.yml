@@ -808,7 +808,13 @@ jobs:
           # Extract sslip.io hostname if Ingress was created
           SSLIP_HOST=$(kubectl get ingress hybrid-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
           if [ -n "$SSLIP_HOST" ]; then
-            SUMMARY_URL="http://${SSLIP_HOST}"
+            # Check if Ingress has TLS configured
+            TLS_HOST=$(kubectl get ingress hybrid-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.tls[0].hosts[0]}' 2>/dev/null || true)
+            if [ -n "$TLS_HOST" ]; then
+              SUMMARY_URL="https://${SSLIP_HOST}"
+            else
+              SUMMARY_URL="http://${SSLIP_HOST}"
+            fi
           fi
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
