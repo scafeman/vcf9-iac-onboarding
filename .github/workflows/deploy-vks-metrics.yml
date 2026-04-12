@@ -77,7 +77,7 @@ jobs:
 
       # --- sslip.io DNS ---
       USE_SSLIP_DNS: "true"
-      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-staging' }}
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
 
     steps:
       - name: Checkout Repository
@@ -634,7 +634,7 @@ jobs:
           # Create Contour Ingress for HTTPS access
           if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
             # sslip.io mode: use cert-manager annotation for Let's Encrypt TLS
-            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-staging}"
+            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
             TLS_ENABLED="true"
             # Check if ClusterIssuer is ready
             if ! kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then

@@ -162,7 +162,7 @@ jobs:
       # --- sslip.io DNS and Let's Encrypt TLS ---
       USE_SSLIP_DNS: ${{ github.event.inputs.use_sslip_dns || github.event.client_payload.use_sslip_dns || 'true' }}
       LETSENCRYPT_EMAIL: ${{ github.event.inputs.letsencrypt_email || github.event.client_payload.letsencrypt_email || '' }}
-      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-staging' }}
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
       CERT_WAIT_TIMEOUT: "300"
 
       # --- Static Configuration ---
