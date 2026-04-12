@@ -1002,7 +1002,7 @@ jobs:
           ARGOCD_NAMESPACE="argocd"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
           HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
-          ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-HEAD}"
+          ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-${{ github.ref_name }}}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
 
           # Get the ArgoCD server pod name
