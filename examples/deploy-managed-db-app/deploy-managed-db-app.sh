@@ -464,7 +464,7 @@ log_success "Phase 1c complete — ServiceAccount 'internal-app' with long-lived
 log_step 2 "Building and pushing container images"
 
 API_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}"
-FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
+FRONTEND_IMAGE="${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}"
 
 # Login to DockerHub if credentials are available
 if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -481,7 +481,7 @@ fi
 log_success "API container image '${API_IMAGE}' built successfully"
 
 # Build Frontend image
-if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
+if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-managed-db-app/dashboard/; then
   log_error "Failed to build Frontend container image '${FRONTEND_IMAGE}'"
   exit 3
 fi
@@ -769,7 +769,7 @@ spec:
     spec:
       containers:
       - name: dashboard
-        image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
+        image: ${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}
         env:
         - name: API_HOST
           value: "managed-db-api.${APP_NAMESPACE}.svc.cluster.local"

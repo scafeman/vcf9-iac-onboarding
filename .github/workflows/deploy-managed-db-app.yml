@@ -506,9 +506,9 @@ jobs:
       - name: Build and Push Frontend Image
         run: |
           set -euo pipefail
-          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
+          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}"
 
-          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
+          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-managed-db-app/dashboard/; then
             echo "::error::Failed to build Frontend container image '${FRONTEND_IMAGE}'"
             exit 1
           fi
@@ -791,7 +791,7 @@ jobs:
               spec:
                 containers:
                 - name: dashboard
-                  image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
+                  image: ${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}
                   env:
                   - name: API_HOST
                     value: "managed-db-api.${APP_NAMESPACE}.svc.cluster.local"
