@@ -162,7 +162,7 @@ jobs:
       # --- sslip.io DNS and Let's Encrypt TLS ---
       USE_SSLIP_DNS: ${{ github.event.inputs.use_sslip_dns || github.event.client_payload.use_sslip_dns || 'true' }}
       LETSENCRYPT_EMAIL: ${{ github.event.inputs.letsencrypt_email || github.event.client_payload.letsencrypt_email || '' }}
-      CLUSTER_ISSUER_NAME: "letsencrypt-prod"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-staging' }}
       CERT_WAIT_TIMEOUT: "300"
 
       # --- Static Configuration ---
@@ -975,9 +975,79 @@ jobs:
           echo "::error::HTTP connectivity test failed — last status $HTTP_STATUS from http://${EXTERNAL_IP}"
           exit 1
 
+      # Phase 7e: Create sslip.io Ingress for Test App
+      - name: Create sslip.io Ingress for Test App
+        if: ${{ env.USE_SSLIP_DNS == 'true' && env.ENVOY_LB_IP != '' }}
+        run: |
+          set -euo pipefail
+          SSLIP_HOST="test.${ENVOY_LB_IP}.sslip.io"
+
+          # Create sslip.io Ingress for the test app
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: vks-test-sslip-ingress
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${SSLIP_HOST}
+                secretName: vks-test-sslip-tls
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: vks-test-lb
+                      port:
+                        number: 80
+          EOF
+          echo "sslip.io Ingress created: ${SSLIP_HOST}"
+          echo "SSLIP_HOST=${SSLIP_HOST}" >> "$GITHUB_ENV"
+
+      # Phase 7f: Wait for TLS Certificate
+      - name: Wait for TLS Certificate
+        if: ${{ env.USE_SSLIP_DNS == 'true' && env.ENVOY_LB_IP != '' }}
+        run: |
+          set -euo pipefail
+          TIMEOUT="${CERT_WAIT_TIMEOUT}"
+          INTERVAL=10
+          ELAPSED=0
+
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            READY=$(kubectl get certificate vks-test-sslip-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [ "$READY" = "True" ]; then
+              echo "TLS certificate 'vks-test-sslip-tls' is Ready"
+              echo "TLS_READY=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "Waiting for TLS certificate... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::warning::TLS certificate did not become Ready within ${TIMEOUT}s — sslip.io Ingress accessible via HTTP only"
+          echo "TLS_READY=false" >> "$GITHUB_ENV"
+
       # Write Job Summary
       - name: Write Job Summary
         run: |
+          # Build sslip.io URL for summary
+          SSLIP_URL=""
+          if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${SSLIP_HOST:-}" ]]; then
+            if [[ "${TLS_READY:-false}" == "true" ]]; then
+              SSLIP_URL="https://${SSLIP_HOST}"
+            else
+              SSLIP_URL="http://${SSLIP_HOST}"
+            fi
+          fi
+
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ VKS Deployment Complete
 
@@ -992,7 +1062,18 @@ jobs:
           | VM Class | \`${VM_CLASS}\` |
           | Storage Class | \`${STORAGE_CLASS}\` |
           | Environment | ${ENVIRONMENT} |
-          | Test App | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+          | Test App (LB) | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+          EOF
+
+          if [ -n "$SSLIP_URL" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | Test App (sslip.io) | ${SSLIP_URL} |
+          | Envoy LB IP | \`${ENVOY_LB_IP}\` |
+          | ClusterIssuer | \`${CLUSTER_ISSUER_NAME}\` |
+          EOF
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           ### Cluster Access
           | Method | Command |
@@ -1005,7 +1086,16 @@ jobs:
           ### Functional Test
           | Service | Endpoint |
           |---|---|
-          | VKS Test App (nginx) | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+          | VKS Test App (LB) | http://${{ steps.get-lb-ip.outputs.external_ip }} |
+          EOF
+
+          if [ -n "$SSLIP_URL" ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          | VKS Test App (sslip.io) | ${SSLIP_URL} |
+          EOF
+          fi
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           | LoadBalancer Service | \`vks-test-lb\` (port 80 → 8080) |
           | PVC | \`vks-test-pvc\` (1Gi, \`${STORAGE_CLASS}\`) |
           EOF
