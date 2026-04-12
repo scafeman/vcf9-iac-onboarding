@@ -766,7 +766,7 @@ jobs:
           # Test frontend HTTP connectivity (with retries — Next.js may need a moment)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
+            HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
             if [ "$HTTP_STATUS" = "200" ]; then
               echo "Frontend HTTP connectivity test passed — received status 200 from ${TEST_URL}"
               break
@@ -783,7 +783,7 @@ jobs:
           # Test API health check via frontend (with retries — API may still be initializing schema)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_URL}/api/healthz" --max-time 10 || true)
+            HEALTH_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}/api/healthz" --max-time 10 || true)
             if [ "$HEALTH_STATUS" = "200" ]; then
               echo "API health check passed — received status 200 from ${TEST_URL}/api/healthz"
               break
