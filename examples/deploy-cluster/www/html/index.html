@@ -11,15 +11,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .badge{display:inline-block;background:#238636;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;letter-spacing:0.5px;margin-bottom:20px}
 h1{font-size:36px;font-weight:700;margin-bottom:10px;background:linear-gradient(135deg,#58a6ff,#3fb950);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .subtitle{color:#8b949e;font-size:16px;margin-bottom:40px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:40px}
+.grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:40px}
 .metric{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:20px}
 .metric-label{font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
 .metric-value{font-size:22px;font-weight:600;color:#58a6ff}
 .metric-value.green{color:#3fb950}
+.metric-value.purple{color:#a855f7}
 .checks{list-style:none;margin-bottom:32px}
 .checks li{padding:12px 0;border-bottom:1px solid #21262d;font-size:16px;display:flex;align-items:center;gap:10px}
 .checks li:last-child{border-bottom:none}
 .check{color:#3fb950;font-weight:bold}
+.section-label{font-size:13px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin:24px 0 12px 0;padding-top:12px;border-top:1px solid #21262d}
+.mapping{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:32px}
+.mapping h3{font-size:14px;color:#58a6ff;margin:0 0 12px 0;font-weight:600}
+.mapping-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+.mapping-grid .aws{color:#8b949e;padding:4px 0}
+.mapping-grid .vcf{color:#c9d1d9;padding:4px 0}
 .footer{text-align:center;color:#484f58;font-size:13px;margin-top:24px}
 .footer a{color:#58a6ff;text-decoration:none}
 </style>
@@ -29,22 +37,71 @@ h1{font-size:36px;font-weight:700;margin-bottom:10px;background:linear-gradient(
 <span class="badge">DEPLOYMENT VALIDATED</span>
 <h1>VMware Cloud Foundation 9 — VKS Cluster</h1>
 <p class="subtitle">Infrastructure-as-Code deployment via GitHub Actions</p>
+
+<!-- Row 1: Platform -->
 <div class="grid">
 <div class="metric"><div class="metric-label">Platform</div><div class="metric-value">VCF 9 + VKS</div></div>
 <div class="metric"><div class="metric-label">Orchestration</div><div class="metric-value">Cluster API</div></div>
 <div class="metric"><div class="metric-label">Networking</div><div class="metric-value">NSX VPC</div></div>
-<div class="metric"><div class="metric-label">Storage</div><div class="metric-value green">PVC Bound</div></div>
 </div>
+
+<!-- Row 2: Infrastructure -->
+<div class="grid">
+<div class="metric"><div class="metric-label">Storage</div><div class="metric-value green">PVC Bound</div></div>
+<div class="metric"><div class="metric-label">Ingress</div><div class="metric-value purple">Contour + Envoy</div></div>
+<div class="metric"><div class="metric-label">DNS</div><div class="metric-value green">sslip.io</div></div>
+</div>
+
+<!-- Row 3: TLS -->
+<div class="grid-2">
+<div class="metric"><div class="metric-label">TLS Certificates</div><div class="metric-value purple">cert-manager</div></div>
+<div class="metric"><div class="metric-label">Certificate Authority</div><div class="metric-value green">Let's Encrypt</div></div>
+</div>
+
+<!-- Provisioning Checklist -->
+<div class="section-label">Provisioning</div>
 <ul class="checks">
 <li><span class="check">&#10003;</span> VCF CLI context created and authenticated to VCFA</li>
 <li><span class="check">&#10003;</span> Project, RBAC, and Supervisor Namespace provisioned</li>
 <li><span class="check">&#10003;</span> Context Bridge completed — Cluster API visible</li>
 <li><span class="check">&#10003;</span> VKS cluster deployed via Cluster API topology</li>
 <li><span class="check">&#10003;</span> Worker nodes scaled and Ready</li>
+<li><span class="check">&#10003;</span> Cluster Autoscaler installed and configured</li>
+</ul>
+
+<!-- Infrastructure Packages -->
+<div class="section-label">Infrastructure Packages</div>
+<ul class="checks">
+<li><span class="check">&#10003;</span> cert-manager installed — X.509 certificate lifecycle management</li>
+<li><span class="check">&#10003;</span> Contour installed — Envoy-based ingress controller</li>
+<li><span class="check">&#10003;</span> envoy-lb LoadBalancer service created — shared ingress IP</li>
+<li><span class="check">&#10003;</span> CoreDNS patched with sslip.io forwarding rule</li>
+<li><span class="check">&#10003;</span> ClusterIssuers created — Let's Encrypt staging + production</li>
+</ul>
+
+<!-- Functional Validation -->
+<div class="section-label">Functional Validation</div>
+<ul class="checks">
 <li><span class="check">&#10003;</span> Persistent Volume dynamically provisioned and bound</li>
 <li><span class="check">&#10003;</span> NSX LoadBalancer assigned external IP</li>
+<li><span class="check">&#10003;</span> sslip.io Ingress routing verified</li>
 <li><span class="check">&#10003;</span> HTTP connectivity validated end-to-end</li>
 </ul>
+
+<!-- AWS Migration Mapping -->
+<div class="mapping">
+<h3>AWS EKS → VCF VKS Migration</h3>
+<div class="mapping-grid">
+<span class="aws">EKS Cluster</span><span class="vcf">→ VKS Cluster (Cluster API)</span>
+<span class="aws">Managed Node Groups</span><span class="vcf">→ Worker Pools + Autoscaler</span>
+<span class="aws">EBS CSI Driver</span><span class="vcf">→ Cloud Native Storage (nfs)</span>
+<span class="aws">ALB Ingress Controller</span><span class="vcf">→ Contour + Envoy</span>
+<span class="aws">Route 53</span><span class="vcf">→ sslip.io Magic DNS</span>
+<span class="aws">ACM (Certificate Manager)</span><span class="vcf">→ Let's Encrypt + cert-manager</span>
+<span class="aws">EKS Add-ons</span><span class="vcf">→ VKS Standard Packages</span>
+</div>
+</div>
+
 <div class="footer">Powered by <a href="https://github.com/scafeman/vcf9-iac-onboarding">vcf9-iac-onboarding</a> &middot; VCF 9 IaC Toolkit</div>
 </div>
 </body>
