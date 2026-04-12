@@ -1090,24 +1090,28 @@ jobs:
             fi
           done
 
-          # Wait for frontend-external LoadBalancer to receive an external IP
+          # Wait for frontend access — skip LoadBalancer wait when using sslip.io Ingress
           FRONTEND_IP=""
-          for i in $(seq 1 60); do
-            FRONTEND_IP=$(kubectl get svc -n "$APP_NAMESPACE" frontend-external \
-              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$FRONTEND_IP" ]; then
-              echo "Frontend external LoadBalancer IP: $FRONTEND_IP"
-              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
-              break
-            fi
-            if [ $(( (i - 1) % 6 )) -eq 0 ]; then
-              echo "Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
-            fi
-            sleep 5
-          done
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            for i in $(seq 1 60); do
+              FRONTEND_IP=$(kubectl get svc -n "$APP_NAMESPACE" frontend-external \
+                -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$FRONTEND_IP" ]; then
+                echo "Frontend external LoadBalancer IP: $FRONTEND_IP"
+                echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+                break
+              fi
+              if [ $(( (i - 1) % 6 )) -eq 0 ]; then
+                echo "Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
+              fi
+              sleep 5
+            done
 
-          if [ -z "$FRONTEND_IP" ]; then
-            echo "::warning::frontend-external LoadBalancer did not receive an external IP within 300s"
+            if [ -z "$FRONTEND_IP" ]; then
+              echo "::warning::frontend-external LoadBalancer did not receive an external IP within 300s"
+            fi
+          else
+            echo "USE_SSLIP_DNS=true — frontend uses ClusterIP + sslip.io Ingress (no LoadBalancer needed)"
           fi
           echo "Microservices Demo verification complete"
 
@@ -1344,7 +1348,7 @@ jobs:
           | Harbor | https://${HARBOR_HOSTNAME} |
           | ArgoCD | https://${ARGOCD_HOSTNAME} |
           | GitLab | https://${GITLAB_HOSTNAME} |
-          | Online Boutique | ${BOUTIQUE_HOSTNAME:+https://${BOUTIQUE_HOSTNAME}} ${BOUTIQUE_HOSTNAME:-http://${FRONTEND_IP:-N/A}} |
+          | Online Boutique | ${BOUTIQUE_HOSTNAME:+https://${BOUTIQUE_HOSTNAME}} |
 
           ### Credential Retrieval
           | Service | Username | Retrieval Command |

@@ -1212,32 +1212,38 @@ fi
 # Display frontend endpoint
 echo ""
 echo "--- Frontend Access ---"
-# Wait for frontend-external LoadBalancer IP. The service is created by ArgoCD
-# sync moments before this phase runs, so NSX may need up to several minutes
-# to assign an external IP. Poll for up to 5 minutes (60 × 5s).
 FRONTEND_LB_IP=""
-for i in $(seq 1 60); do
-  FRONTEND_LB_IP=$(kubectl get svc -n "${APP_NAMESPACE}" frontend-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-  if [[ -n "${FRONTEND_LB_IP}" ]]; then
-    break
-  fi
-  if [[ "$((i % 6))" -eq 1 ]]; then
-    echo "  Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
-  fi
-  sleep 5
-done
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+  # Wait for frontend-external LoadBalancer IP. The service is created by ArgoCD
+  # sync moments before this phase runs, so NSX may need up to several minutes
+  # to assign an external IP. Poll for up to 5 minutes (60 × 5s).
+  for i in $(seq 1 60); do
+    FRONTEND_LB_IP=$(kubectl get svc -n "${APP_NAMESPACE}" frontend-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+    if [[ -n "${FRONTEND_LB_IP}" ]]; then
+      break
+    fi
+    if [[ "$((i % 6))" -eq 1 ]]; then
+      echo "  Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
+    fi
+    sleep 5
+  done
 
-FRONTEND_SVC=$(kubectl get svc -n "${APP_NAMESPACE}" frontend -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
-if [[ -n "${FRONTEND_LB_IP}" ]]; then
-  log_success "Frontend external LoadBalancer IP: ${FRONTEND_LB_IP}"
-  echo "  Open http://${FRONTEND_LB_IP} in your browser."
-elif [[ -n "${FRONTEND_SVC}" ]]; then
-  log_success "Frontend service ClusterIP: ${FRONTEND_SVC}"
-  echo "  To access the Online Boutique UI, run:"
-  echo "    kubectl --kubeconfig=${KUBECONFIG_FILE} port-forward -n ${APP_NAMESPACE} svc/frontend 8080:80"
-  echo "  Then open http://localhost:8080 in your browser."
+  if [[ -n "${FRONTEND_LB_IP}" ]]; then
+    log_success "Frontend external LoadBalancer IP: ${FRONTEND_LB_IP}"
+    echo "  Open http://${FRONTEND_LB_IP} in your browser."
+  else
+    FRONTEND_SVC=$(kubectl get svc -n "${APP_NAMESPACE}" frontend -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    if [[ -n "${FRONTEND_SVC}" ]]; then
+      log_success "Frontend service ClusterIP: ${FRONTEND_SVC}"
+      echo "  To access the Online Boutique UI, run:"
+      echo "    kubectl --kubeconfig=${KUBECONFIG_FILE} port-forward -n ${APP_NAMESPACE} svc/frontend 8080:80"
+      echo "  Then open http://localhost:8080 in your browser."
+    else
+      log_warn "Frontend service not found in namespace '${APP_NAMESPACE}'"
+    fi
+  fi
 else
-  log_warn "Frontend service not found in namespace '${APP_NAMESPACE}'"
+  log_success "USE_SSLIP_DNS=true — frontend uses ClusterIP + sslip.io Ingress (no LoadBalancer needed)"
 fi
 
 log_success "Microservices Demo verification complete"
