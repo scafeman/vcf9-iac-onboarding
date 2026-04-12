@@ -1000,7 +1000,7 @@ jobs:
           set -euo pipefail
           ARGOCD_NAMESPACE="argocd"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
-          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
+          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
 
           # Get the ArgoCD server pod name
@@ -1321,7 +1321,7 @@ jobs:
           GITLAB_HOSTNAME="gitlab.${DOMAIN}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
-          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
+          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ ArgoCD Stack Deployment Complete

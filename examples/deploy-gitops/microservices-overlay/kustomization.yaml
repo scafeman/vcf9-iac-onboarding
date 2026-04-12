@@ -1,0 +1,27 @@
+# Kustomize overlay for the Google Microservices Demo (Online Boutique).
+#
+# This overlay references the upstream release manifests and applies patches
+# to customize the deployment for VCF 9:
+#   - frontend-external Service changed from LoadBalancer to ClusterIP
+#     (traffic routes through the shared Contour envoy-lb Ingress instead)
+#   - Istio manifests excluded (not installed on VKS clusters)
+#
+# ArgoCD Application points to this directory instead of the upstream repo,
+# giving us full control over customizations while preserving upstream updates.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - https://github.com/GoogleCloudPlatform/microservices-demo//release?ref=main
+
+patches:
+  # Change frontend-external from LoadBalancer to ClusterIP
+  # (saves a public IP — traffic routes through envoy-lb Ingress with Let's Encrypt TLS)
+  - target:
+      kind: Service
+      name: frontend-external
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
