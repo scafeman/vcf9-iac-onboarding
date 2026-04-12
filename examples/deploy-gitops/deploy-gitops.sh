@@ -1262,6 +1262,15 @@ if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
     log_warn "ClusterIssuer '${CLUSTER_ISSUER_NAME}' not ready — creating Ingress without TLS"
   fi
 
+  # Delete Helm-managed Ingress resources that conflict with our Let's Encrypt ones.
+  # ArgoCD and GitLab Helm charts create their own Ingress with self-signed TLS.
+  # Contour can't serve two Ingress objects for the same host — the Helm one wins.
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    kubectl delete ingress argocd-server -n "${ARGOCD_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    kubectl delete ingress gitlab-webservice-default -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    log_success "Helm-managed Ingress resources deleted (ArgoCD, GitLab) — Let's Encrypt Ingress will take over"
+  fi
+
   # Harbor Ingress with Let's Encrypt
   if [[ "${TLS_ENABLED}" == "true" ]]; then
     cat <<EOF | kubectl apply -f -
