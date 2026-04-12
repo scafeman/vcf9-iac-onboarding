@@ -658,8 +658,43 @@ jobs:
 
             SSLIP_HOST="${SSLIP_HOSTNAME_PREFIX}.${ENVOY_LB_IP}.sslip.io"
 
-            # Create sslip.io Ingress
-            cat <<EOF | kubectl apply -f -
+            # Check if ClusterIssuer is ready for TLS
+            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+            TLS_ENABLED="false"
+            if kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+              TLS_ENABLED="true"
+            fi
+
+            # Create sslip.io Ingress (with TLS if ClusterIssuer is ready)
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: hybrid-dashboard-sslip-ingress
+            namespace: ${APP_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${SSLIP_HOST}
+                secretName: hybrid-dashboard-sslip-tls
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: hybrid-app-dashboard-lb
+                      port:
+                        number: 80
+          EOF
+            else
+              cat <<EOF | kubectl apply -f -
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
@@ -679,8 +714,13 @@ jobs:
                       port:
                         number: 80
           EOF
-            echo "sslip.io Ingress created: ${SSLIP_HOST}"
-            DASHBOARD_URL="http://${SSLIP_HOST}"
+            fi
+            echo "sslip.io Ingress created: ${SSLIP_HOST} (TLS: ${TLS_ENABLED})"
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              DASHBOARD_URL="https://${SSLIP_HOST}"
+            else
+              DASHBOARD_URL="http://${SSLIP_HOST}"
+            fi
             echo "DASHBOARD_URL=$DASHBOARD_URL" >> "$GITHUB_ENV"
             echo "frontend_ip=$SSLIP_HOST" >> "$GITHUB_OUTPUT"
           else
