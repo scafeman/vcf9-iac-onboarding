@@ -62,20 +62,29 @@ log_step 1 "Deleting vault-injector package"
 if [[ -f "${KUBECONFIG_FILE}" ]]; then
   export KUBECONFIG="${KUBECONFIG_FILE}"
 
-  if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-    # Strip finalizers first to prevent stuck "Deletion failed" state
-    kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
-      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-    kubectl patch app vault-injector -n tkg-packages --type merge \
-      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-    vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-    # Clean up any remaining resources
-    kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
-    kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
-    log_success "vault-injector package deleted (cascades namespace deletion)"
-  else
-    log_success "vault-injector package not installed, skipping"
+  # Check if managed-db-app is still using the vault-injector (shared resource)
+  VAULT_DEPS=0
+  if kubectl get ns managed-db-app >/dev/null 2>&1; then
+    VAULT_DEPS=1
+    log_warn "Namespace 'managed-db-app' still exists — skipping vault-injector deletion (shared resource)"
   fi
+
+  if [[ "${VAULT_DEPS}" -eq 0 ]]; then
+    if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+      # Strip finalizers first to prevent stuck "Deletion failed" state
+      kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      kubectl patch app vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+      # Clean up any remaining resources
+      kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      log_success "vault-injector package deleted"
+    else
+      log_success "vault-injector package not installed, skipping"
+    fi
+  fi  # end VAULT_DEPS check
 
   ###########################################################################
   # Phase 2: Delete namespace and cluster-scoped resources
@@ -90,14 +99,19 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
   kubectl delete ns "${NAMESPACE}" --ignore-not-found || true
   log_success "Namespace '${NAMESPACE}' deleted (or already removed by package teardown)"
 
-  kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found || true
-  log_success "ClusterRole 'vault-injector-clusterrole' deleted"
+  # Only delete cluster-scoped vault resources if no other patterns depend on them
+  if [[ "${VAULT_DEPS:-0}" -eq 0 ]]; then
+    kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found || true
+    log_success "ClusterRole 'vault-injector-clusterrole' deleted"
 
-  kubectl delete clusterrolebinding vault-injector-clusterrolebinding --ignore-not-found || true
-  log_success "ClusterRoleBinding 'vault-injector-clusterrolebinding' deleted"
+    kubectl delete clusterrolebinding vault-injector-clusterrolebinding --ignore-not-found || true
+    log_success "ClusterRoleBinding 'vault-injector-clusterrolebinding' deleted"
 
-  kubectl delete mutatingwebhookconfiguration vault-injector-cfg --ignore-not-found || true
-  log_success "MutatingWebhookConfiguration 'vault-injector-cfg' deleted"
+    kubectl delete mutatingwebhookconfiguration vault-injector-cfg --ignore-not-found || true
+    log_success "MutatingWebhookConfiguration 'vault-injector-cfg' deleted"
+  else
+    log_warn "Skipping vault cluster-scoped resource cleanup (managed-db-app still depends on them)"
+  fi
 
   unset KUBECONFIG
 else

@@ -335,7 +335,26 @@ kubectl delete secret internal-app-token --ignore-not-found 2>/dev/null || true
 log_success "ServiceAccount 'internal-app' and token cleaned up"
 RESOURCE_STATUS["vault-sa-token"]="deleted"
 
-# NOTE: vault-injector package is NOT deleted — it is shared with secrets-demo
+# Check if secrets-demo still needs the vault-injector (shared resource)
+if ! kubectl get ns secrets-demo >/dev/null 2>&1; then
+  # secrets-demo is gone — safe to delete vault-injector
+  if [[ -f "${KUBECONFIG_FILE}" ]]; then
+    export KUBECONFIG="${KUBECONFIG_FILE}"
+    if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+      kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      kubectl patch app vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+      kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      log_success "vault-injector package deleted (secrets-demo not present)"
+    fi
+    unset KUBECONFIG
+  fi
+else
+  log_warn "Namespace 'secrets-demo' still exists — skipping vault-injector deletion (shared resource)"
+fi
 
 ###############################################################################
 # Teardown Summary

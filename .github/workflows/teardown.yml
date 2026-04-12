@@ -718,13 +718,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Delete the vault-injector package FIRST — it manages the secrets-demo namespace
-          # and will recreate it if the namespace is deleted while the package is still installed
-          if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-            vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-            echo "vault-injector package deleted (cascades namespace deletion)"
-          else
-            echo "vault-injector package not installed, skipping"
+          # Only delete vault-injector if managed-db-app is also being torn down or doesn't exist
+          VAULT_DEPS=0
+          if [ "$TEARDOWN_MANAGED_DB_APP" != "true" ]; then
+            if kubectl get ns managed-db-app >/dev/null 2>&1; then
+              VAULT_DEPS=1
+              echo "::warning::managed-db-app namespace still exists and not being torn down — skipping vault-injector deletion (shared resource)"
+            fi
+          fi
+
+          if [ "$VAULT_DEPS" -eq 0 ]; then
+            if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+              vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+              echo "vault-injector package deleted"
+            else
+              echo "vault-injector package not installed, skipping"
+            fi
           fi
 
       - name: Delete Secrets Demo Namespace
