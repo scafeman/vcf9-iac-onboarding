@@ -613,7 +613,121 @@ jobs:
           echo "::warning::Cluster Autoscaler deployment did not reach Ready within ${TIMEOUT}s — autoscaling may not be active"
           kubectl get deployments -A 2>/dev/null | head -20 || true
 
-      # Phase 5h: CoreDNS sslip.io Forwarding Rule
+      # Phase 5g: Install cert-manager
+      - name: Install cert-manager
+        if: ${{ env.USE_SSLIP_DNS == 'true' }}
+        run: |
+          set -euo pipefail
+          if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "cert-manager"; then
+            echo "cert-manager already installed, skipping"
+          else
+            vcf package install cert-manager \
+              -p cert-manager.kubernetes.vmware.com \
+              -n "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "cert-manager" | grep -qi "reconcile"; then
+                echo "cert-manager package reconciled"
+                break
+              fi
+              echo "Waiting for cert-manager to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::cert-manager did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+          echo "cert-manager setup complete"
+
+      # Phase 5h-a: Install Contour + envoy-lb
+      - name: Install Contour and Create Envoy LoadBalancer
+        if: ${{ env.USE_SSLIP_DNS == 'true' }}
+        run: |
+          set -euo pipefail
+          CONTOUR_INGRESS_NAMESPACE="tanzu-system-ingress"
+
+          # Install Contour package
+          if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep -q "contour"; then
+            echo "Contour already installed, skipping"
+          else
+            vcf package install contour \
+              -p contour.kubernetes.vmware.com \
+              -n "$PACKAGE_NAMESPACE"
+
+            TIMEOUT="$PACKAGE_TIMEOUT"
+            INTERVAL=15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              if vcf package installed list --namespace "$PACKAGE_NAMESPACE" 2>/dev/null | grep "contour" | grep -qi "reconcile"; then
+                echo "Contour package reconciled"
+                break
+              fi
+              echo "Waiting for Contour to reconcile... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+              echo "::error::Contour did not reconcile within ${TIMEOUT}s"
+              exit 1
+            fi
+          fi
+
+          # Create envoy-lb LoadBalancer service
+          if kubectl get svc envoy-lb -n "$CONTOUR_INGRESS_NAMESPACE" >/dev/null 2>&1; then
+            echo "envoy-lb service already exists, skipping"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: envoy-lb
+            namespace: ${CONTOUR_INGRESS_NAMESPACE}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: envoy
+            ports:
+            - name: http
+              port: 80
+              targetPort: 8080
+              protocol: TCP
+            - name: https
+              port: 443
+              targetPort: 8443
+              protocol: TCP
+          EOF
+            echo "envoy-lb LoadBalancer service created"
+          fi
+
+          # Wait for envoy-lb external IP
+          TIMEOUT="$PACKAGE_TIMEOUT"
+          INTERVAL=15
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            ENVOY_LB_IP=$(kubectl get svc envoy-lb -n "$CONTOUR_INGRESS_NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$ENVOY_LB_IP" ]; then
+              echo "envoy-lb external IP: $ENVOY_LB_IP"
+              echo "ENVOY_LB_IP=$ENVOY_LB_IP" >> "$GITHUB_ENV"
+              break
+            fi
+            echo "Waiting for envoy-lb external IP... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ -z "${ENVOY_LB_IP:-}" ]; then
+            echo "::warning::envoy-lb did not receive an external IP within ${TIMEOUT}s"
+          fi
+          echo "Contour + envoy-lb setup complete"
+
+      # Phase 5h-b: CoreDNS sslip.io Forwarding Rule
       - name: CoreDNS sslip.io Forwarding Rule
         if: ${{ env.USE_SSLIP_DNS == 'true' }}
         run: |
@@ -636,6 +750,79 @@ jobs:
             # Wait for CoreDNS to be ready after restart
             sleep 10
           fi
+
+      # Phase 5i: Create ClusterIssuers
+      - name: Create Let's Encrypt ClusterIssuers
+        if: ${{ env.USE_SSLIP_DNS == 'true' && env.LETSENCRYPT_EMAIL != '' }}
+        run: |
+          set -euo pipefail
+
+          # Create letsencrypt-staging ClusterIssuer
+          if kubectl get clusterissuer letsencrypt-staging >/dev/null 2>&1; then
+            echo "ClusterIssuer 'letsencrypt-staging' already exists, skipping"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-staging
+          spec:
+            acme:
+              server: https://acme-staging-v02.api.letsencrypt.org/directory
+              email: ${LETSENCRYPT_EMAIL}
+              privateKeySecretRef:
+                name: letsencrypt-staging-account-key
+              solvers:
+              - http01:
+                  ingress:
+                    ingressClassName: contour
+          EOF
+            echo "ClusterIssuer 'letsencrypt-staging' created"
+          fi
+
+          # Create letsencrypt-prod ClusterIssuer
+          if kubectl get clusterissuer letsencrypt-prod >/dev/null 2>&1; then
+            echo "ClusterIssuer 'letsencrypt-prod' already exists, skipping"
+          else
+            cat <<EOF | kubectl apply -f -
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: letsencrypt-prod
+          spec:
+            acme:
+              server: https://acme-v02.api.letsencrypt.org/directory
+              email: ${LETSENCRYPT_EMAIL}
+              privateKeySecretRef:
+                name: letsencrypt-prod-account-key
+              solvers:
+              - http01:
+                  ingress:
+                    ingressClassName: contour
+          EOF
+            echo "ClusterIssuer 'letsencrypt-prod' created"
+          fi
+
+          # Wait for ClusterIssuer to be ready
+          TIMEOUT=120
+          INTERVAL=10
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            READY=$(kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [ "$READY" = "True" ]; then
+              echo "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready"
+              break
+            fi
+            echo "Waiting for ClusterIssuer '${CLUSTER_ISSUER_NAME}' to be Ready... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::warning::ClusterIssuer '${CLUSTER_ISSUER_NAME}' did not reach Ready within ${TIMEOUT}s — TLS certificates may not be issued"
+            kubectl describe clusterissuer "${CLUSTER_ISSUER_NAME}" 2>/dev/null | tail -10 || true
+          fi
+          echo "ClusterIssuer setup complete"
 
       # Phase 7: Build and Push Web App Image
       - name: Build and Push Web App Image

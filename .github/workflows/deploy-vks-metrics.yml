@@ -799,7 +799,6 @@ jobs:
           |---|---|
           | Cluster | ${CLUSTER_NAME} |
           | Namespace | ${DYNAMIC_NS_NAME} |
-          | Domain | ${DOMAIN} |
           | Contour LB IP | ${CONTOUR_LB_IP} |
           | Grafana URL | https://${GRAFANA_HOSTNAME} |
           | Grafana Admin User | admin |
