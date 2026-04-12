@@ -1399,15 +1399,48 @@ EOF
     log_success "GitLab Let's Encrypt Ingress created for ${GITLAB_HOSTNAME}"
   fi
 
+  # Online Boutique (Microservices Demo) Ingress with Let's Encrypt
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    BOUTIQUE_HOSTNAME=$(construct_sslip_hostname "boutique" "${CONTOUR_LB_IP}")
+    cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: boutique-letsencrypt-ingress
+  namespace: ${APP_NAMESPACE}
+  annotations:
+    cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+spec:
+  ingressClassName: contour
+  tls:
+    - hosts:
+        - ${BOUTIQUE_HOSTNAME}
+      secretName: boutique-letsencrypt-tls
+  rules:
+    - host: ${BOUTIQUE_HOSTNAME}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+EOF
+    log_success "Online Boutique Let's Encrypt Ingress created for ${BOUTIQUE_HOSTNAME}"
+  fi
+
   # Wait for certificates to be issued
   if [[ "${TLS_ENABLED}" == "true" ]]; then
     log_success "Waiting for Let's Encrypt certificates to be issued..."
-    for CERT_NAME in harbor-letsencrypt-tls argocd-letsencrypt-tls gitlab-letsencrypt-tls; do
+    for CERT_NAME in harbor-letsencrypt-tls argocd-letsencrypt-tls gitlab-letsencrypt-tls boutique-letsencrypt-tls; do
       CERT_NS="default"
       case "${CERT_NAME}" in
         harbor*) CERT_NS="${HARBOR_NAMESPACE}" ;;
         argocd*) CERT_NS="${ARGOCD_NAMESPACE}" ;;
         gitlab*) CERT_NS="${GITLAB_NAMESPACE}" ;;
+        boutique*) CERT_NS="${APP_NAMESPACE}" ;;
       esac
       if wait_for_certificate "${CERT_NAME}" "${CERT_NS}" "${CERT_WAIT_TIMEOUT}"; then
         log_success "Certificate '${CERT_NAME}' is Ready"
@@ -1474,8 +1507,9 @@ echo "    Harbor:    https://${HARBOR_HOSTNAME}  (${CONTOUR_LB_IP})"
 echo "    ArgoCD:    https://${ARGOCD_HOSTNAME}  (${CONTOUR_LB_IP})"
 if [[ -n "${FRONTEND_LB_IP}" ]]; then
   echo "    Online Boutique:  http://${FRONTEND_LB_IP}  (microservices-demo frontend-external)"
-else
-  echo "    Online Boutique:  http://${CONTOUR_LB_IP}  (microservices-demo — frontend-external LB IP not yet assigned)"
+fi
+if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${BOUTIQUE_HOSTNAME:-}" ]]; then
+  echo "    Online Boutique:  https://${BOUTIQUE_HOSTNAME}  (Let's Encrypt TLS)"
 fi
 if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
 echo ""

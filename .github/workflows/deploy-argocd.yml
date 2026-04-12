@@ -1258,10 +1258,42 @@ jobs:
           EOF
           echo "GitLab Let's Encrypt Ingress created for ${GITLAB_HOSTNAME}"
 
+          # Online Boutique (Microservices Demo) Ingress with Let's Encrypt
+          APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
+          BOUTIQUE_HOSTNAME="boutique.${DOMAIN}"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: boutique-letsencrypt-ingress
+            namespace: ${APP_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${BOUTIQUE_HOSTNAME}
+                secretName: boutique-letsencrypt-tls
+            rules:
+              - host: ${BOUTIQUE_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: frontend
+                          port:
+                            number: 80
+          EOF
+          echo "Online Boutique Let's Encrypt Ingress created for ${BOUTIQUE_HOSTNAME}"
+          echo "BOUTIQUE_HOSTNAME=${BOUTIQUE_HOSTNAME}" >> "$GITHUB_ENV"
+
           # Wait for certificates
           echo "Waiting for Let's Encrypt certificates..."
           CERT_TIMEOUT=300
-          for CERT in harbor-letsencrypt-tls:${HARBOR_NAMESPACE} argocd-letsencrypt-tls:${ARGOCD_NAMESPACE} gitlab-letsencrypt-tls:${GITLAB_NAMESPACE}; do
+          for CERT in harbor-letsencrypt-tls:${HARBOR_NAMESPACE} argocd-letsencrypt-tls:${ARGOCD_NAMESPACE} gitlab-letsencrypt-tls:${GITLAB_NAMESPACE} boutique-letsencrypt-tls:${APP_NAMESPACE}; do
             CERT_NAME="${CERT%%:*}"
             CERT_NS="${CERT##*:}"
             ELAPSED=0
@@ -1309,7 +1341,7 @@ jobs:
           | Harbor | https://${HARBOR_HOSTNAME} |
           | ArgoCD | https://${ARGOCD_HOSTNAME} |
           | GitLab | https://${GITLAB_HOSTNAME} |
-          | Online Boutique | http://${FRONTEND_IP:-N/A} |
+          | Online Boutique | ${BOUTIQUE_HOSTNAME:+https://${BOUTIQUE_HOSTNAME}} ${BOUTIQUE_HOSTNAME:-http://${FRONTEND_IP:-N/A}} |
 
           ### Credential Retrieval
           | Service | Username | Retrieval Command |
