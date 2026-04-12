@@ -619,6 +619,26 @@ jobs:
           kubectl label ns tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
           kubectl label limitrange ns-limit-range -n tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
 
+          # --- Ensure package repository is registered (may have been removed by a previous teardown) ---
+          PACKAGE_REPO_NAME="tkg-packages"
+          PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
+          if ! vcf package repository list --namespace tkg-packages 2>/dev/null | grep -q "$PACKAGE_REPO_NAME"; then
+            echo "Package repository not found — registering..."
+            vcf package repository add "$PACKAGE_REPO_NAME" \
+              --url "$PACKAGE_REPO_URL" \
+              --namespace tkg-packages
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              if vcf package repository list --namespace tkg-packages 2>/dev/null | grep "$PACKAGE_REPO_NAME" | grep -qi "reconcile"; then
+                echo "Package repository reconciled"
+                break
+              fi
+              echo "Waiting for package repository to reconcile... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          fi
+
           # Install vault-injector (idempotent — shared with secrets-demo)
           VAULT_INSTALLED=false
           if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
