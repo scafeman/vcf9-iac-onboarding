@@ -584,6 +584,28 @@ jobs:
           fi
 
           # Ensure tkg-packages namespace exists (vault-injector installs here)
+          # If the namespace is in Terminating state (from a recent teardown), wait for it to finish
+          NS_PHASE=$(kubectl get ns tkg-packages -o jsonpath='{.status.phase}' 2>/dev/null || true)
+          if [ "$NS_PHASE" = "Terminating" ]; then
+            echo "Namespace 'tkg-packages' is Terminating — waiting for it to finish..."
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
+                echo "Namespace 'tkg-packages' terminated"
+                break
+              fi
+              if [ "$ELAPSED" -ge 60 ]; then
+                echo "Forcing namespace finalizer removal..."
+                kubectl get ns tkg-packages -o json 2>/dev/null \
+                  | jq '.spec.finalizers = []' \
+                  | kubectl replace --raw "/api/v1/namespaces/tkg-packages/finalize" -f - 2>/dev/null || true
+              fi
+              echo "Waiting for tkg-packages termination... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          fi
+
           if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
             kubectl create ns tkg-packages
             kubectl label ns tkg-packages pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
