@@ -98,19 +98,10 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
   kubectl delete ns "${NAMESPACE}" --ignore-not-found || true
   log_success "Namespace '${NAMESPACE}' deleted (or already removed by package teardown)"
 
-  # Only delete cluster-scoped vault resources if no other patterns depend on them
-  if [[ "${VAULT_DEPS:-0}" -eq 0 ]]; then
-    kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found || true
-    log_success "ClusterRole 'vault-injector-clusterrole' deleted"
-
-    kubectl delete clusterrolebinding vault-injector-clusterrolebinding --ignore-not-found || true
-    log_success "ClusterRoleBinding 'vault-injector-clusterrolebinding' deleted"
-
-    kubectl delete mutatingwebhookconfiguration vault-injector-cfg --ignore-not-found || true
-    log_success "MutatingWebhookConfiguration 'vault-injector-cfg' deleted"
-  else
-    log_warn "Skipping vault cluster-scoped resource cleanup (managed-db-app still depends on them)"
-  fi
+  # NOTE: vault-injector cluster-scoped resources (ClusterRole, ClusterRoleBinding,
+  # MutatingWebhookConfiguration) are NOT deleted here. They are managed by the
+  # vault-injector package and will be cleaned up when the package is deleted.
+  # Deleting them manually while the package exists breaks the webhook registration.
 
   unset KUBECONFIG
 else

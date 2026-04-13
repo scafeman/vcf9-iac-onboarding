@@ -627,12 +627,58 @@ fi
 
 log_success "Phase 3b complete — vault-injector deployed, supervisor token copied"
 
+# Ensure vault-injector RBAC exists (may have been deleted by a previous teardown)
+if ! kubectl get clusterrole vault-injector-clusterrole >/dev/null 2>&1; then
+  echo "vault-injector ClusterRole missing — recreating RBAC"
+  cat <<RBACEOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-injector-clusterrole
+rules:
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-injector-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-injector-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: vault-injector
+  namespace: tkg-packages
+RBACEOF
+  # Restart vault-injector to pick up the new RBAC
+  kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
+  log_success "vault-injector RBAC recreated and pod restarted"
+  sleep 10
+fi
+
 # Wait for vault-injector mutating webhook to be registered
 # (the webhook must be active before creating pods with vault annotations)
 if ! wait_for_condition "vault-injector webhook to be registered" \
-  120 10 \
+  300 10 \
   "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
-  log_warn "Vault-injector webhook not found — vault-agent sidecar may not be injected"
+  # Restart-and-retry if webhook not registered after initial wait
+  log_warn "Webhook not registered after initial wait — restarting vault-injector..."
+  kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
+  kubectl rollout status deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector --timeout=120s 2>/dev/null || true
+
+  # Wait for webhook after restart
+  if ! wait_for_condition "vault-injector webhook to be registered (after restart)" \
+    300 5 \
+    "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
+    log_error "vault-injector webhook did not register within timeout after restart"
+    exit 1
+  fi
 fi
 
 # Brief pause to ensure webhook is fully ready to intercept pod creation

@@ -755,11 +755,16 @@ jobs:
             echo "Namespace '$SECRETS_NAMESPACE' already deleted by package teardown"
           fi
 
-          # Clean up cluster-scoped resources that may remain
-          kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found 2>/dev/null || true
-          kubectl delete clusterrolebinding vault-injector-binding --ignore-not-found 2>/dev/null || true
-          kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>/dev/null || true
-          echo "Secrets Demo cluster-scoped resources cleaned up"
+          # Clean up cluster-scoped resources that may remain — only if managed-db-app
+          # is also being torn down or no longer exists (shared resource protection)
+          if [ "$TEARDOWN_MANAGED_DB_APP" == "true" ] || ! kubectl get ns managed-db-app >/dev/null 2>&1; then
+            kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found 2>/dev/null || true
+            kubectl delete clusterrolebinding vault-injector-binding --ignore-not-found 2>/dev/null || true
+            kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>/dev/null || true
+            echo "Secrets Demo cluster-scoped resources cleaned up"
+          else
+            echo "Skipping cluster-scoped vault resource deletion — managed-db-app namespace still exists"
+          fi
 
       - name: Delete Secrets Demo Supervisor Resources
         if: env.TEARDOWN_SECRETS_DEMO == 'true'
