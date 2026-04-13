@@ -251,16 +251,25 @@ unset KUBECONFIG 2>/dev/null || true
 
 # Check if other patterns still need the DSM PostgresCluster (shared resource)
 DSM_DEPS=0
+
+# Check if guest cluster is reachable before namespace checks
 export KUBECONFIG="${KUBECONFIG_FILE}"
-if kubectl get ns knative-demo >/dev/null 2>&1; then
+if kubectl get ns default >/dev/null 2>&1; then
+  # Check knative-demo namespace
+  if kubectl get ns knative-demo >/dev/null 2>&1; then
+    log_warn "knative-demo namespace still exists — skipping PostgresCluster deletion"
+    DSM_DEPS=1
+  fi
+else
+  log_warn "Guest cluster unreachable — treating as dependents may exist, skipping PostgresCluster deletion"
   DSM_DEPS=1
-  log_warn "Namespace 'knative-demo' still exists — skipping PostgresCluster deletion (shared resource)"
 fi
 unset KUBECONFIG
-# Check for ha-vm-app (supervisor namespace)
+
+# Check ha-web-lb VirtualMachineService in supervisor namespace
 if kubectl get virtualmachineservice ha-web-lb -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+  log_warn "ha-vm-app VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion"
   DSM_DEPS=1
-  log_warn "VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion (shared resource)"
 fi
 
 if [[ "${DSM_DEPS}" -eq 0 ]]; then

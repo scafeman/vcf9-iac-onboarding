@@ -263,38 +263,46 @@ fi
 log_step 2 "Deleting DSM PostgresCluster '${DSM_CLUSTER_NAME}' and secrets in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
 if [[ -n "${VCFA_ENDPOINT:-}" ]] && [[ -n "${VCF_API_TOKEN:-}" ]]; then
+  # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
+  unset KUBECONFIG 2>/dev/null || true
+
+  # Create VCF CLI context for supervisor namespace access
+  vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+  vcf context create "${CONTEXT_NAME}" \
+    --endpoint "https://${VCFA_ENDPOINT}" \
+    --type cci \
+    --tenant-name "${TENANT_NAME}" \
+    --api-token "${VCF_API_TOKEN}" \
+    --set-current 2>/dev/null || true
+
+  NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+  if [[ -n "${NS_CTX}" ]]; then
+    vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  fi
+
   # Check if other patterns still need the DSM PostgresCluster (shared resource)
   DSM_DEPS=0
-  export KUBECONFIG="${KUBECONFIG_FILE}"
-  if kubectl get ns managed-db-app >/dev/null 2>&1; then
-    DSM_DEPS=1
-    log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
-  fi
-  unset KUBECONFIG
-  # Check for ha-vm-app (supervisor namespace — already on supervisor context)
+
+  # Check for ha-vm-app (supervisor namespace — now on correct VCF CLI context)
   if kubectl get virtualmachineservice ha-web-lb -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
     DSM_DEPS=1
     log_warn "VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion (shared resource)"
   fi
 
-  if [[ "${DSM_DEPS}" -eq 0 ]]; then
-    # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
-    unset KUBECONFIG 2>/dev/null || true
-
-    # Create VCF CLI context for supervisor namespace access
-    vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
-    vcf context create "${CONTEXT_NAME}" \
-      --endpoint "https://${VCFA_ENDPOINT}" \
-      --type cci \
-      --tenant-name "${TENANT_NAME}" \
-      --api-token "${VCF_API_TOKEN}" \
-      --set-current 2>/dev/null || true
-
-    NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-    if [[ -n "${NS_CTX}" ]]; then
-      vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  # Check if guest cluster is reachable before namespace checks
+  export KUBECONFIG="${KUBECONFIG_FILE}"
+  if kubectl get ns default >/dev/null 2>&1; then
+    if kubectl get ns managed-db-app >/dev/null 2>&1; then
+      DSM_DEPS=1
+      log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
     fi
+  else
+    log_warn "Guest cluster unreachable — treating as dependents may exist, skipping PostgresCluster deletion"
+    DSM_DEPS=1
+  fi
+  unset KUBECONFIG
 
+  if [[ "${DSM_DEPS}" -eq 0 ]]; then
     # Delete PostgresCluster
     if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
       kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found

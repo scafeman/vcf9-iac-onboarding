@@ -943,38 +943,67 @@ jobs:
             NS_NAME=$(echo "$NAMESPACE_CONTEXT" | cut -d: -f2)
             echo "Targeting supervisor namespace: $NS_NAME"
 
-            # Delete PostgresCluster
-            if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
-              kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found
-              echo "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+            # Check for dependent deployments before deleting shared PostgresCluster
+            DSM_DEPS=0
 
-              # Wait for PostgresCluster termination
-              ELAPSED=0
-              while [ "$ELAPSED" -lt "$DSM_TIMEOUT" ]; do
-                if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
-                  echo "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
-                  break
-                fi
-                echo "  Waiting for PostgresCluster deletion... (${ELAPSED}s/${DSM_TIMEOUT}s)"
-                sleep "$POLL_INTERVAL"
-                ELAPSED=$((ELAPSED + POLL_INTERVAL))
-              done
-
-              if [ "$ELAPSED" -ge "$DSM_TIMEOUT" ]; then
-                echo "::warning::PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${DSM_TIMEOUT}s"
+            # Check ha-vm-app: VirtualMachineService ha-web-lb in supervisor namespace
+            if [ "$TEARDOWN_HA_VM_APP" != "true" ]; then
+              if kubectl get virtualmachineservice ha-web-lb -n "$NS_NAME" >/dev/null 2>&1; then
+                echo "::warning::ha-vm-app VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion"
+                DSM_DEPS=1
               fi
-            else
-              echo "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, skipping"
             fi
 
-            # Delete admin password Secret and DSM-created secret
-            kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
-            kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+            # Check knative: knative-demo namespace in guest cluster
+            if [ "$TEARDOWN_KNATIVE" != "true" ]; then
+              GUEST_KUBECONFIG="${KUBECONFIG:-./kubeconfig-${CLUSTER_NAME}.yaml}"
+              if [ -f "$GUEST_KUBECONFIG" ]; then
+                if kubectl --kubeconfig="$GUEST_KUBECONFIG" get ns knative-demo >/dev/null 2>&1; then
+                  echo "::warning::knative-demo namespace still exists — skipping PostgresCluster deletion"
+                  DSM_DEPS=1
+                fi
+              else
+                echo "::warning::Guest cluster kubeconfig not found — cannot verify knative-demo status, skipping PostgresCluster deletion"
+                DSM_DEPS=1
+              fi
+            fi
 
-            # Delete dsm-pg-creds KeyValueSecret
-            vcf plugin install secret 2>/dev/null || true
-            echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
-            echo "KeyValueSecret 'dsm-pg-creds' cleaned up"
+            if [ "$DSM_DEPS" -eq 0 ]; then
+              # Delete PostgresCluster
+              if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
+                kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found
+                echo "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+
+                # Wait for PostgresCluster termination
+                ELAPSED=0
+                while [ "$ELAPSED" -lt "$DSM_TIMEOUT" ]; do
+                  if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
+                    echo "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
+                    break
+                  fi
+                  echo "  Waiting for PostgresCluster deletion... (${ELAPSED}s/${DSM_TIMEOUT}s)"
+                  sleep "$POLL_INTERVAL"
+                  ELAPSED=$((ELAPSED + POLL_INTERVAL))
+                done
+
+                if [ "$ELAPSED" -ge "$DSM_TIMEOUT" ]; then
+                  echo "::warning::PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${DSM_TIMEOUT}s"
+                fi
+              else
+                echo "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, skipping"
+              fi
+
+              # Delete admin password Secret and DSM-created secret
+              kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+              kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+
+              # Delete dsm-pg-creds KeyValueSecret
+              vcf plugin install secret 2>/dev/null || true
+              echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
+              echo "KeyValueSecret 'dsm-pg-creds' cleaned up"
+            else
+              echo "Skipping PostgresCluster deletion — dependent deployments still exist"
+            fi
 
             # Delete ServiceAccount and token (shared with secrets-demo — safe to delete)
             kubectl delete sa internal-app --ignore-not-found 2>/dev/null || true

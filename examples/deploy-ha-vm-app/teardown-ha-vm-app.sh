@@ -311,17 +311,23 @@ log_step 5 "Deleting PostgresCluster '${DSM_CLUSTER_NAME}' in supervisor namespa
 
 # Check if other patterns still need the DSM PostgresCluster (shared resource)
 DSM_DEPS=0
-# Try to check guest cluster namespaces if kubeconfig is available
-KUBECONFIG_FILE="./kubeconfig-${CLUSTER_NAME:-}.yaml"
-if [[ -f "${KUBECONFIG_FILE}" ]]; then
-  if KUBECONFIG="${KUBECONFIG_FILE}" kubectl get ns managed-db-app >/dev/null 2>&1; then
+
+# Check if guest cluster is reachable for namespace checks
+KUBECONFIG_FILE="${KUBECONFIG_FILE:-./kubeconfig-${CLUSTER_NAME:-}.yaml}"
+if kubectl --kubeconfig="${KUBECONFIG_FILE}" get ns default >/dev/null 2>&1; then
+  # Check managed-db-app namespace
+  if kubectl --kubeconfig="${KUBECONFIG_FILE}" get ns managed-db-app >/dev/null 2>&1; then
+    log_warn "managed-db-app namespace still exists — skipping PostgresCluster deletion"
     DSM_DEPS=1
-    log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
   fi
-  if KUBECONFIG="${KUBECONFIG_FILE}" kubectl get ns knative-demo >/dev/null 2>&1; then
+  # Check knative-demo namespace
+  if kubectl --kubeconfig="${KUBECONFIG_FILE}" get ns knative-demo >/dev/null 2>&1; then
+    log_warn "knative-demo namespace still exists — skipping PostgresCluster deletion"
     DSM_DEPS=1
-    log_warn "Namespace 'knative-demo' still exists — skipping PostgresCluster deletion (shared resource)"
   fi
+else
+  log_warn "Guest cluster unreachable — treating as dependents may exist, skipping PostgresCluster deletion"
+  DSM_DEPS=1
 fi
 
 if [[ "${DSM_DEPS}" -eq 0 ]]; then
