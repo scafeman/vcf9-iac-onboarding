@@ -1276,7 +1276,8 @@ if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
   if [[ "${TLS_ENABLED}" == "true" ]]; then
     kubectl delete ingress argocd-server -n "${ARGOCD_NAMESPACE}" --ignore-not-found 2>/dev/null || true
     kubectl delete ingress gitlab-webservice-default -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
-    log_success "Helm-managed Ingress resources deleted (ArgoCD, GitLab) — Let's Encrypt Ingress will take over"
+    kubectl delete ingress harbor-ingress -n "${HARBOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    log_success "Helm-managed Ingress resources deleted (ArgoCD, GitLab, Harbor) — Let's Encrypt Ingress will take over"
   fi
 
   # Harbor Ingress with Let's Encrypt

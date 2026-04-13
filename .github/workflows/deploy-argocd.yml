@@ -1141,7 +1141,8 @@ jobs:
           # Delete Helm-managed Ingress resources that conflict with Let's Encrypt ones
           kubectl delete ingress argocd-server -n "${ARGOCD_NAMESPACE}" --ignore-not-found 2>/dev/null || true
           kubectl delete ingress gitlab-webservice-default -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
-          echo "Helm-managed Ingress resources deleted (ArgoCD, GitLab)"
+          kubectl delete ingress harbor-ingress -n "${HARBOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+          echo "Helm-managed Ingress resources deleted (ArgoCD, GitLab, Harbor)"
 
           # Harbor Ingress with Let's Encrypt
           cat <<EOF | kubectl apply -f -
