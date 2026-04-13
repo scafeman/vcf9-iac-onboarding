@@ -212,7 +212,9 @@ class TestDeployManagedDbAppWebhookWait:
 
         after_webhook = step_text[webhook_section_start:]
         # Look for exit 1 after the webhook wait logic but before the deployment manifest
-        deploy_manifest_start = after_webhook.find("kubectl apply")
+        # Skip past any kubectl apply used for webhook config recreation (MutatingWebhookConfiguration)
+        # and find the actual deployment manifest (apps/v1 Deployment)
+        deploy_manifest_start = after_webhook.find("kind: Deployment")
         if deploy_manifest_start > 0:
             between_webhook_and_deploy = after_webhook[:deploy_manifest_start]
         else:

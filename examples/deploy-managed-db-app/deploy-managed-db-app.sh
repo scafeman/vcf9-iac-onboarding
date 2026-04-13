@@ -668,7 +668,46 @@ if ! wait_for_condition "vault-injector webhook to be registered" \
   300 10 \
   "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
   # Restart-and-retry if webhook not registered after initial wait
-  log_warn "Webhook not registered after initial wait — restarting vault-injector..."
+  log_warn "Webhook not registered after initial wait — recreating webhook config..."
+
+  # The vault-injector pod does NOT create the MutatingWebhookConfiguration itself.
+  # It only watches/updates an existing one. If the teardown deleted it, we must recreate it.
+  CA_BUNDLE=$(kubectl get secret vault-injector-certs -n tkg-packages -o jsonpath='{.data.cert}' 2>/dev/null || true)
+  if [ -n "$CA_BUNDLE" ]; then
+    cat <<WHEOF | kubectl apply -f -
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: vault-agent-injector-cfg
+  labels:
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/name: vault-injector
+webhooks:
+- name: vault.hashicorp.com
+  admissionReviewVersions: ["v1", "v1beta1"]
+  clientConfig:
+    caBundle: "${CA_BUNDLE}"
+    service:
+      name: vault-agent-injector-svc
+      namespace: tkg-packages
+      path: /mutate
+  failurePolicy: Ignore
+  matchPolicy: Exact
+  reinvocationPolicy: Never
+  rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    operations: ["CREATE", "UPDATE"]
+    resources: ["pods"]
+  sideEffects: None
+  timeoutSeconds: 30
+WHEOF
+    log_success "MutatingWebhookConfiguration recreated from vault-injector-certs secret"
+  else
+    log_warn "vault-injector-certs secret not found — cannot recreate webhook config"
+  fi
+
+  # Restart vault-injector so it picks up the recreated webhook config
   kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
   kubectl rollout status deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector --timeout=120s 2>/dev/null || true
 
