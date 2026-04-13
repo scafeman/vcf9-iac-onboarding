@@ -30,3 +30,9 @@ Future enhancements and ideas for the VCF 9 IaC Onboarding Toolkit.
 - **Status:** Idea
 - **Summary:** Install Caddy as a reverse proxy on web-tier VMs with built-in Let's Encrypt auto-provisioning for sslip.io hostnames. Currently the HA VM App uses HTTP only (DNS alias, no TLS).
 - **Patterns affected:** deploy-ha-vm-app
+
+### 5. Knative Vault-Injected DSM Credentials
+- **Status:** Idea
+- **Summary:** Replace plaintext PostgreSQL credentials in the Knative API server and audit function with vault-injected secrets via VCF Secret Store. Same pattern as deploy-managed-db-app. The API server Deployment is straightforward; the Knative Service (audit function) requires testing vault-agent sidecar compatibility with Knative's pod lifecycle (scale-to-zero, revision management).
+- **AWS Equivalent:** Lambda environment variables → Secrets Manager SDK calls
+- **Patterns affected:** deploy-knative
