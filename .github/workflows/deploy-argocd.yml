@@ -71,6 +71,7 @@ jobs:
 
       # --- sslip.io DNS ---
       USE_SSLIP_DNS: "true"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
 
     steps:
       - name: Checkout Repository

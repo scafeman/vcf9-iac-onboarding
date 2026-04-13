@@ -130,6 +130,7 @@ jobs:
       # --- sslip.io DNS ---
       USE_SSLIP_DNS: "true"
       SSLIP_HOSTNAME_PREFIX: "knative-dashboard"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
 
       # --- Static Configuration ---
       CONTEXT_NAME: knative-deploy
