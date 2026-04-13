@@ -239,6 +239,7 @@ wait_for_certificate() {
   local timeout="${3:-300}"
   local elapsed=0
   local poll_interval=10
+  local retried=false
 
   while [[ "${elapsed}" -lt "${timeout}" ]]; do
     local status
@@ -248,6 +249,24 @@ wait_for_certificate() {
       echo "✓ Certificate '${secret_name}' is Ready"
       return 0
     fi
+
+    # If cert is stuck in failed state after 60s, delete and let cert-manager recreate
+    if [[ "${elapsed}" -ge 60 ]] && [[ "${retried}" == "false" ]]; then
+      local issuing_status
+      issuing_status=$(kubectl get certificate "${secret_name}" -n "${namespace}" \
+        -o jsonpath='{.status.conditions[?(@.type=="Issuing")].reason}' 2>/dev/null || true)
+      local failed_attempts
+      failed_attempts=$(kubectl get certificate "${secret_name}" -n "${namespace}" \
+        -o jsonpath='{.status.failedIssuanceAttempts}' 2>/dev/null || echo "0")
+      if [[ "${issuing_status}" == "Failed" ]] || [[ "${failed_attempts:-0}" -gt 0 ]]; then
+        echo "  ⚠ Certificate '${secret_name}' has failed issuance — deleting to trigger fresh request"
+        kubectl delete certificate "${secret_name}" -n "${namespace}" --ignore-not-found 2>/dev/null || true
+        kubectl delete secret "${secret_name}" -n "${namespace}" --ignore-not-found 2>/dev/null || true
+        retried=true
+        sleep 5
+      fi
+    fi
+
     echo "  Waiting for certificate '${secret_name}' to be Ready... (${elapsed}s/${timeout}s elapsed)"
     sleep "${poll_interval}"
     elapsed=$((elapsed + poll_interval))
