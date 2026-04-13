@@ -1154,6 +1154,7 @@ jobs:
           | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Hybrid App Stack | $([ "$TEARDOWN_HYBRID_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Secrets Demo | $([ "$TEARDOWN_SECRETS_DEMO" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down (\`${BASTION_VM_NAME}\`)" || echo "⏭️ Skipped") |
           | Managed DB App | $([ "$TEARDOWN_MANAGED_DB_APP" = "true" ] && echo "✅ Torn down (\`${DSM_CLUSTER_NAME}\`)" || echo "⏭️ Skipped") |
           | HA VM App | $([ "$TEARDOWN_HA_VM_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
@@ -1161,7 +1162,7 @@ jobs:
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
-            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ] || [ "$TEARDOWN_KNATIVE" != "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_SECRETS_DEMO" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ] || [ "$TEARDOWN_KNATIVE" != "true" ]; then
               cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.
