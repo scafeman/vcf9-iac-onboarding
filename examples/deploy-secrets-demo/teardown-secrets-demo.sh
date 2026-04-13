@@ -71,16 +71,15 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
 
   if [[ "${VAULT_DEPS}" -eq 0 ]]; then
     if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-      # Strip finalizers first to prevent stuck "Deletion failed" state
+      # Strip finalizers FIRST so kapp-controller releases without cascade-delete
       kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
         -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
       kubectl patch app vault-injector -n tkg-packages --type merge \
         -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-      vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-      # Clean up any remaining resources
+      # Delete resources directly (do NOT use vcf package installed delete — it triggers kapp cascade)
       kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
       kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
-      log_success "vault-injector package deleted"
+      log_success "vault-injector package deleted (finalizers stripped, no cascade)"
     else
       log_success "vault-injector package not installed, skipping"
     fi

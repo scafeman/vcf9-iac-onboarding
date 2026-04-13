@@ -345,7 +345,7 @@ if ! kubectl get ns secrets-demo >/dev/null 2>&1; then
         -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
       kubectl patch app vault-injector -n tkg-packages --type merge \
         -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-      vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+      # Delete resources directly (do NOT use vcf package installed delete — it triggers kapp cascade)
       kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
       kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
       log_success "vault-injector package deleted (secrets-demo not present)"

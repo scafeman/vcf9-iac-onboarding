@@ -455,9 +455,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Remove the Envoy LoadBalancer service
-          kubectl delete svc envoy-lb -n tanzu-system-ingress --ignore-not-found 2>/dev/null || true
-          echo "Envoy LoadBalancer service removed"
+          # NOTE: envoy-lb is shared infrastructure — NOT deleted here.
+          # It is only deleted by the cluster teardown (TEARDOWN_CLUSTER).
 
           # Remove the Grafana CoreDNS entry
           CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
@@ -484,7 +483,7 @@ jobs:
           fi
 
       - name: Delete VKS Packages
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -508,7 +507,7 @@ jobs:
           echo "All packages deleted"
 
       - name: Delete Package Repository
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
           PACKAGE_REPO_NAME="tkg-packages"
@@ -524,7 +523,7 @@ jobs:
           fi
 
       - name: Delete Package Namespace
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -557,7 +556,7 @@ jobs:
           fi
 
       - name: Clean Up Cluster-Scoped Resources
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -729,8 +728,14 @@ jobs:
 
           if [ "$VAULT_DEPS" -eq 0 ]; then
             if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-              vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-              echo "vault-injector package deleted"
+              # Strip finalizers and delete directly (no vcf package installed delete — avoids kapp cascade)
+              kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl patch app vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              echo "vault-injector package deleted (no cascade)"
             else
               echo "vault-injector package not installed, skipping"
             fi

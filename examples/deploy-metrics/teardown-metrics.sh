@@ -5,19 +5,22 @@ set -euo pipefail
 # VCF 9 Deploy Metrics — VKS Metrics Observability Teardown Script
 #
 # This script removes the metrics observability stack installed by the
-# Deploy Metrics deploy script, deleting resources in reverse dependency order:
+# Deploy Metrics deploy script, deleting ONLY metrics-owned resources:
 #   Phase 1: Kubeconfig Setup & Connectivity Check
 #   Phase 2: Delete Grafana (Operator, instance, namespace)
-#   Phase 3: Delete Packages (strip finalizers, delete PackageInstalls & Apps)
-#   Phase 4: Delete Package Repository
-#   Phase 5: Delete Package Namespace
-#   Phase 6: Clean Up Cluster-Scoped Resources
+#   Phase 2b: Remove CoreDNS hosts entry
+#   Phase 3: Delete metrics-owned packages (prometheus and telegraf ONLY)
 #
-# IMPORTANT: Packages are NOT deleted via `vcf package installed delete`
-# because kapp-controller's reconcile-delete cascades into deleting the
-# shared namespace, which destroys service accounts needed by other packages.
-# Instead, we strip finalizers from all PackageInstall and App resources so
-# kapp-controller releases them immediately, then clean up ourselves.
+# IMPORTANT: This script does NOT delete shared infrastructure:
+#   - tkg-packages namespace, package repository
+#   - cert-manager package, Contour package
+#   - envoy-lb LoadBalancer service
+#   - ClusterIssuers, cert-manager/Contour CRDs, ClusterRoles, etc.
+# Shared infrastructure is ONLY deleted by teardown-cluster.sh.
+#
+# Packages are NOT deleted via `vcf package installed delete` because
+# kapp-controller's reconcile-delete cascades into deleting the shared
+# namespace. Instead, we strip finalizers and delete directly.
 #
 # Uses the same variable block as the deploy script (subset).
 # Run: bash examples/deploy-metrics/teardown-metrics.sh
@@ -173,13 +176,13 @@ log_success "Grafana removed (namespace '${GRAFANA_NAMESPACE}' deleted)"
 
 ###############################################################################
 # Phase 2b: Remove Grafana CoreDNS Entry
+#
+# NOTE: envoy-lb and other shared infrastructure (cert-manager, Contour,
+# package repository, tkg-packages namespace) are NOT deleted here.
+# Shared infrastructure is ONLY deleted by teardown-cluster.sh.
 ###############################################################################
 
-log_step "2b" "Removing Grafana Ingress resources and CoreDNS entry"
-
-# Remove the envoy-lb LoadBalancer service created for external access
-kubectl delete svc envoy-lb -n tanzu-system-ingress --ignore-not-found 2>/dev/null || true
-log_success "Envoy LoadBalancer service 'envoy-lb' removed"
+log_step "2b" "Removing Grafana CoreDNS entry"
 
 CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
 
@@ -211,176 +214,20 @@ else
 fi
 
 ###############################################################################
-# Phase 3: Delete Packages
+# Phase 3: Delete Metrics-Owned Packages (prometheus and telegraf ONLY)
 #
-# Delete all VKS standard packages in reverse dependency order. Each package's
-# PackageInstall and App resources have their finalizers stripped before
-# deletion so kapp-controller does NOT trigger a reconcile-delete. This
-# prevents the cascading namespace deletion that breaks other packages.
+# Only prometheus and telegraf are owned by the metrics stack. Shared packages
+# (cert-manager, Contour) are NOT deleted here — they are managed by
+# teardown-cluster.sh. Finalizers are stripped before deletion so
+# kapp-controller does NOT trigger a reconcile-delete cascade.
 ###############################################################################
 
-log_step 3 "Deleting packages (reverse dependency order)"
+log_step 3 "Deleting metrics-owned packages (prometheus and telegraf)"
 
 delete_package prometheus
-delete_package contour
-delete_package cert-manager
 delete_package telegraf
 
-log_success "All packages deleted"
-
-###############################################################################
-# Phase 4: Delete Package Repository
-###############################################################################
-
-log_step 4 "Deleting package repository"
-
-if kubectl get packagerepository -n "${PACKAGE_NAMESPACE}" --no-headers 2>/dev/null | grep -qi "${PACKAGE_REPO_NAME}"; then
-  # Strip finalizers first, then delete
-  kubectl patch packagerepository "${PACKAGE_REPO_NAME}" -n "${PACKAGE_NAMESPACE}" \
-    --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-  kubectl delete packagerepository "${PACKAGE_REPO_NAME}" -n "${PACKAGE_NAMESPACE}" --ignore-not-found 2>/dev/null || true
-
-  log_success "Package repository '${PACKAGE_REPO_NAME}' deleted"
-else
-  log_success "Package repository '${PACKAGE_REPO_NAME}' not found, skipping"
-fi
-
-###############################################################################
-# Phase 5: Delete Package Namespace
-#
-# By this point all PackageInstall, App, and PackageRepository resources
-# should already be gone (finalizers stripped in earlier phases). If any
-# stragglers remain, strip their finalizers before deleting the namespace.
-###############################################################################
-
-log_step 5 "Deleting package namespace"
-
-if kubectl get ns "${PACKAGE_NAMESPACE}" >/dev/null 2>&1; then
-  # Safety net: strip finalizers from any remaining carvel resources
-  for pkg in $(kubectl get packageinstall -n "${PACKAGE_NAMESPACE}" -o name 2>/dev/null); do
-    kubectl patch "${pkg}" -n "${PACKAGE_NAMESPACE}" --type merge \
-      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-  done
-  for app in $(kubectl get app -n "${PACKAGE_NAMESPACE}" -o name 2>/dev/null); do
-    kubectl patch "${app}" -n "${PACKAGE_NAMESPACE}" --type merge \
-      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-  done
-  for repo in $(kubectl get packagerepository -n "${PACKAGE_NAMESPACE}" -o name 2>/dev/null); do
-    kubectl patch "${repo}" -n "${PACKAGE_NAMESPACE}" --type merge \
-      -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-  done
-
-  # Attempt namespace deletion with a timeout; if it hangs, force-remove
-  # the namespace finalizer so it can terminate.
-  if ! kubectl delete ns "${PACKAGE_NAMESPACE}" --ignore-not-found --timeout=60s 2>/dev/null; then
-    log_warn "Namespace deletion timed out, force-removing namespace finalizer"
-    kubectl get ns "${PACKAGE_NAMESPACE}" -o json 2>/dev/null \
-      | jq '.spec.finalizers = []' \
-      | kubectl replace --raw "/api/v1/namespaces/${PACKAGE_NAMESPACE}/finalize" -f - 2>/dev/null || true
-    sleep 5
-  fi
-
-  log_success "Namespace '${PACKAGE_NAMESPACE}' deleted"
-else
-  log_success "Namespace '${PACKAGE_NAMESPACE}' does not exist, skipping"
-fi
-
-###############################################################################
-# Phase 6: Clean Up Cluster-Scoped Resources
-#
-# kapp-controller tracks ownership of cluster-scoped resources (ClusterRoles,
-# ClusterRoleBindings, CRDs, webhooks, Roles in kube-system) using labels.
-# Since we bypassed kapp's reconcile-delete, these resources are still present
-# and must be removed manually so a subsequent deploy starts clean.
-###############################################################################
-
-log_step 6 "Cleaning up cluster-scoped resources"
-
-# --- Telegraf ---
-for cr in telegraf telegraf-kubelet-metric-access telegraf-stats-viewer "telegraf:user" \
-          telegraf-tkg-packages-cluster-role; do
-  kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
-done
-for crb in telegraf telegraf-tkg-packages-cluster-rolebinding; do
-  kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
-done
-
-# --- cert-manager ---
-for cr in cert-manager-cainjector cert-manager-cluster-view \
-          cert-manager-controller-approve:cert-manager-io \
-          cert-manager-controller-certificates \
-          cert-manager-controller-certificatesigningrequests \
-          cert-manager-controller-challenges \
-          cert-manager-controller-clusterissuers \
-          cert-manager-controller-ingress-shim \
-          cert-manager-controller-issuers \
-          cert-manager-controller-orders \
-          cert-manager-edit cert-manager-view \
-          cert-manager-webhook:subjectaccessreviews \
-          cert-manager-tkg-packages-cluster-role; do
-  kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
-done
-for crb in cert-manager-cainjector \
-           cert-manager-controller-approve:cert-manager-io \
-           cert-manager-controller-certificates \
-           cert-manager-controller-certificatesigningrequests \
-           cert-manager-controller-challenges \
-           cert-manager-controller-clusterissuers \
-           cert-manager-controller-ingress-shim \
-           cert-manager-controller-issuers \
-           cert-manager-controller-orders \
-           cert-manager-webhook:subjectaccessreviews \
-           cert-manager-tkg-packages-cluster-rolebinding; do
-  kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
-done
-# cert-manager webhooks
-kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
-kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
-# cert-manager CRDs — strip finalizers first to prevent hanging
-for crd in certificaterequests.cert-manager.io certificates.cert-manager.io \
-           challenges.acme.cert-manager.io clusterissuers.cert-manager.io \
-           issuers.cert-manager.io orders.acme.cert-manager.io; do
-  kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
-  kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
-done
-# cert-manager roles in kube-system
-kubectl delete role cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
-kubectl delete role cert-manager:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
-kubectl delete rolebinding cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
-kubectl delete rolebinding cert-manager:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
-# cert-manager namespace (created by the package, separate from tkg-packages)
-kubectl delete ns cert-manager --ignore-not-found 2>/dev/null || true
-
-# --- Contour ---
-for cr in contour envoy contour-tkg-packages-cluster-role; do
-  kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
-done
-for crb in contour envoy contour-tkg-packages-cluster-rolebinding; do
-  kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
-done
-# Contour CRDs — strip finalizers first to prevent hanging
-for crd in contourconfigurations.projectcontour.io contourdeployments.projectcontour.io \
-           extensionservices.projectcontour.io httpproxies.projectcontour.io \
-           tlscertificatedelegations.projectcontour.io; do
-  kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
-  kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
-done
-# Contour namespace (tanzu-system-ingress, created by the package)
-kubectl delete ns tanzu-system-ingress --ignore-not-found 2>/dev/null || true
-
-# --- Prometheus ---
-for cr in alertmanager prometheus-server prometheus-kube-state-metrics \
-          prometheus-node-exporter prometheus-pushgateway \
-          prometheus-tkg-packages-cluster-role; do
-  kubectl delete clusterrole "$cr" --ignore-not-found 2>/dev/null || true
-done
-for crb in alertmanager prometheus-server prometheus-kube-state-metrics \
-           prometheus-node-exporter prometheus-pushgateway \
-           prometheus-tkg-packages-cluster-rolebinding; do
-  kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
-done
-
-log_success "Cluster-scoped resources cleaned up"
+log_success "Metrics-owned packages deleted"
 
 ###############################################################################
 # Teardown Summary
@@ -391,9 +238,10 @@ echo "============================================="
 echo "  VCF 9 Deploy Metrics — Teardown Complete"
 echo "============================================="
 echo "  Cluster:    ${CLUSTER_NAME}"
-echo "  Namespace:  ${PACKAGE_NAMESPACE} (deleted)"
-echo "  Packages:   All observability packages removed"
-echo "  Cleanup:    Cluster-scoped resources removed"
+echo "  Grafana:    ${GRAFANA_NAMESPACE} (deleted)"
+echo "  Packages:   prometheus, telegraf (deleted)"
+echo "  NOTE:       Shared infrastructure preserved"
+echo "              (tkg-packages, cert-manager, Contour, envoy-lb)"
 echo "============================================="
 echo ""
 
