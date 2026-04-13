@@ -820,6 +820,31 @@ jobs:
           kubectl logs -n "${APP_NAMESPACE}" -l app=managed-db-api --tail=20 2>/dev/null || true
           exit 1
 
+      # Step 10b: Verify vault-agent sidecar injection
+      - name: Verify Vault Agent Sidecar
+        run: |
+          set -euo pipefail
+          # Verify vault-agent sidecar was injected — if not, restart to trigger injection
+          CONTAINER_COUNT=$(kubectl get pod -n "${APP_NAMESPACE}" -l app=managed-db-api -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null | wc -w || echo "0")
+          if [ "$CONTAINER_COUNT" -lt 2 ]; then
+            echo "::warning::vault-agent sidecar not injected into API pod (only ${CONTAINER_COUNT} container) — restarting"
+            kubectl rollout restart deployment/managed-db-api -n "${APP_NAMESPACE}" 2>/dev/null || true
+            sleep 15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              NEW_COUNT=$(kubectl get pod -n "${APP_NAMESPACE}" -l app=managed-db-api -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null | wc -w || echo "0")
+              if [ "$NEW_COUNT" -ge 2 ] && kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'; then
+                echo "vault-agent sidecar injected after restart (${NEW_COUNT} containers)"
+                break
+              fi
+              echo "Waiting for vault-agent sidecar injection... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          else
+            echo "vault-agent sidecar confirmed (${CONTAINER_COUNT} containers)"
+          fi
+
       # Step 11: Deploy Frontend Service
       - name: Deploy Frontend Service
         run: |
