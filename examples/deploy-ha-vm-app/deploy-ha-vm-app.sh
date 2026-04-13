@@ -831,7 +831,8 @@ log_success "Phase 5 complete — Web tier LoadBalancer created at ${WEB_LB_IP}"
 
 log_step 6 "Verifying end-to-end connectivity"
 
-RETRY_TIMEOUT=300
+# VM-based apps take longer to bootstrap than containers (cloud-init + npm build)
+RETRY_TIMEOUT=600
 
 # HTTP GET to frontend — verify 200 (with retries)
 ELAPSED=0
