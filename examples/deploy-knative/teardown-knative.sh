@@ -263,48 +263,66 @@ fi
 log_step 2 "Deleting DSM PostgresCluster '${DSM_CLUSTER_NAME}' and secrets in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
 if [[ -n "${VCFA_ENDPOINT:-}" ]] && [[ -n "${VCF_API_TOKEN:-}" ]]; then
-  # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
-  unset KUBECONFIG 2>/dev/null || true
-
-  # Create VCF CLI context for supervisor namespace access
-  vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
-  vcf context create "${CONTEXT_NAME}" \
-    --endpoint "https://${VCFA_ENDPOINT}" \
-    --type cci \
-    --tenant-name "${TENANT_NAME}" \
-    --api-token "${VCF_API_TOKEN}" \
-    --set-current 2>/dev/null || true
-
-  NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
-  if [[ -n "${NS_CTX}" ]]; then
-    vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+  # Check if other patterns still need the DSM PostgresCluster (shared resource)
+  DSM_DEPS=0
+  export KUBECONFIG="${KUBECONFIG_FILE}"
+  if kubectl get ns managed-db-app >/dev/null 2>&1; then
+    DSM_DEPS=1
+    log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
+  fi
+  unset KUBECONFIG
+  # Check for ha-vm-app (supervisor namespace — already on supervisor context)
+  if kubectl get virtualmachineservice ha-web-lb -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+    DSM_DEPS=1
+    log_warn "VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion (shared resource)"
   fi
 
-  # Delete PostgresCluster
-  if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted"
+  if [[ "${DSM_DEPS}" -eq 0 ]]; then
+    # Unset guest cluster kubeconfig so kubectl uses VCF CLI context for supervisor operations
+    unset KUBECONFIG 2>/dev/null || true
+
+    # Create VCF CLI context for supervisor namespace access
+    vcf context delete "${CONTEXT_NAME}" --yes 2>/dev/null || true
+    vcf context create "${CONTEXT_NAME}" \
+      --endpoint "https://${VCFA_ENDPOINT}" \
+      --type cci \
+      --tenant-name "${TENANT_NAME}" \
+      --api-token "${VCF_API_TOKEN}" \
+      --set-current 2>/dev/null || true
+
+    NS_CTX=$(vcf context list 2>&1 | grep "${CONTEXT_NAME}:.*${SUPERVISOR_NAMESPACE}" | awk '{print $1}' | head -1 || true)
+    if [[ -n "${NS_CTX}" ]]; then
+      vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
+    fi
+
+    # Delete PostgresCluster
+    if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted"
+    else
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' already absent"
+    fi
+
+    # Delete admin password secret
+    if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
+    else
+      log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' already absent"
+    fi
+
+    # Delete DSM-created password secret pg-<cluster-name>
+    if kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "Secret 'pg-${DSM_CLUSTER_NAME}' deleted"
+    else
+      log_success "Secret 'pg-${DSM_CLUSTER_NAME}' already absent"
+    fi
+
+    PHASE_STATUS["phase2"]="deleted"
   else
-    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' already absent"
+    PHASE_STATUS["phase2"]="skipped (dependents exist)"
   fi
-
-  # Delete admin password secret
-  if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
-  else
-    log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' already absent"
-  fi
-
-  # Delete DSM-created password secret pg-<cluster-name>
-  if kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "Secret 'pg-${DSM_CLUSTER_NAME}' deleted"
-  else
-    log_success "Secret 'pg-${DSM_CLUSTER_NAME}' already absent"
-  fi
-
-  PHASE_STATUS["phase2"]="deleted"
 
   # Restore guest cluster kubeconfig for remaining phases
   export KUBECONFIG="${KUBECONFIG_FILE}"

@@ -309,47 +309,67 @@ done
 
 log_step 5 "Deleting PostgresCluster '${DSM_CLUSTER_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
-if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-  if kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found --wait=false; then
-    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+# Check if other patterns still need the DSM PostgresCluster (shared resource)
+DSM_DEPS=0
+# Try to check guest cluster namespaces if kubeconfig is available
+KUBECONFIG_FILE="./kubeconfig-${CLUSTER_NAME:-}.yaml"
+if [[ -f "${KUBECONFIG_FILE}" ]]; then
+  if KUBECONFIG="${KUBECONFIG_FILE}" kubectl get ns managed-db-app >/dev/null 2>&1; then
+    DSM_DEPS=1
+    log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
+  fi
+  if KUBECONFIG="${KUBECONFIG_FILE}" kubectl get ns knative-demo >/dev/null 2>&1; then
+    DSM_DEPS=1
+    log_warn "Namespace 'knative-demo' still exists — skipping PostgresCluster deletion (shared resource)"
+  fi
+fi
 
-    # Wait for PostgresCluster to be fully deleted
-    if wait_for_deletion "PostgresCluster '${DSM_CLUSTER_NAME}'" \
-      "${VM_TIMEOUT}" "${POLL_INTERVAL}" \
-      "kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}'"; then
-      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
-      RESOURCE_STATUS["postgrescluster"]="deleted"
+if [[ "${DSM_DEPS}" -eq 0 ]]; then
+  if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+    if kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found --wait=false; then
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+
+      # Wait for PostgresCluster to be fully deleted
+      if wait_for_deletion "PostgresCluster '${DSM_CLUSTER_NAME}'" \
+        "${VM_TIMEOUT}" "${POLL_INTERVAL}" \
+        "kubectl get postgrescluster '${DSM_CLUSTER_NAME}' -n '${SUPERVISOR_NAMESPACE}'"; then
+        log_success "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
+        RESOURCE_STATUS["postgrescluster"]="deleted"
+      else
+        log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${VM_TIMEOUT}s — it may still be deleting"
+        RESOURCE_STATUS["postgrescluster"]="failed"
+      fi
     else
-      log_warn "PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${VM_TIMEOUT}s — it may still be deleting"
+      log_warn "Failed to delete PostgresCluster '${DSM_CLUSTER_NAME}' — continuing"
       RESOURCE_STATUS["postgrescluster"]="failed"
     fi
   else
-    log_warn "Failed to delete PostgresCluster '${DSM_CLUSTER_NAME}' — continuing"
-    RESOURCE_STATUS["postgrescluster"]="failed"
+    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, already absent"
+    RESOURCE_STATUS["postgrescluster"]="already absent"
   fi
-else
-  log_success "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, already absent"
-  RESOURCE_STATUS["postgrescluster"]="already absent"
-fi
 
-# Clean up DSM-created password secret pg-<cluster-name>
-kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
-log_success "DSM-created Secret 'pg-${DSM_CLUSTER_NAME}' cleaned up"
+  # Clean up DSM-created password secret pg-<cluster-name>
+  kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+  log_success "DSM-created Secret 'pg-${DSM_CLUSTER_NAME}' cleaned up"
 
-# Delete admin password secret
-log_step 5 "Deleting admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
+  # Delete admin password secret
+  log_step 5 "Deleting admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' in supervisor namespace '${SUPERVISOR_NAMESPACE}'"
 
-if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-  if kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
-    log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
-    RESOURCE_STATUS["admin-password-secret"]="deleted"
+  if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+    if kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found; then
+      log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
+      RESOURCE_STATUS["admin-password-secret"]="deleted"
+    else
+      log_warn "Failed to delete admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' — continuing"
+      RESOURCE_STATUS["admin-password-secret"]="failed"
+    fi
   else
-    log_warn "Failed to delete admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' — continuing"
-    RESOURCE_STATUS["admin-password-secret"]="failed"
+    log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' does not exist, already absent"
+    RESOURCE_STATUS["admin-password-secret"]="already absent"
   fi
 else
-  log_success "Admin password Secret '${ADMIN_PASSWORD_SECRET_NAME}' does not exist, already absent"
-  RESOURCE_STATUS["admin-password-secret"]="already absent"
+  RESOURCE_STATUS["postgrescluster"]="skipped (dependents exist)"
+  RESOURCE_STATUS["admin-password-secret"]="skipped (dependents exist)"
 fi
 
 ###############################################################################
