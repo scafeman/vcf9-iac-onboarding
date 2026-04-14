@@ -1730,7 +1730,7 @@ build:
   image: docker:24-cli
   services:
     - name: docker:24-dind
-      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=${HARBOR_HOST}"]
+      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=PLACEHOLDER_HARBOR_HOST"]
   variables:
     DOCKER_HOST: tcp://docker:2375
   before_script:
