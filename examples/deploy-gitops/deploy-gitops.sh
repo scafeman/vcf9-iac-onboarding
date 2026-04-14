@@ -845,23 +845,79 @@ kubectl label ns "${GITLAB_RUNNER_NAMESPACE}" \
   --overwrite >/dev/null 2>&1 || true
 
 # Create Harbor CA and GitLab TLS secrets
+
+# Build a CA bundle that includes the self-signed CA plus Let's Encrypt root CAs.
+# This ensures the GitLab Runner trusts GitLab regardless of whether the ingress
+# uses self-signed certs, Let's Encrypt staging, or Let's Encrypt prod.
+CA_BUNDLE_FILE=$(mktemp /tmp/ca-bundle-XXXXXX.crt)
+cat "${CERT_DIR}/ca.crt" > "${CA_BUNDLE_FILE}"
+
+# Append Let's Encrypt staging root CA (Fake LE Root X1)
+LE_STAGING_CA=$(curl -sSL https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x1.pem 2>/dev/null || true)
+if [ -n "${LE_STAGING_CA}" ]; then
+  echo "${LE_STAGING_CA}" >> "${CA_BUNDLE_FILE}"
+  log_success "Let's Encrypt staging root CA added to CA bundle"
+fi
+
+# Append Let's Encrypt prod root CA (ISRG Root X1)
+LE_PROD_CA=$(curl -sSL https://letsencrypt.org/certs/isrgrootx1.pem 2>/dev/null || true)
+if [ -n "${LE_PROD_CA}" ]; then
+  echo "${LE_PROD_CA}" >> "${CA_BUNDLE_FILE}"
+  log_success "Let's Encrypt prod root CA added to CA bundle"
+fi
+
 # Create Harbor CA secret in GitLab namespace (idempotent)
 if ! kubectl create secret generic harbor-ca-cert \
-  --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+  --from-file=ca.crt="${CA_BUNDLE_FILE}" \
   --namespace "${GITLAB_NAMESPACE}" \
   --dry-run=client -o yaml | kubectl apply -f -; then
   log_error "Failed to create Harbor CA secret in namespace '${GITLAB_NAMESPACE}'"
   exit 9
 fi
 
-# Create Harbor CA secret in GitLab Runner namespace (idempotent)
+# Create Harbor CA secret in GitLab Runner namespace with hostname-based cert key
+# The GitLab Runner looks for <hostname>.crt in the certs directory
 if ! kubectl create secret generic harbor-ca-cert \
-  --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+  --from-file=ca.crt="${CA_BUNDLE_FILE}" \
+  --from-file="${GITLAB_HOSTNAME}.crt=${CA_BUNDLE_FILE}" \
   --namespace "${GITLAB_RUNNER_NAMESPACE}" \
   --dry-run=client -o yaml | kubectl apply -f -; then
   log_error "Failed to create Harbor CA secret in namespace '${GITLAB_RUNNER_NAMESPACE}'"
   exit 9
 fi
+
+rm -f "${CA_BUNDLE_FILE}"
+
+# Create RBAC for GitLab Runner service account (Kubernetes executor needs pod/secret permissions)
+cat <<RBACEOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gitlab-runner
+  namespace: ${GITLAB_RUNNER_NAMESPACE}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "secrets", "configmaps", "pods/exec", "pods/attach", "pods/log", "serviceaccounts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gitlab-runner
+  namespace: ${GITLAB_RUNNER_NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gitlab-runner
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: ${GITLAB_RUNNER_NAMESPACE}
+RBACEOF
+log_success "GitLab Runner RBAC created in namespace '${GITLAB_RUNNER_NAMESPACE}'"
 
 # Create GitLab wildcard TLS secret (idempotent)
 if ! kubectl create secret tls gitlab-wildcard-tls \

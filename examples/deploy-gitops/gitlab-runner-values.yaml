@@ -44,6 +44,7 @@ runners:
   config: |
     [[runners]]
       executor = "kubernetes"
+      tls_verify = false
       [runners.kubernetes]
         namespace = "gitlab-runners"
         image = "ubuntu:22.04"

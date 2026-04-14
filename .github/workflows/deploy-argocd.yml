@@ -699,23 +699,67 @@ jobs:
             pod-security.kubernetes.io/warn=privileged \
             --overwrite >/dev/null 2>&1 || true
 
+          # Build CA bundle: self-signed CA + Let's Encrypt staging + prod root CAs
+          # This ensures the GitLab Runner trusts GitLab regardless of which issuer is active
+          CA_BUNDLE_FILE=$(mktemp /tmp/ca-bundle-XXXXXX.crt)
+          cat "${CERT_DIR}/ca.crt" > "${CA_BUNDLE_FILE}"
+          curl -sSL https://letsencrypt.org/certs/staging/letsencrypt-stg-root-x1.pem >> "${CA_BUNDLE_FILE}" 2>/dev/null || true
+          curl -sSL https://letsencrypt.org/certs/isrgrootx1.pem >> "${CA_BUNDLE_FILE}" 2>/dev/null || true
+          echo "CA bundle built with self-signed + LE staging + LE prod root CAs"
+
+          GITLAB_HOSTNAME="gitlab.${DOMAIN}"
+
           # Create Harbor CA secret in GitLab namespace (idempotent)
           if ! kubectl create secret generic harbor-ca-cert \
-            --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+            --from-file=ca.crt="${CA_BUNDLE_FILE}" \
             --namespace "$GITLAB_NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -; then
             echo "::error::Failed to create Harbor CA secret in namespace '$GITLAB_NAMESPACE'"
             exit 1
           fi
 
-          # Create Harbor CA secret in GitLab Runner namespace (idempotent)
+          # Create Harbor CA secret in GitLab Runner namespace with hostname-based cert key
           if ! kubectl create secret generic harbor-ca-cert \
-            --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+            --from-file=ca.crt="${CA_BUNDLE_FILE}" \
+            --from-file="${GITLAB_HOSTNAME}.crt=${CA_BUNDLE_FILE}" \
             --namespace "$GITLAB_RUNNER_NAMESPACE" \
             --dry-run=client -o yaml | kubectl apply -f -; then
             echo "::error::Failed to create Harbor CA secret in namespace '$GITLAB_RUNNER_NAMESPACE'"
             exit 1
           fi
+
+          rm -f "${CA_BUNDLE_FILE}"
+
+          # Create RBAC for GitLab Runner service account (Kubernetes executor needs pod/secret permissions)
+          cat <<RBACEOF | kubectl apply -f -
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: gitlab-runner
+            namespace: ${GITLAB_RUNNER_NAMESPACE}
+          rules:
+          - apiGroups: [""]
+            resources: ["pods", "secrets", "configmaps", "pods/exec", "pods/attach", "pods/log", "serviceaccounts"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+          - apiGroups: [""]
+            resources: ["events"]
+            verbs: ["list", "watch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: gitlab-runner
+            namespace: ${GITLAB_RUNNER_NAMESPACE}
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: gitlab-runner
+          subjects:
+          - kind: ServiceAccount
+            name: default
+            namespace: ${GITLAB_RUNNER_NAMESPACE}
+          RBACEOF
+          echo "GitLab Runner RBAC created"
 
           # Create GitLab wildcard TLS secret (idempotent)
           if ! kubectl create secret tls gitlab-wildcard-tls \
