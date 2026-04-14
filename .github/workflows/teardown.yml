@@ -159,16 +159,12 @@ jobs:
             CONTEXT_NAME="teardown-deploy"
             vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
             sleep 1
-            if ! vcf context create "$CONTEXT_NAME" \
+            vcf context create "$CONTEXT_NAME" \
               --endpoint "https://$VCFA_ENDPOINT" \
               --type cci \
               --tenant-name "$TENANT_NAME" \
               --api-token "$VCF_API_TOKEN" \
-              --set-current 2>/dev/null; then
-              echo "Context '$CONTEXT_NAME' already exists, refreshing..."
-              vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-              vcf context refresh 2>/dev/null || true
-            fi
+              --set-current
 
             # Find and switch to the namespace context that contains this cluster
             # Convention: cluster name is <project>-clus-<id>, project name is <project>
@@ -814,16 +810,12 @@ jobs:
           # Establish VCF CLI context for supervisor operations
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
           sleep 1
-          if ! vcf context create "$CONTEXT_NAME" \
+          vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current 2>/dev/null; then
-            echo "Context '$CONTEXT_NAME' already exists, refreshing..."
-            vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-            vcf context refresh 2>/dev/null || true
-          fi
+            --set-current
 
           # Discover the namespace context from the cluster name
           PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
@@ -921,16 +913,12 @@ jobs:
           # Establish VCF CLI context for supervisor operations
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
           sleep 1
-          if ! vcf context create "$CONTEXT_NAME" \
+          vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current 2>/dev/null; then
-            echo "Context '$CONTEXT_NAME' already exists, refreshing..."
-            vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-            vcf context refresh 2>/dev/null || true
-          fi
+            --set-current
 
           # Discover the namespace context
           PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
