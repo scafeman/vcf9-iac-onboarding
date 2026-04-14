@@ -127,6 +127,11 @@ jobs:
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      SSLIP_HOSTNAME_PREFIX: "knative-dashboard"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
+
       # --- Static Configuration ---
       CONTEXT_NAME: knative-deploy
 
@@ -259,8 +264,32 @@ jobs:
       - name: Extract Deployment Details
         run: |
           set -euo pipefail
-          DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "unknown")
-          echo "DASHBOARD_IP=$DASHBOARD_IP" >> "$GITHUB_ENV"
+          DEMO_NAMESPACE="${DEMO_NAMESPACE:-knative-demo}"
+
+          # Get dashboard URL — prefer sslip.io Ingress, fall back to LoadBalancer IP
+          DASHBOARD_IP=""
+          DASHBOARD_URL=""
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            SSLIP_HOST=$(kubectl get ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+            if [[ -n "${SSLIP_HOST}" ]]; then
+              TLS_HOST=$(kubectl get ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" -o jsonpath='{.spec.tls[0].hosts[0]}' 2>/dev/null || true)
+              if [[ -n "${TLS_HOST}" ]]; then
+                DASHBOARD_URL="https://${SSLIP_HOST}"
+              else
+                DASHBOARD_URL="http://${SSLIP_HOST}"
+              fi
+            fi
+          fi
+          if [[ -z "${DASHBOARD_URL}" ]]; then
+            DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [[ -n "${DASHBOARD_IP}" ]]; then
+              DASHBOARD_URL="http://${DASHBOARD_IP}"
+            else
+              DASHBOARD_URL="(ClusterIP — access via Ingress)"
+            fi
+          fi
+          echo "DASHBOARD_IP=${DASHBOARD_IP}" >> "$GITHUB_ENV"
+          echo "DASHBOARD_URL=${DASHBOARD_URL}" >> "$GITHUB_ENV"
 
           ENVOY_IP=$(kubectl get svc envoy -n contour-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "unknown")
           echo "ENVOY_IP=$ENVOY_IP" >> "$GITHUB_ENV"
@@ -286,12 +315,12 @@ jobs:
           | net-contour | v${NET_CONTOUR_VERSION} |
           | DSM Cluster | \`${DSM_CLUSTER_NAME}\` |
           | Environment | ${ENVIRONMENT} |
-          | Dashboard | http://${DASHBOARD_IP} |
+          | Dashboard | ${DASHBOARD_URL} |
 
           ### Deployed Services
           | Service | Endpoint |
           |---|---|
-          | Dashboard | http://${DASHBOARD_IP} |
+          | Dashboard | ${DASHBOARD_URL} |
           | DSM PostgreSQL | \`${DSM_CONNECTION}\` |
           | API Server | \`knative-api-server.${DEMO_NAMESPACE}.svc.cluster.local:3001\` |
           | Audit Function (Knative) | ${AUDIT_URL} |

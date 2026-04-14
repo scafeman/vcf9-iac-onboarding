@@ -14,6 +14,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 Switches to the guest cluster kubeconfig and deletes the application namespace (default: `hybrid-app`). This cascading delete removes all resources within the namespace:
 
+- sslip.io Ingress and TLS Certificate (if `USE_SSLIP_DNS` was enabled)
 - Frontend LoadBalancer Service (releases the NSX external IP)
 - Frontend Deployment (terminates the dashboard pod)
 - API ClusterIP Service

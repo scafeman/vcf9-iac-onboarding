@@ -174,6 +174,10 @@ log_step 1 "Deleting dashboard, RBAC, API server, audit function, and '${DEMO_NA
 if kubectl get ns "${DEMO_NAMESPACE}" >/dev/null 2>&1; then
   # Delete Dashboard Deployment
   if kubectl get deployment knative-dashboard -n "${DEMO_NAMESPACE}" >/dev/null 2>&1; then
+    # Delete sslip.io Ingress and Certificate resources for dashboard
+    kubectl delete ingress knative-dashboard-sslip-ingress -n "${DEMO_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    kubectl delete certificate knative-dashboard-sslip-ingress-tls -n "${DEMO_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+
     kubectl delete deployment knative-dashboard -n "${DEMO_NAMESPACE}" --ignore-not-found
     log_success "Dashboard Deployment 'knative-dashboard' deleted"
   else
@@ -276,31 +280,57 @@ if [[ -n "${VCFA_ENDPOINT:-}" ]] && [[ -n "${VCF_API_TOKEN:-}" ]]; then
     vcf context use "${NS_CTX}" >/dev/null 2>&1 || true
   fi
 
-  # Delete PostgresCluster
-  if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted"
-  else
-    log_success "PostgresCluster '${DSM_CLUSTER_NAME}' already absent"
+  # Check if other patterns still need the DSM PostgresCluster (shared resource)
+  DSM_DEPS=0
+
+  # Check for ha-vm-app (supervisor namespace — now on correct VCF CLI context)
+  if kubectl get virtualmachineservice ha-web-lb -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+    DSM_DEPS=1
+    log_warn "VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion (shared resource)"
   fi
 
-  # Delete admin password secret
-  if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
+  # Check if guest cluster is reachable before namespace checks
+  export KUBECONFIG="${KUBECONFIG_FILE}"
+  if kubectl get ns default >/dev/null 2>&1; then
+    if kubectl get ns managed-db-app >/dev/null 2>&1; then
+      DSM_DEPS=1
+      log_warn "Namespace 'managed-db-app' still exists — skipping PostgresCluster deletion (shared resource)"
+    fi
   else
-    log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' already absent"
+    log_warn "Guest cluster unreachable — treating as dependents may exist, skipping PostgresCluster deletion"
+    DSM_DEPS=1
   fi
+  unset KUBECONFIG
 
-  # Delete DSM-created password secret pg-<cluster-name>
-  if kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
-    kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
-    log_success "Secret 'pg-${DSM_CLUSTER_NAME}' deleted"
+  if [[ "${DSM_DEPS}" -eq 0 ]]; then
+    # Delete PostgresCluster
+    if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' deleted"
+    else
+      log_success "PostgresCluster '${DSM_CLUSTER_NAME}' already absent"
+    fi
+
+    # Delete admin password secret
+    if kubectl get secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' deleted"
+    else
+      log_success "Secret '${ADMIN_PASSWORD_SECRET_NAME}' already absent"
+    fi
+
+    # Delete DSM-created password secret pg-<cluster-name>
+    if kubectl get secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" >/dev/null 2>&1; then
+      kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "${SUPERVISOR_NAMESPACE}" --ignore-not-found
+      log_success "Secret 'pg-${DSM_CLUSTER_NAME}' deleted"
+    else
+      log_success "Secret 'pg-${DSM_CLUSTER_NAME}' already absent"
+    fi
+
+    PHASE_STATUS["phase2"]="deleted"
   else
-    log_success "Secret 'pg-${DSM_CLUSTER_NAME}' already absent"
+    PHASE_STATUS["phase2"]="skipped (dependents exist)"
   fi
-
-  PHASE_STATUS["phase2"]="deleted"
 
   # Restore guest cluster kubeconfig for remaining phases
   export KUBECONFIG="${KUBECONFIG_FILE}"
@@ -389,9 +419,14 @@ fi
 
 log_step 5 "Deleting Knative CRDs"
 
+# Strip finalizers from all Knative CRDs first to prevent hanging
+for crd in $(kubectl get crd -o name 2>/dev/null | grep knative || true); do
+  kubectl patch "${crd}" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+done
+
 # Delete Knative Serving CRDs using the upstream manifest
 if kubectl get crd services.serving.knative.dev >/dev/null 2>&1; then
-  kubectl delete -f "${KNATIVE_CRDS_URL}" --ignore-not-found 2>/dev/null || true
+  kubectl delete -f "${KNATIVE_CRDS_URL}" --ignore-not-found --timeout=30s 2>/dev/null || true
   log_success "Knative Serving CRDs deleted"
   PHASE_STATUS["phase5"]="deleted"
 else
@@ -401,7 +436,8 @@ fi
 
 # Clean up any remaining Knative CRDs that may not be in the manifest
 for crd in $(kubectl get crd -o name 2>/dev/null | grep knative || true); do
-  kubectl delete "${crd}" --ignore-not-found 2>/dev/null || true
+  kubectl patch "${crd}" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+  kubectl delete "${crd}" --ignore-not-found --timeout=10s 2>/dev/null || true
 done
 
 # Clean up Knative webhooks

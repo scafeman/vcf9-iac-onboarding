@@ -1040,6 +1040,11 @@ spec:
 # context: non-root user, seccomp profile, and all Linux
 # capabilities dropped. This confirms the cluster enforces
 # Pod Security Standards correctly.
+#
+# Note: The deploy-cluster.sh script uses a custom image
+# (scafeman/vks-test-app:latest) with HTML content instead.
+# This sample uses the upstream nginx-unprivileged image for
+# standalone use without a custom registry.
 # API: apps/v1
 # -----------------------------------------------------------
 apiVersion: apps/v1

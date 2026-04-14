@@ -69,6 +69,10 @@ jobs:
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -347,6 +351,54 @@ jobs:
           fi
           echo "Envoy LoadBalancer setup complete"
 
+      # Phase 3f: Override DOMAIN for sslip.io (when USE_SSLIP_DNS=true)
+      - name: Override DOMAIN for sslip.io
+        if: env.USE_SSLIP_DNS == 'true'
+        run: |
+          set -euo pipefail
+          CERT_DIR="./certs"
+
+          # Override DOMAIN to use sslip.io with the envoy-lb IP
+          SSLIP_DOMAIN="${CONTOUR_LB_IP}.sslip.io"
+          echo "DOMAIN=${SSLIP_DOMAIN}" >> "$GITHUB_ENV"
+          echo "Overriding DOMAIN to '${SSLIP_DOMAIN}' for sslip.io DNS"
+
+          # Regenerate wildcard cert for *.IP.sslip.io (Helm charts need internal TLS)
+          rm -rf "${CERT_DIR}"
+          mkdir -p "${CERT_DIR}"
+
+          # Generate self-signed CA
+          openssl req -x509 -new -nodes -newkey rsa:2048 \
+            -keyout "${CERT_DIR}/ca.key" -out "${CERT_DIR}/ca.crt" \
+            -days 3650 -subj "/CN=Self-Signed CA"
+
+          # Generate wildcard CSR for *.IP.sslip.io
+          cat > /tmp/wildcard-sslip.cnf <<CNFEOF
+          [req]
+          default_bits       = 2048
+          prompt             = no
+          distinguished_name = dn
+          req_extensions     = v3_req
+
+          [dn]
+          CN = *.${SSLIP_DOMAIN}
+
+          [v3_req]
+          subjectAltName = DNS:*.${SSLIP_DOMAIN},DNS:${SSLIP_DOMAIN}
+          CNFEOF
+
+          openssl req -new -nodes -newkey rsa:2048 \
+            -keyout "${CERT_DIR}/wildcard.key" -out "${CERT_DIR}/wildcard.csr" \
+            -config /tmp/wildcard-sslip.cnf
+
+          openssl x509 -req -in "${CERT_DIR}/wildcard.csr" \
+            -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+            -CAcreateserial -out "${CERT_DIR}/wildcard.crt" \
+            -days 3650 -extensions v3_req -extfile /tmp/wildcard-sslip.cnf
+
+          cat "${CERT_DIR}/wildcard.crt" "${CERT_DIR}/ca.crt" > "${CERT_DIR}/fullchain.crt"
+          echo "Regenerated wildcard cert for *.${SSLIP_DOMAIN}"
+
       # Phase 4: Install Harbor
       - name: Install Harbor
         run: |
@@ -433,8 +485,9 @@ jobs:
           fi
           echo "Harbor setup complete"
 
-      # Phase 5: Configure CoreDNS
+      # Phase 5: Configure CoreDNS (skipped when USE_SSLIP_DNS=true — sslip.io resolves externally)
       - name: Configure CoreDNS
+        if: env.USE_SSLIP_DNS != 'true'
         run: |
           set -euo pipefail
           HARBOR_HOSTNAME="harbor.${DOMAIN}"
@@ -744,11 +797,12 @@ jobs:
             echo "::warning::Harbor proxy cache is not configured in '$GITLAB_VALUES_FILE'. DockerHub rate limits may cause image pull failures."
           fi
 
-          # Check if Harbor hostname is referenced in the values file
-          if ! grep -q "$HARBOR_HOSTNAME" "$GITLAB_VALUES_FILE" 2>/dev/null; then
-            echo "::warning::Harbor hostname '$HARBOR_HOSTNAME' not found in '$GITLAB_VALUES_FILE'. Harbor proxy may not be configured correctly."
+          # Check if Harbor hostname placeholder is referenced in the values file
+          # (the placeholder gets substituted at runtime by sed in the Helm install step)
+          if ! grep -q "HARBOR_HOSTNAME\|${HARBOR_HOSTNAME}" "$GITLAB_VALUES_FILE" 2>/dev/null; then
+            echo "::warning::Harbor hostname placeholder not found in '$GITLAB_VALUES_FILE'. Harbor proxy may not be configured correctly."
           fi
-          echo "Harbor proxy configuration check complete" || true
+          echo "Harbor proxy configuration check complete"
 
       # Phase 11: Install GitLab Runner
       - name: Install GitLab Runner
@@ -948,7 +1002,8 @@ jobs:
           set -euo pipefail
           ARGOCD_NAMESPACE="argocd"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
-          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
+          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
+          ARGOCD_TARGET_REVISION="${ARGOCD_TARGET_REVISION:-${{ github.ref_name }}}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
 
           # Get the ArgoCD server pod name
@@ -968,6 +1023,7 @@ jobs:
           TEMP_ARGOCD_APP=$(mktemp /tmp/argocd-app-XXXXXX.yaml)
           sed \
             -e "s|HELM_CHARTS_REPO_URL|${HELM_CHARTS_REPO_URL}|g" \
+            -e "s|ARGOCD_TARGET_REVISION|${ARGOCD_TARGET_REVISION}|g" \
             -e "s|APP_NAMESPACE|${APP_NAMESPACE}|g" \
             -e "s|ARGOCD_HOSTNAME|${ARGOCD_HOSTNAME}|g" \
             examples/deploy-gitops/argocd-microservices-demo.yaml > "$TEMP_ARGOCD_APP"
@@ -1035,26 +1091,236 @@ jobs:
             fi
           done
 
-          # Wait for frontend-external LoadBalancer to receive an external IP
+          # Wait for frontend access — skip LoadBalancer wait when using sslip.io Ingress
           FRONTEND_IP=""
-          for i in $(seq 1 60); do
-            FRONTEND_IP=$(kubectl get svc -n "$APP_NAMESPACE" frontend-external \
-              -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$FRONTEND_IP" ]; then
-              echo "Frontend external LoadBalancer IP: $FRONTEND_IP"
-              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
-              break
-            fi
-            if [ $(( (i - 1) % 6 )) -eq 0 ]; then
-              echo "Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
-            fi
-            sleep 5
-          done
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            for i in $(seq 1 60); do
+              FRONTEND_IP=$(kubectl get svc -n "$APP_NAMESPACE" frontend-external \
+                -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$FRONTEND_IP" ]; then
+                echo "Frontend external LoadBalancer IP: $FRONTEND_IP"
+                echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+                break
+              fi
+              if [ $(( (i - 1) % 6 )) -eq 0 ]; then
+                echo "Waiting for frontend-external LoadBalancer IP... ($(( (i-1)*5 ))s elapsed)"
+              fi
+              sleep 5
+            done
 
-          if [ -z "$FRONTEND_IP" ]; then
-            echo "::warning::frontend-external LoadBalancer did not receive an external IP within 300s"
+            if [ -z "$FRONTEND_IP" ]; then
+              echo "::warning::frontend-external LoadBalancer did not receive an external IP within 300s"
+            fi
+          else
+            echo "USE_SSLIP_DNS=true — frontend uses ClusterIP + sslip.io Ingress (no LoadBalancer needed)"
           fi
           echo "Microservices Demo verification complete"
+
+      # Phase 14b: Create Let's Encrypt TLS Ingress (external-facing trusted certs)
+      - name: Create Let's Encrypt TLS Ingress
+        if: env.USE_SSLIP_DNS == 'true'
+        run: |
+          set -euo pipefail
+          HARBOR_NAMESPACE="harbor"
+          ARGOCD_NAMESPACE="argocd"
+          GITLAB_NAMESPACE="gitlab-system"
+          HARBOR_HOSTNAME="harbor.${DOMAIN}"
+          ARGOCD_HOSTNAME="argocd.${DOMAIN}"
+          GITLAB_HOSTNAME="gitlab.${DOMAIN}"
+          CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+
+          # Check if ClusterIssuer is ready
+          TLS_ENABLED="false"
+          if kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+            TLS_ENABLED="true"
+            echo "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready — creating Ingress with TLS"
+          else
+            echo "::warning::ClusterIssuer '${CLUSTER_ISSUER_NAME}' not ready — skipping Let's Encrypt Ingress"
+            exit 0
+          fi
+
+          # Delete Helm-managed Ingress resources that conflict with Let's Encrypt ones
+          kubectl delete ingress argocd-server -n "${ARGOCD_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+          kubectl delete ingress gitlab-webservice-default -n "${GITLAB_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+          kubectl delete ingress harbor-ingress -n "${HARBOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+          echo "Helm-managed Ingress resources deleted (ArgoCD, GitLab, Harbor)"
+
+          # Harbor Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: harbor-letsencrypt-ingress
+            namespace: ${HARBOR_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${HARBOR_HOSTNAME}
+                secretName: harbor-letsencrypt-tls
+            rules:
+              - host: ${HARBOR_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-portal
+                          port:
+                            number: 80
+                    - path: /api/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /service/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /v2/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /chartrepo/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+                    - path: /c/
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: harbor-core
+                          port:
+                            number: 80
+          EOF
+          echo "Harbor Let's Encrypt Ingress created for ${HARBOR_HOSTNAME}"
+
+          # ArgoCD Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argocd-letsencrypt-ingress
+            namespace: ${ARGOCD_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${ARGOCD_HOSTNAME}
+                secretName: argocd-letsencrypt-tls
+            rules:
+              - host: ${ARGOCD_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: argocd-server
+                          port:
+                            number: 80
+          EOF
+          echo "ArgoCD Let's Encrypt Ingress created for ${ARGOCD_HOSTNAME}"
+
+          # GitLab Ingress with Let's Encrypt
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: gitlab-letsencrypt-ingress
+            namespace: ${GITLAB_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${GITLAB_HOSTNAME}
+                secretName: gitlab-letsencrypt-tls
+            rules:
+              - host: ${GITLAB_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: gitlab-webservice-default
+                          port:
+                            number: 8181
+          EOF
+          echo "GitLab Let's Encrypt Ingress created for ${GITLAB_HOSTNAME}"
+
+          # Online Boutique (Microservices Demo) Ingress with Let's Encrypt
+          APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
+          BOUTIQUE_HOSTNAME="boutique.${DOMAIN}"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: boutique-letsencrypt-ingress
+            namespace: ${APP_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${BOUTIQUE_HOSTNAME}
+                secretName: boutique-letsencrypt-tls
+            rules:
+              - host: ${BOUTIQUE_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: frontend
+                          port:
+                            number: 80
+          EOF
+          echo "Online Boutique Let's Encrypt Ingress created for ${BOUTIQUE_HOSTNAME}"
+          echo "BOUTIQUE_HOSTNAME=${BOUTIQUE_HOSTNAME}" >> "$GITHUB_ENV"
+
+          # Wait for certificates
+          echo "Waiting for Let's Encrypt certificates..."
+          CERT_TIMEOUT=300
+          for CERT in harbor-letsencrypt-tls:${HARBOR_NAMESPACE} argocd-letsencrypt-tls:${ARGOCD_NAMESPACE} gitlab-letsencrypt-tls:${GITLAB_NAMESPACE} boutique-letsencrypt-tls:${APP_NAMESPACE}; do
+            CERT_NAME="${CERT%%:*}"
+            CERT_NS="${CERT##*:}"
+            ELAPSED=0
+            while [ "$ELAPSED" -lt "$CERT_TIMEOUT" ]; do
+              READY=$(kubectl get certificate "${CERT_NAME}" -n "${CERT_NS}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+              if [ "$READY" = "True" ]; then
+                echo "Certificate '${CERT_NAME}' is Ready"
+                break
+              fi
+              echo "Waiting for ${CERT_NAME}... (${ELAPSED}s/${CERT_TIMEOUT}s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            if [ "$ELAPSED" -ge "$CERT_TIMEOUT" ]; then
+              echo "::warning::Certificate '${CERT_NAME}' not ready within ${CERT_TIMEOUT}s"
+            fi
+          done
+          echo "Let's Encrypt TLS Ingress setup complete"
 
       # Phase 15: Write Job Summary
       - name: Write Job Summary
@@ -1064,7 +1330,7 @@ jobs:
           GITLAB_HOSTNAME="gitlab.${DOMAIN}"
           ARGOCD_HOSTNAME="argocd.${DOMAIN}"
           APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
-          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/GoogleCloudPlatform/microservices-demo.git}"
+          HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ ArgoCD Stack Deployment Complete
@@ -1084,7 +1350,7 @@ jobs:
           | Harbor | https://${HARBOR_HOSTNAME} |
           | ArgoCD | https://${ARGOCD_HOSTNAME} |
           | GitLab | https://${GITLAB_HOSTNAME} |
-          | Online Boutique | http://${FRONTEND_IP:-N/A} |
+          | Online Boutique | ${BOUTIQUE_HOSTNAME:+https://${BOUTIQUE_HOSTNAME}} |
 
           ### Credential Retrieval
           | Service | Username | Retrieval Command |
@@ -1102,12 +1368,18 @@ jobs:
           | GitLab Runner | ${GITLAB_RUNNER_VERSION} |
           | Helm Charts Repo | ${HELM_CHARTS_REPO_URL} |
 
+          EOF
+
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            cat >> $GITHUB_STEP_SUMMARY <<DNSEOF
           ### DNS / Hosts File Instructions
           Add the following entry to your local \`/etc/hosts\` file or DNS server:
           \`\`\`
           ${CONTOUR_LB_IP} ${HARBOR_HOSTNAME} ${GITLAB_HOSTNAME} ${ARGOCD_HOSTNAME}
           \`\`\`
-          EOF
+          DNSEOF
+          fi
+
           echo "Job summary written"
 
       # Write Failure Summary

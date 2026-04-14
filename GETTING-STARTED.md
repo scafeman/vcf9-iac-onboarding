@@ -51,6 +51,9 @@ RUNNER_TOKEN=<your-runner-registration-token>
 REPO_URL=https://github.com/<OWNER>/<REPO>
 GITHUB_PAT=<your-github-personal-access-token>
 
+# --- sslip.io DNS & Let's Encrypt TLS (optional) ---
+# LETSENCRYPT_EMAIL=<your-email@example.com>
+
 # --- Secret Store (for Deploy Managed DB App vault-injector) ---
 SECRET_STORE_IP=<secret-store-ip>
 ```
@@ -76,6 +79,8 @@ docker exec vcf9-dev bash examples/deploy-cluster/deploy-cluster.sh
 ```
 
 Typical deployment time: **5–18 minutes**.
+
+All deployment patterns use sslip.io for automatic DNS resolution — services are accessible via `<name>.<IP>.sslip.io` hostnames without requiring external DNS configuration or `/etc/hosts` entries. If `LETSENCRYPT_EMAIL` is set, Let's Encrypt TLS certificates are automatically provisioned for HTTPS access. When `USE_SSLIP_DNS=true` (default), dashboard services use ClusterIP instead of LoadBalancer, with traffic routed through the shared envoy-lb Ingress. Only deploy-cluster keeps both a raw LoadBalancer IP (for NSX validation) and the envoy-lb Ingress route.
 
 See the [Deploy Cluster README](examples/deploy-cluster/README-deploy.md) for a detailed breakdown of each phase.
 
@@ -105,7 +110,7 @@ See the [Deploy GitOps README](examples/deploy-gitops/README-deploy.md) for deta
 
 ### Deploy Hybrid App
 
-Provisions a PostgreSQL VM via VCF VM Service and deploys a Next.js/Node.js application on VKS, demonstrating VM-to-container connectivity over NSX VPC.
+Provisions a PostgreSQL VM via VCF VM Service and deploys a Next.js/Node.js application on VKS, demonstrating container-to-VM connectivity over NSX VPC.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-hybrid-app/deploy-hybrid-app.sh

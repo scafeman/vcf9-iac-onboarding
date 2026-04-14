@@ -75,6 +75,10 @@ jobs:
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -366,8 +370,9 @@ jobs:
           fi
           echo "Envoy LoadBalancer setup complete"
 
-      # Phase 9: Generate Self-Signed Certificates
+      # Phase 9: Generate Self-Signed Certificates (skipped when USE_SSLIP_DNS=true)
       - name: Generate Self-Signed Certificates
+        if: env.USE_SSLIP_DNS != 'true'
         run: |
           set -euo pipefail
           CERT_DIR="./certs"
@@ -425,8 +430,9 @@ jobs:
           fi
           echo "Certificates ready in '${CERT_DIR}'"
 
-      # Phase 10: Configure CoreDNS
+      # Phase 10: Configure CoreDNS (skipped when USE_SSLIP_DNS=true — sslip.io resolves externally)
       - name: Configure CoreDNS
+        if: env.USE_SSLIP_DNS != 'true'
         run: |
           set -euo pipefail
           GRAFANA_HOSTNAME="grafana.${DOMAIN}"
@@ -585,8 +591,14 @@ jobs:
         run: |
           set -euo pipefail
           GRAFANA_NAMESPACE="grafana"
-          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
           CERT_DIR="./certs"
+
+          # Determine Grafana hostname based on USE_SSLIP_DNS
+          if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${CONTOUR_LB_IP:-}" ]]; then
+            GRAFANA_HOSTNAME="grafana.${CONTOUR_LB_IP}.sslip.io"
+          else
+            GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          fi
 
           # Generate a random Grafana admin password if not provided
           if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
@@ -595,13 +607,15 @@ jobs:
           fi
           echo "::add-mask::${GRAFANA_ADMIN_PASSWORD}"
 
-          # Create TLS secret from wildcard certificate (idempotent)
-          kubectl create secret tls grafana-tls \
-            --cert="${CERT_DIR}/fullchain.crt" \
-            --key="${CERT_DIR}/wildcard.key" \
-            --namespace "$GRAFANA_NAMESPACE" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          echo "Grafana TLS secret created"
+          # Create TLS secret from self-signed cert (only when not using sslip.io)
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            kubectl create secret tls grafana-tls \
+              --cert="${CERT_DIR}/fullchain.crt" \
+              --key="${CERT_DIR}/wildcard.key" \
+              --namespace "$GRAFANA_NAMESPACE" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            echo "Grafana TLS secret created from self-signed cert"
+          fi
 
           # Apply Grafana instance manifest with runtime variable substitution
           sed -e "s|GRAFANA_HOSTNAME|${GRAFANA_HOSTNAME}|g" \
@@ -618,7 +632,68 @@ jobs:
           echo "Grafana Kubernetes dashboards applied"
 
           # Create Contour Ingress for HTTPS access
-          cat <<EOF | kubectl apply -f -
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            # sslip.io mode: use cert-manager annotation for Let's Encrypt TLS
+            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+            TLS_ENABLED="true"
+            # Check if ClusterIssuer is ready
+            if ! kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+              echo "ClusterIssuer '${CLUSTER_ISSUER_NAME}' not ready — creating Ingress without TLS"
+              TLS_ENABLED="false"
+            fi
+
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: grafana-ingress
+            namespace: ${GRAFANA_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${GRAFANA_HOSTNAME}
+                secretName: grafana-ingress-tls
+            rules:
+              - host: ${GRAFANA_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: grafana-service
+                          port:
+                            number: 80
+          EOF
+            else
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: grafana-ingress
+            namespace: ${GRAFANA_NAMESPACE}
+          spec:
+            ingressClassName: contour
+            rules:
+              - host: ${GRAFANA_HOSTNAME}
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: grafana-service
+                          port:
+                            number: 80
+          EOF
+            fi
+          else
+            # Legacy mode: use self-signed cert
+            cat <<EOF | kubectl apply -f -
           apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
@@ -642,6 +717,7 @@ jobs:
                           port:
                             number: 80
           EOF
+          fi
           echo "Grafana Ingress created for https://${GRAFANA_HOSTNAME}"
 
           # Wait for Grafana pod to reach Running state
@@ -707,7 +783,11 @@ jobs:
       - name: Write Job Summary
         run: |
           set -euo pipefail
-          GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          if [[ "${USE_SSLIP_DNS}" == "true" ]] && [[ -n "${CONTOUR_LB_IP:-}" ]]; then
+            GRAFANA_HOSTNAME="grafana.${CONTOUR_LB_IP}.sslip.io"
+          else
+            GRAFANA_HOSTNAME="grafana.${DOMAIN}"
+          fi
 
           # Collect installed package versions
           PACKAGE_VERSIONS=$(vcf package installed list -n "$PACKAGE_NAMESPACE" 2>/dev/null || echo "Unable to retrieve package list")
@@ -719,7 +799,6 @@ jobs:
           |---|---|
           | Cluster | ${CLUSTER_NAME} |
           | Namespace | ${DYNAMIC_NS_NAME} |
-          | Domain | ${DOMAIN} |
           | Contour LB IP | ${CONTOUR_LB_IP} |
           | Grafana URL | https://${GRAFANA_HOSTNAME} |
           | Grafana Admin User | admin |
@@ -732,6 +811,10 @@ jobs:
           ${PACKAGE_VERSIONS}
           \`\`\`
 
+          EOF
+
+          if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+            cat >> $GITHUB_STEP_SUMMARY <<DNSEOF
           ### DNS / Hosts File Instructions
 
           Add the following entry to your local \`/etc/hosts\` file or DNS server:
@@ -739,7 +822,8 @@ jobs:
           \`\`\`
           ${CONTOUR_LB_IP} ${GRAFANA_HOSTNAME}
           \`\`\`
-          EOF
+          DNSEOF
+          fi
 
       # Write Failure Summary (if: failure())
       - name: Write Failure Summary

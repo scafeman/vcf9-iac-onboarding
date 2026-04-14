@@ -62,12 +62,28 @@ log_step 1 "Deleting vault-injector package"
 if [[ -f "${KUBECONFIG_FILE}" ]]; then
   export KUBECONFIG="${KUBECONFIG_FILE}"
 
-  if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-    vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-    log_success "vault-injector package deleted (cascades namespace deletion)"
-  else
-    log_success "vault-injector package not installed, skipping"
+  # Check if managed-db-app is still using the vault-injector (shared resource)
+  VAULT_DEPS=0
+  if kubectl get ns managed-db-app >/dev/null 2>&1; then
+    VAULT_DEPS=1
+    log_warn "Namespace 'managed-db-app' still exists — skipping vault-injector deletion (shared resource)"
   fi
+
+  if [[ "${VAULT_DEPS}" -eq 0 ]]; then
+    if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+      # Strip finalizers FIRST so kapp-controller releases without cascade-delete
+      kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      kubectl patch app vault-injector -n tkg-packages --type merge \
+        -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+      # Delete resources directly (do NOT use vcf package installed delete — it triggers kapp cascade)
+      kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+      log_success "vault-injector package deleted (finalizers stripped, no cascade)"
+    else
+      log_success "vault-injector package not installed, skipping"
+    fi
+  fi  # end VAULT_DEPS check
 
   ###########################################################################
   # Phase 2: Delete namespace and cluster-scoped resources
@@ -75,17 +91,17 @@ if [[ -f "${KUBECONFIG_FILE}" ]]; then
 
   log_step 2 "Deleting secrets-demo namespace and cluster-scoped resources"
 
+  # Delete sslip.io Ingress and Certificate resources
+  kubectl delete ingress secrets-dashboard-sslip-ingress -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+  kubectl delete certificate secrets-dashboard-sslip-ingress-tls -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+
   kubectl delete ns "${NAMESPACE}" --ignore-not-found || true
   log_success "Namespace '${NAMESPACE}' deleted (or already removed by package teardown)"
 
-  kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found || true
-  log_success "ClusterRole 'vault-injector-clusterrole' deleted"
-
-  kubectl delete clusterrolebinding vault-injector-clusterrolebinding --ignore-not-found || true
-  log_success "ClusterRoleBinding 'vault-injector-clusterrolebinding' deleted"
-
-  kubectl delete mutatingwebhookconfiguration vault-injector-cfg --ignore-not-found || true
-  log_success "MutatingWebhookConfiguration 'vault-injector-cfg' deleted"
+  # NOTE: vault-injector cluster-scoped resources (ClusterRole, ClusterRoleBinding,
+  # MutatingWebhookConfiguration) are NOT deleted here. They are managed by the
+  # vault-injector package and will be cleaned up when the package is deleted.
+  # Deleting them manually while the package exists breaks the webhook registration.
 
   unset KUBECONFIG
 else

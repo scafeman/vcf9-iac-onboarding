@@ -32,7 +32,7 @@ Uninstalls the ArgoCD Helm release via `helm uninstall`. Strips finalizers from 
 
 ### Phase 6: Restore CoreDNS
 
-Reads the current CoreDNS ConfigMap and removes the custom `hosts { ... }` block that was added by the deploy script (containing Harbor, GitLab, and ArgoCD static entries). Restarts CoreDNS pods to pick up the restored configuration. Skips if the hosts block is not present.
+When `USE_SSLIP_DNS=false` was used during deployment, reads the current CoreDNS ConfigMap and removes the custom `hosts { ... }` block that was added by the deploy script (containing Harbor, GitLab, and ArgoCD static entries). Restarts CoreDNS pods to pick up the restored configuration. Skips if the hosts block is not present or if sslip.io DNS was used (no CoreDNS patching to revert).
 
 ### Phase 7: Delete Harbor
 

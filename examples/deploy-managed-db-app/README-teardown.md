@@ -14,6 +14,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 Switches to the guest cluster kubeconfig and deletes the application namespace (default: `managed-db-app`). This cascading delete removes all resources within the namespace:
 
+- sslip.io Ingress and TLS Certificate (if `USE_SSLIP_DNS` was enabled)
 - Frontend LoadBalancer Service (releases the NSX external IP)
 - Frontend Deployment (terminates the dashboard pod)
 - API ClusterIP Service
@@ -29,7 +30,7 @@ Ensures the VCF CLI context is active, then deletes the PostgresCluster resource
 kubectl delete postgrescluster postgres-clus-01 -n <SUPERVISOR_NAMESPACE> --ignore-not-found
 ```
 
-Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 1800s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time.
+Waits for the PostgresCluster to be fully terminated within the configured timeout (default: 1800s, polling every 30s). DSM deprovisions the managed PostgreSQL instance and releases compute resources during this time. If the PostgresCluster gets stuck in `Deleting` state (e.g., due to PV cleanup failure), the script strips the finalizer to force deletion.
 
 If the PostgresCluster does not exist, this phase is skipped.
 

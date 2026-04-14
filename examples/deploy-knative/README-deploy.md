@@ -4,6 +4,8 @@
 
 `deploy-knative.sh` installs Knative Serving on an existing VKS cluster and deploys a full Asset Tracker with DSM PostgreSQL persistence, an API server, a serverless audit function, and a Next.js dashboard — the VCF equivalent of deploying an AWS Lambda function with API Gateway backed by RDS PostgreSQL. The audit function receives HTTP POST requests logging asset changes and demonstrates Knative's scale-to-zero behavior, while the API server provides full CRUD operations on assets.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-knative.md) for a visual overview of this deployment pattern.
+
 **Architecture:**
 - **Knative Serving:** CRDs, core controllers, and net-contour networking plugin installed from upstream YAML manifests
 - **DSM PostgresCluster:** Managed PostgreSQL instance provisioned via VCF Database Service Manager for persistent storage of assets and audit entries
@@ -82,11 +84,22 @@ Deploys the `asset-audit` Knative Service with DSM PostgreSQL connection environ
 
 ### Phase 10: RBAC and Dashboard Deployment
 
-Creates RBAC resources (ServiceAccount, Role, RoleBinding) for dashboard pod count access. Deploys the Next.js dashboard as a Deployment with LoadBalancer Service, configured with the API server URL. Waits for the pod and LoadBalancer IP.
+Creates RBAC resources (ServiceAccount, Role, RoleBinding) for dashboard pod count access. Deploys the Next.js dashboard as a Deployment with a Service — when `USE_SSLIP_DNS=true` (default), uses ClusterIP with traffic routed through the shared envoy-lb Ingress. When `USE_SSLIP_DNS=false`, uses LoadBalancer type. Configured with the API server URL. Waits for the pod and LoadBalancer IP (or Ingress readiness).
 
 ### Phase 11: Verification & Scale-to-Zero Demo
 
 Tests the API server healthz endpoint, sends a test audit event, verifies the audit trail via `/log`, waits for scale-to-zero, and verifies the pod count reaches zero.
+
+### sslip.io DNS & TLS (Dashboard)
+
+The Knative Service routing uses sslip.io for Knative domain resolution (Phase 6). Separately, when `USE_SSLIP_DNS=true` (default), the dashboard LoadBalancer Service also gets a Contour Ingress with an sslip.io hostname (e.g., `knative-dashboard.<IP>.sslip.io`). If a Let's Encrypt ClusterIssuer is available, the Ingress includes TLS annotations for automatic certificate provisioning.
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_SSLIP_DNS` | `true` | Enable/disable sslip.io DNS for the dashboard |
+| `SSLIP_HOSTNAME_PREFIX` | `knative-dashboard` | Hostname prefix for sslip.io DNS name |
+| `CLUSTER_ISSUER_NAME` | `letsencrypt-prod` | ClusterIssuer for TLS certificate requests |
+| `CERT_WAIT_TIMEOUT` | `300` | Seconds to wait for TLS certificate Ready |
 
 ---
 

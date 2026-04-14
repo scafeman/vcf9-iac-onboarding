@@ -4,6 +4,8 @@
 
 `deploy-managed-db-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates managed database connectivity within a VCF 9 namespace. It provisions a PostgreSQL database via the VCF Database Service Manager (DSM) PostgresCluster CRD, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-managed-db-app.md) for a visual overview of this deployment pattern.
+
 This is the VCF equivalent of deploying an application on AWS EKS backed by RDS:
 
 - **DSM PostgresCluster** — provisioned via `databases.dataservices.vmware.com/v1alpha1 PostgresCluster` CRD, fully managed by DSM (patching, maintenance, connection management)
@@ -68,8 +70,11 @@ Switches to the guest cluster kubeconfig, creates the application namespace (def
 1. Copies the supervisor `internal-app-token` into the guest cluster application namespace.
 2. Installs the `vault-injector` VKS standard package (idempotent — shared with secrets-demo).
 3. Waits for the vault-injector pod to reach Running state.
-4. **API Deployment** (`apps/v1`) — Node.js/Express container deployed with vault annotations instead of plaintext `POSTGRES_PASSWORD` env var. The API reads credentials from `/vault/secrets/dsm-pg-creds` via the `VAULT_SECRETS_PATH` env var. Includes a readiness probe on `/healthz` to ensure the pod only receives traffic when the database connection is healthy.
-5. **API ClusterIP Service** (`v1`) — Exposes the API on port 3001 within the cluster.
+4. Waits for the vault-injector mutating webhook (`vault-agent-injector-cfg`) to be registered (up to 120s with 10s polling). This ensures the webhook is active before creating pods with vault annotations. A 5-second sleep follows to allow the webhook to stabilize.
+5. **API Deployment** (`apps/v1`) — Node.js/Express container deployed with vault annotations instead of plaintext `POSTGRES_PASSWORD` env var. The API reads credentials from `/vault/secrets/dsm-pg-creds` via the `VAULT_SECRETS_PATH` env var. Includes a readiness probe on `/healthz` to ensure the pod only receives traffic when the database connection is healthy.
+6. **API ClusterIP Service** (`v1`) — Exposes the API on port 3001 within the cluster.
+
+If the API pod does not reach Running state within the timeout (e.g., CrashLoopBackOff because the vault-injector sidecar wasn't injected on first create), the script automatically restarts the deployment to trigger re-injection, then waits again.
 
 The script waits for the API pod to reach Running state (timeout: 300s).
 
@@ -78,9 +83,9 @@ The script waits for the API pod to reach Running state (timeout: 300s).
 Deploys the Next.js dashboard:
 
 1. **Frontend Deployment** (`apps/v1`) — Next.js container configured to proxy API requests to the API ClusterIP Service via cluster DNS (`managed-db-api.<APP_NAMESPACE>.svc.cluster.local`).
-2. **Frontend LoadBalancer Service** (`v1`) — Exposes the dashboard on port 80 (mapping to container port 3000) with an NSX-provisioned external IP.
+2. **Frontend Service** (`v1`) — When `USE_SSLIP_DNS=true` (default), the service uses ClusterIP and traffic routes through the shared envoy-lb Ingress with an sslip.io hostname. When `USE_SSLIP_DNS=false`, the service uses LoadBalancer type with an NSX-provisioned external IP on port 80.
 
-The script waits for the Frontend pod to reach Running state and the LoadBalancer to receive an external IP (timeout: 300s).
+The script waits for the Frontend pod to reach Running state and (if using LoadBalancer) for the external IP (timeout: 300s).
 
 ### Phase 5: Connectivity Verification
 
@@ -90,6 +95,17 @@ Performs end-to-end validation:
 2. **API health check** — `curl` to `/api/healthz` via the frontend proxy, expects HTTP 200 with healthy database status
 
 Prints a deployment summary with the Frontend LoadBalancer IP, DSM PostgreSQL host, cluster name, and namespace.
+
+### sslip.io DNS & TLS
+
+When `USE_SSLIP_DNS=true` (default), the script creates a Contour Ingress resource with an sslip.io hostname (e.g., `managed-db.<IP>.sslip.io`) pointing to the Envoy LoadBalancer IP. This provides a human-readable DNS name without requiring external DNS configuration. If a Let's Encrypt ClusterIssuer is available (installed by Deploy Cluster Phase 5i), the Ingress includes a `cert-manager.io/cluster-issuer` annotation to automatically provision a trusted TLS certificate.
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_SSLIP_DNS` | `true` | Enable/disable sslip.io DNS integration |
+| `SSLIP_HOSTNAME_PREFIX` | `managed-db` | Hostname prefix for sslip.io DNS name |
+| `CLUSTER_ISSUER_NAME` | `letsencrypt-prod` | ClusterIssuer for TLS certificate requests |
+| `CERT_WAIT_TIMEOUT` | `300` | Seconds to wait for TLS certificate Ready |
 
 ---
 
@@ -303,6 +319,7 @@ A successful run produces output like this:
 - Verify the API container image exists in the registry: `docker pull <CONTAINER_REGISTRY>/hybrid-app-api:<IMAGE_TAG>`
 - Check pod logs: `kubectl logs -l app=managed-db-api -n managed-db-app`
 - Verify the DSM PostgreSQL endpoint is reachable from the guest cluster pods
+- If the pod is in CrashLoopBackOff because the vault-injector sidecar wasn't injected on first create, the script automatically restarts the deployment to trigger re-injection. If this still fails, manually restart: `kubectl rollout restart deployment/managed-db-api -n managed-db-app`
 
 ### Frontend pod not running or no LoadBalancer IP (exit 5)
 

@@ -4,6 +4,8 @@
 
 `deploy-cluster.sh` automates the complete VCF 9 provisioning workflow from zero to a fully validated VKS cluster with running workloads. It is the "spin up" half of the dev environment lifecycle — pair it with `teardown-cluster.sh` to tear everything down.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-cluster.md) for a visual overview of this deployment pattern.
+
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
 ---
@@ -99,18 +101,35 @@ The following tuning parameters control scale-down behavior:
 | `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` | `10s` | Cooldown after node deletion before next scale-down |
 | `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` | `0.5` | Node utilization threshold (0.0–1.0) below which scale-down is considered |
 
+### Phase 5g: cert-manager VKS Package Installation
+
+Installs the cert-manager VKS standard package (`cert-manager.kubernetes.vmware.com`) into the `tkg-packages` namespace. cert-manager provides automated TLS certificate lifecycle management and is a prerequisite for both Contour and Let's Encrypt ClusterIssuers. Polls until the package reaches a reconciled state.
+
+### Phase 5h: Contour VKS Package + Envoy LoadBalancer + CoreDNS sslip.io Forwarding
+
+Installs the Contour VKS standard package (`contour.kubernetes.vmware.com`) into the `tkg-packages` namespace. Contour provides an Envoy-based ingress controller for HTTP/HTTPS routing. After installation, creates an `envoy-lb` LoadBalancer service in the `tanzu-system-ingress` namespace (the VKS Contour package deploys Envoy as NodePort by default). Waits for the LoadBalancer to receive an external IP from NSX.
+
+When `USE_SSLIP_DNS=true`, this phase also adds a CoreDNS forwarding rule for `sslip.io` queries to `8.8.8.8` and `1.1.1.1`. This is required for cert-manager HTTP-01 challenge self-checks — without it, cert-manager pods inside the cluster cannot resolve `*.sslip.io` hostnames to validate their own challenges.
+
+### Phase 5i: Let's Encrypt ClusterIssuer Creation
+
+Creates a `letsencrypt-prod` ClusterIssuer resource that configures cert-manager to request TLS certificates from Let's Encrypt via the ACME HTTP-01 challenge solver. If `LETSENCRYPT_EMAIL` is set, it is used as the ACME account registration email. The ClusterIssuer is referenced by Ingress annotations in subsequent deployment patterns to automatically provision trusted TLS certificates.
+
 ### Phase 6: Functional Validation Workload Deployment
 
 Deploys three resources to the guest cluster to validate storage, compute, and networking:
 
 1. **PersistentVolumeClaim** (`vks-test-pvc`) — 1Gi NFS volume. Validates CSI driver and storage backend.
-2. **Deployment** (`vks-test-app`) — nginx-unprivileged with hardened security context (non-root, seccomp, capabilities dropped). Validates pod scheduling and security enforcement.
-3. **LoadBalancer Service** (`vks-test-lb`) — NSX-provisioned external IP on port 80. Validates network ingress.
+2. **Deployment** (`vks-test-app`) — custom test app (`scafeman/vks-test-app:latest`) with hardened security context (non-root, seccomp, capabilities dropped). Validates pod scheduling and security enforcement. The `CONTAINER_REGISTRY` and `IMAGE_TAG` variables control the image used.
+3. **LoadBalancer Service** (`vks-test-lb`) — NSX-provisioned external IP on port 80. Validates network ingress. When `USE_SSLIP_DNS=true`, the test app also keeps its raw LoadBalancer IP for direct NSX validation alongside the Ingress route through envoy-lb.
+
+When `USE_SSLIP_DNS=true` (default), the script also creates a Contour Ingress resource with an sslip.io hostname (e.g., `vks-test.<IP>.sslip.io`) pointing to the Envoy LoadBalancer IP. If a ClusterIssuer is configured, the Ingress includes a `cert-manager.io/cluster-issuer` annotation to automatically provision a Let's Encrypt TLS certificate, enabling HTTPS access.
 
 The script waits for:
 - PVC to reach `Bound` status (timeout: 300s)
 - LoadBalancer to receive an external IP (timeout: 300s)
 - HTTP 200 response from the external IP
+- (If TLS enabled) Certificate to reach Ready status (timeout: `CERT_WAIT_TIMEOUT`)
 
 ---
 
@@ -139,7 +158,7 @@ Set these in the `.env` file at the project root. Docker Compose loads them into
 | `CLUSTER_NAME` | VKS cluster name | `my-dev-project-01-clus-01` |
 | `CONTENT_LIBRARY_ID` | vSphere content library ID for OS images | `cl-32ee3681364c701d0` |
 
-Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `CONTROL_PLANE_REPLICAS` (`1` — set to `3` for HA), `NODE_POOL_NAME` (`node-pool-01`), `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` (`5m`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` (`5m`), `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` (`0.5`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` (`10s`), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), and all timeout values.
+Optional variables with defaults: `REGION_NAME` (`region-us1-a`), `VPC_NAME` (`region-us1-a-default-vpc`), `RESOURCE_CLASS` (`xxlarge`), `K8S_VERSION` (`v1.33.6+vmware.1-fips`), `VM_CLASS` (`best-effort-large`), `STORAGE_CLASS` (`nfs`), `MIN_NODES` (`2`), `MAX_NODES` (`10`), `NODE_DISK_SIZE` (`50Gi`), `OS_NAME` (`photon`), `OS_VERSION` (empty — set to `24.04` for Ubuntu), `CONTROL_PLANE_REPLICAS` (`1` — set to `3` for HA), `NODE_POOL_NAME` (`node-pool-01`), `AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME` (`5m`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD` (`5m`), `AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD` (`0.5`), `AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE` (`10s`), `PACKAGE_NAMESPACE` (`tkg-packages`), `PACKAGE_REPO_URL` (VKS standard packages 3.6.0), `PACKAGE_TIMEOUT` (`600`), `USE_SSLIP_DNS` (`true`), `LETSENCRYPT_EMAIL` (empty), `CLUSTER_ISSUER_NAME` (`letsencrypt-prod`), `CERT_WAIT_TIMEOUT` (`300`), `CONTOUR_INGRESS_NAMESPACE` (`tanzu-system-ingress`), `CONTAINER_REGISTRY` (`scafeman`), `IMAGE_TAG` (`latest`), and all timeout values.
 
 ---
 
@@ -232,5 +251,6 @@ A successful run produces output like this:
 | Phase 5 (API server reachable) | 1-2 min |
 | Phase 5b (Worker nodes ready) | 2-3 min |
 | Phase 5c-5f (Cluster Autoscaler) | 1-3 min |
+| Phase 5g-5i (cert-manager, Contour, CoreDNS sslip.io forwarding, ClusterIssuer) | 2-5 min |
 | Phase 6 (Workload validation) | 1-2 min |
 | **Total** | **~6-21 min** |

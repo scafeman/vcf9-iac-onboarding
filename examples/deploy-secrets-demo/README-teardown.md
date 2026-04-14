@@ -14,6 +14,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 Switches to the guest cluster kubeconfig and deletes the `secrets-demo` namespace. This cascading delete removes all namespaced resources:
 
+- sslip.io Ingress and TLS Certificate (if `USE_SSLIP_DNS` was enabled)
 - `secrets-dashboard` Deployment + LoadBalancer Service (releases the NSX external IP)
 - Redis Deployment + ClusterIP Service
 - PostgreSQL Deployment + ClusterIP Service

@@ -135,6 +135,9 @@ jobs:
       VCFA_ENDPOINT: ${{ github.event.client_payload.vcfa_endpoint || secrets.VCFA_ENDPOINT }}
       TENANT_NAME: ${{ github.event.client_payload.tenant_name || secrets.TENANT_NAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -452,9 +455,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Remove the Envoy LoadBalancer service
-          kubectl delete svc envoy-lb -n tanzu-system-ingress --ignore-not-found 2>/dev/null || true
-          echo "Envoy LoadBalancer service removed"
+          # NOTE: envoy-lb is shared infrastructure — NOT deleted here.
+          # It is only deleted by the cluster teardown (TEARDOWN_CLUSTER).
 
           # Remove the Grafana CoreDNS entry
           CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}' 2>/dev/null || true)
@@ -481,7 +483,7 @@ jobs:
           fi
 
       - name: Delete VKS Packages
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -505,7 +507,7 @@ jobs:
           echo "All packages deleted"
 
       - name: Delete Package Repository
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
           PACKAGE_REPO_NAME="tkg-packages"
@@ -521,7 +523,7 @@ jobs:
           fi
 
       - name: Delete Package Namespace
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -554,7 +556,7 @@ jobs:
           fi
 
       - name: Clean Up Cluster-Scoped Resources
-        if: env.TEARDOWN_METRICS == 'true'
+        if: env.TEARDOWN_CLUSTER == 'true'
         run: |
           set -euo pipefail
 
@@ -598,11 +600,12 @@ jobs:
           # cert-manager webhooks
           kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
           kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
-          # cert-manager CRDs
+          # cert-manager CRDs — strip finalizers first to prevent hanging
           for crd in certificaterequests.cert-manager.io certificates.cert-manager.io \
                      challenges.acme.cert-manager.io clusterissuers.cert-manager.io \
                      issuers.cert-manager.io orders.acme.cert-manager.io; do
-            kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+            kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+            kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
           done
           # cert-manager roles in kube-system
           kubectl delete role cert-manager-cainjector:leaderelection -n kube-system --ignore-not-found 2>/dev/null || true
@@ -619,11 +622,12 @@ jobs:
           for crb in contour envoy contour-tkg-packages-cluster-rolebinding; do
             kubectl delete clusterrolebinding "$crb" --ignore-not-found 2>/dev/null || true
           done
-          # Contour CRDs
+          # Contour CRDs — strip finalizers first to prevent hanging
           for crd in contourconfigurations.projectcontour.io contourdeployments.projectcontour.io \
                      extensionservices.projectcontour.io httpproxies.projectcontour.io \
                      tlscertificatedelegations.projectcontour.io; do
-            kubectl delete crd "$crd" --ignore-not-found 2>/dev/null || true
+            kubectl patch crd "$crd" --type merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+            kubectl delete crd "$crd" --ignore-not-found --timeout=10s 2>/dev/null || true
           done
           # Contour namespace
           kubectl delete ns tanzu-system-ingress --ignore-not-found --wait=false 2>/dev/null || true
@@ -713,13 +717,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Delete the vault-injector package FIRST — it manages the secrets-demo namespace
-          # and will recreate it if the namespace is deleted while the package is still installed
-          if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-            vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
-            echo "vault-injector package deleted (cascades namespace deletion)"
-          else
-            echo "vault-injector package not installed, skipping"
+          # Only delete vault-injector if managed-db-app is also being torn down or doesn't exist
+          VAULT_DEPS=0
+          if [ "$TEARDOWN_MANAGED_DB_APP" != "true" ]; then
+            if kubectl get ns managed-db-app >/dev/null 2>&1; then
+              VAULT_DEPS=1
+              echo "::warning::managed-db-app namespace still exists and not being torn down — skipping vault-injector deletion (shared resource)"
+            fi
+          fi
+
+          if [ "$VAULT_DEPS" -eq 0 ]; then
+            if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
+              # Strip finalizers and delete directly (no vcf package installed delete — avoids kapp cascade)
+              kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl patch app vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              echo "vault-injector package deleted (no cascade)"
+            else
+              echo "vault-injector package not installed, skipping"
+            fi
           fi
 
       - name: Delete Secrets Demo Namespace
@@ -736,11 +755,16 @@ jobs:
             echo "Namespace '$SECRETS_NAMESPACE' already deleted by package teardown"
           fi
 
-          # Clean up cluster-scoped resources that may remain
-          kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found 2>/dev/null || true
-          kubectl delete clusterrolebinding vault-injector-binding --ignore-not-found 2>/dev/null || true
-          kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>/dev/null || true
-          echo "Secrets Demo cluster-scoped resources cleaned up"
+          # Clean up cluster-scoped resources that may remain — only if managed-db-app
+          # is also being torn down or no longer exists (shared resource protection)
+          if [ "$TEARDOWN_MANAGED_DB_APP" == "true" ] || ! kubectl get ns managed-db-app >/dev/null 2>&1; then
+            kubectl delete clusterrole vault-injector-clusterrole --ignore-not-found 2>/dev/null || true
+            kubectl delete clusterrolebinding vault-injector-binding --ignore-not-found 2>/dev/null || true
+            kubectl delete mutatingwebhookconfiguration vault-agent-injector-cfg --ignore-not-found 2>/dev/null || true
+            echo "Secrets Demo cluster-scoped resources cleaned up"
+          else
+            echo "Skipping cluster-scoped vault resource deletion — managed-db-app namespace still exists"
+          fi
 
       - name: Delete Secrets Demo Supervisor Resources
         if: env.TEARDOWN_SECRETS_DEMO == 'true'
@@ -919,38 +943,67 @@ jobs:
             NS_NAME=$(echo "$NAMESPACE_CONTEXT" | cut -d: -f2)
             echo "Targeting supervisor namespace: $NS_NAME"
 
-            # Delete PostgresCluster
-            if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
-              kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found
-              echo "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+            # Check for dependent deployments before deleting shared PostgresCluster
+            DSM_DEPS=0
 
-              # Wait for PostgresCluster termination
-              ELAPSED=0
-              while [ "$ELAPSED" -lt "$DSM_TIMEOUT" ]; do
-                if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
-                  echo "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
-                  break
-                fi
-                echo "  Waiting for PostgresCluster deletion... (${ELAPSED}s/${DSM_TIMEOUT}s)"
-                sleep "$POLL_INTERVAL"
-                ELAPSED=$((ELAPSED + POLL_INTERVAL))
-              done
-
-              if [ "$ELAPSED" -ge "$DSM_TIMEOUT" ]; then
-                echo "::warning::PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${DSM_TIMEOUT}s"
+            # Check ha-vm-app: VirtualMachineService ha-web-lb in supervisor namespace
+            if [ "$TEARDOWN_HA_VM_APP" != "true" ]; then
+              if kubectl get virtualmachineservice ha-web-lb -n "$NS_NAME" >/dev/null 2>&1; then
+                echo "::warning::ha-vm-app VirtualMachineService 'ha-web-lb' still exists — skipping PostgresCluster deletion"
+                DSM_DEPS=1
               fi
-            else
-              echo "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, skipping"
             fi
 
-            # Delete admin password Secret and DSM-created secret
-            kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
-            kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+            # Check knative: knative-demo namespace in guest cluster
+            if [ "$TEARDOWN_KNATIVE" != "true" ]; then
+              GUEST_KUBECONFIG="${KUBECONFIG:-./kubeconfig-${CLUSTER_NAME}.yaml}"
+              if [ -f "$GUEST_KUBECONFIG" ]; then
+                if kubectl --kubeconfig="$GUEST_KUBECONFIG" get ns knative-demo >/dev/null 2>&1; then
+                  echo "::warning::knative-demo namespace still exists — skipping PostgresCluster deletion"
+                  DSM_DEPS=1
+                fi
+              else
+                echo "::warning::Guest cluster kubeconfig not found — cannot verify knative-demo status, skipping PostgresCluster deletion"
+                DSM_DEPS=1
+              fi
+            fi
 
-            # Delete dsm-pg-creds KeyValueSecret
-            vcf plugin install secret 2>/dev/null || true
-            echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
-            echo "KeyValueSecret 'dsm-pg-creds' cleaned up"
+            if [ "$DSM_DEPS" -eq 0 ]; then
+              # Delete PostgresCluster
+              if kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
+                kubectl delete postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found
+                echo "PostgresCluster '${DSM_CLUSTER_NAME}' delete command issued"
+
+                # Wait for PostgresCluster termination
+                ELAPSED=0
+                while [ "$ELAPSED" -lt "$DSM_TIMEOUT" ]; do
+                  if ! kubectl get postgrescluster "${DSM_CLUSTER_NAME}" -n "$NS_NAME" >/dev/null 2>&1; then
+                    echo "PostgresCluster '${DSM_CLUSTER_NAME}' fully deleted"
+                    break
+                  fi
+                  echo "  Waiting for PostgresCluster deletion... (${ELAPSED}s/${DSM_TIMEOUT}s)"
+                  sleep "$POLL_INTERVAL"
+                  ELAPSED=$((ELAPSED + POLL_INTERVAL))
+                done
+
+                if [ "$ELAPSED" -ge "$DSM_TIMEOUT" ]; then
+                  echo "::warning::PostgresCluster '${DSM_CLUSTER_NAME}' was not fully deleted within ${DSM_TIMEOUT}s"
+                fi
+              else
+                echo "PostgresCluster '${DSM_CLUSTER_NAME}' does not exist, skipping"
+              fi
+
+              # Delete admin password Secret and DSM-created secret
+              kubectl delete secret "${ADMIN_PASSWORD_SECRET_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+              kubectl delete secret "pg-${DSM_CLUSTER_NAME}" -n "$NS_NAME" --ignore-not-found 2>/dev/null || true
+
+              # Delete dsm-pg-creds KeyValueSecret
+              vcf plugin install secret 2>/dev/null || true
+              echo "y" | vcf secret delete dsm-pg-creds 2>/dev/null || true
+              echo "KeyValueSecret 'dsm-pg-creds' cleaned up"
+            else
+              echo "Skipping PostgresCluster deletion — dependent deployments still exist"
+            fi
 
             # Delete ServiceAccount and token (shared with secrets-demo — safe to delete)
             kubectl delete sa internal-app --ignore-not-found 2>/dev/null || true
@@ -1130,6 +1183,7 @@ jobs:
           | Metrics Stack | $([ "$TEARDOWN_METRICS" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Cluster Stack | $([ "$TEARDOWN_CLUSTER" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Hybrid App Stack | $([ "$TEARDOWN_HYBRID_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
+          | Secrets Demo | $([ "$TEARDOWN_SECRETS_DEMO" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
           | Bastion VM | $([ "$TEARDOWN_BASTION_VM" = "true" ] && echo "✅ Torn down (\`${BASTION_VM_NAME}\`)" || echo "⏭️ Skipped") |
           | Managed DB App | $([ "$TEARDOWN_MANAGED_DB_APP" = "true" ] && echo "✅ Torn down (\`${DSM_CLUSTER_NAME}\`)" || echo "⏭️ Skipped") |
           | HA VM App | $([ "$TEARDOWN_HA_VM_APP" = "true" ] && echo "✅ Torn down" || echo "⏭️ Skipped") |
@@ -1137,7 +1191,7 @@ jobs:
           EOF
 
           if [ "$TEARDOWN_CLUSTER" = "true" ]; then
-            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ] || [ "$TEARDOWN_KNATIVE" != "true" ]; then
+            if [ "$TEARDOWN_GITOPS" != "true" ] || [ "$TEARDOWN_METRICS" != "true" ] || [ "$TEARDOWN_HYBRID_APP" != "true" ] || [ "$TEARDOWN_SECRETS_DEMO" != "true" ] || [ "$TEARDOWN_BASTION_VM" != "true" ] || [ "$TEARDOWN_MANAGED_DB_APP" != "true" ] || [ "$TEARDOWN_HA_VM_APP" != "true" ] || [ "$TEARDOWN_KNATIVE" != "true" ]; then
               cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 
           > ⚠️ **Orphan Warning:** Cluster was deleted but some application stacks were skipped. Skipped stacks have been orphaned.

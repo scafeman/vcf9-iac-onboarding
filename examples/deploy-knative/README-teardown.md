@@ -12,7 +12,7 @@ The script is fully non-interactive. All configuration is driven by the same env
 
 ### Phase 1: Delete Dashboard, RBAC, API Server, Audit Function, and knative-demo Namespace
 
-Deletes resources in order: Dashboard Deployment/Service, RBAC resources (RoleBinding, Role, ServiceAccount), API Server Deployment/Service, Knative Service `asset-audit`, and the `knative-demo` namespace.
+Deletes resources in order: sslip.io Ingress and TLS Certificate (if `USE_SSLIP_DNS` was enabled), Dashboard Deployment/Service, RBAC resources (RoleBinding, Role, ServiceAccount), API Server Deployment/Service, Knative Service `asset-audit`, and the `knative-demo` namespace.
 
 ```
 kubectl delete deployment knative-dashboard -n knative-demo --ignore-not-found
@@ -61,7 +61,7 @@ kubectl delete ns knative-serving --ignore-not-found
 
 ### Phase 5: Delete Knative CRDs
 
-Deletes the Knative Serving CRDs using the upstream manifest, then cleans up any remaining Knative CRDs, webhooks, ClusterRoles, and ClusterRoleBindings.
+Strips finalizers from all Knative CRDs first to prevent hanging, then deletes the Knative Serving CRDs using the upstream manifest. Cleans up any remaining Knative CRDs (also with finalizer stripping), webhooks, ClusterRoles, and ClusterRoleBindings.
 
 ```
 kubectl delete -f <serving-crds-url> --ignore-not-found

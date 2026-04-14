@@ -286,7 +286,7 @@ These end-to-end scripts orchestrate full deployments across multiple VCF resour
 Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
   ├─► Deploy Metrics: VKS Metrics Observability (monitoring stack)
   ├─► Deploy GitOps: Self-Contained ArgoCD Consumption Model (GitOps + CI/CD)
-  ├─► Deploy Hybrid App: Infrastructure Asset Tracker (VM-to-container connectivity)
+  ├─► Deploy Hybrid App: Infrastructure Asset Tracker (container-to-VM connectivity)
   ├─► Deploy Managed DB App: DSM PostgresCluster Asset Tracker (managed database)
   ├─► Deploy HA VM App: HA Three-Tier Application on VMs (VM-based HA with managed DB)
   ├─► Deploy Knative: Serverless Asset Tracker with DSM PostgreSQL (Knative Serving FaaS)
@@ -295,11 +295,13 @@ Deploy Cluster: Full Stack Deploy (VKS cluster provisioning)
 
 Deploy Metrics, Deploy GitOps, Deploy Hybrid App, Deploy Managed DB App, and Deploy Knative all require a running VKS cluster provisioned by Deploy Cluster. They are independent of each other and can be deployed in any order.
 
+> See the [Architecture Diagrams](../docs/architecture/) for detailed high-level design documents with Mermaid diagrams for each pattern.
+
 ---
 
 ## Deploy Cluster: Full Stack Deploy
 
-Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, cluster lifecycle, and Cluster Autoscaler installation — from zero to a running Kubernetes cluster with LoadBalancer support, `nfs` storageClass, and automatic node scaling.
+Provisions a complete VKS cluster from scratch using the VCF CLI. Handles project creation, RBAC, Supervisor Namespace, VPC networking, cluster lifecycle, Cluster Autoscaler installation, cert-manager, Contour ingress controller, CoreDNS sslip.io forwarding, and Let's Encrypt ClusterIssuer — from zero to a running Kubernetes cluster with LoadBalancer support, `nfs` storageClass, automatic node scaling, and sslip.io DNS with optional TLS. The functional test workload uses a custom container image (`scafeman/vks-test-app:latest`) with HTML content.
 
 | | |
 |---|---|
@@ -310,7 +312,7 @@ Provisions a complete VKS cluster from scratch using the VCF CLI. Handles projec
 
 ## Deploy Metrics: VKS Metrics Observability
 
-Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collection), Prometheus (metrics storage), and Grafana (dashboards). Uses VCF Supervisor packages for Telegraf and Prometheus, and Helm for the Grafana Operator.
+Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collection), Prometheus (metrics storage), and Grafana (dashboards). Uses VCF Supervisor packages for Telegraf and Prometheus, and Helm for the Grafana Operator. When sslip.io DNS is enabled, Grafana is accessible via an sslip.io hostname with optional Let's Encrypt TLS, replacing the self-signed certificate and CoreDNS patching workflow.
 
 | | |
 |---|---|
@@ -322,7 +324,7 @@ Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collec
 
 ## Deploy GitOps: Self-Contained ArgoCD Consumption Model
 
-Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application.
+Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application. When sslip.io DNS is enabled, Harbor, GitLab, and ArgoCD are accessible via sslip.io hostnames with optional Let's Encrypt TLS, replacing the self-signed certificate and CoreDNS patching workflow.
 
 | | |
 |---|---|
@@ -346,7 +348,7 @@ Deploys a minimal Ubuntu 24.04 bastion VM as a secure SSH jump host in a VCF 9 s
 
 ## Deploy Hybrid App: Infrastructure Asset Tracker
 
-Deploys a full-stack demo application demonstrating VM-to-container connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster.
+Deploys a full-stack demo application demonstrating container-to-VM connectivity within a VCF 9 namespace. A PostgreSQL 16 database runs on a dedicated VM provisioned via the VCF VM Service, while a Node.js REST API and Next.js frontend run as containerized workloads in the VKS guest cluster. The dashboard is accessible via an sslip.io hostname with optional Let's Encrypt TLS.
 
 | | |
 |---|---|
@@ -358,7 +360,7 @@ Deploys a full-stack demo application demonstrating VM-to-container connectivity
 
 ## Deploy Managed DB App: DSM PostgresCluster Infrastructure Asset Tracker
 
-Deploys the same Infrastructure Asset Tracker application but backed by a VCF Database Service Manager (DSM) managed PostgresCluster instead of a manually provisioned VM. This is the VCF equivalent of AWS EKS + RDS — a fully managed PostgreSQL instance with automated maintenance, patching, and connection management. Credentials are securely stored in the VCF Secret Store and injected via vault-agent sidecar.
+Deploys the same Infrastructure Asset Tracker application but backed by a VCF Database Service Manager (DSM) managed PostgresCluster instead of a manually provisioned VM. This is the VCF equivalent of AWS EKS + RDS — a fully managed PostgreSQL instance with automated maintenance, patching, and connection management. Credentials are securely stored in the VCF Secret Store and injected via vault-agent sidecar. The dashboard is accessible via an sslip.io hostname with optional Let's Encrypt TLS.
 
 | | |
 |---|---|
@@ -382,7 +384,7 @@ Deploys a traditional HA three-tier application entirely on VCF VM Service VMs �
 
 ## Deploy Knative: Serverless Asset Tracker with DSM PostgreSQL
 
-Deploys Knative Serving on an existing VKS cluster with a serverless audit function, Express API server, DSM-managed PostgresCluster, and a Next.js dashboard — the VCF equivalent of deploying AWS Lambda + API Gateway + RDS. The audit function scales to zero when idle and cold-starts on request, demonstrating Knative's FaaS capabilities with persistent DSM PostgreSQL storage.
+Deploys Knative Serving on an existing VKS cluster with a serverless audit function, Express API server, DSM-managed PostgresCluster, and a Next.js dashboard — the VCF equivalent of deploying AWS Lambda + API Gateway + RDS. The audit function scales to zero when idle and cold-starts on request, demonstrating Knative's FaaS capabilities with persistent DSM PostgreSQL storage. The dashboard is accessible via an sslip.io hostname with optional Let's Encrypt TLS.
 
 | | |
 |---|---|

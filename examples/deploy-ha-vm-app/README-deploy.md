@@ -4,6 +4,8 @@
 
 `deploy-ha-vm-app.sh` deploys a traditional high-availability three-tier application entirely on VCF VM Service VMs — the VCF equivalent of deploying a classic HA application on AWS EC2 instances with 2× ALB and RDS. Unlike container-based examples, this deploys all application tiers on VMs provisioned via the VirtualMachine CRD, with VirtualMachineService resources providing load balancing.
 
+> See the [Architecture Diagram](../../docs/architecture/deploy-ha-vm-app.md) for a visual overview of this deployment pattern.
+
 **Architecture:**
 - **Web Tier:** 2 Ubuntu 24.04 VMs (`web-vm-01`, `web-vm-02`) running Next.js, fronted by a public VirtualMachineService LoadBalancer (`ha-web-lb`) on port 80
 - **API Tier:** 2 Ubuntu 24.04 VMs (`api-vm-01`, `api-vm-02`) running Node.js/Express, fronted by a VirtualMachineService LoadBalancer (`ha-api-lb`) on the API port
@@ -90,6 +92,10 @@ Performs end-to-end validation:
 2. **API health check** — `curl` to `/healthz` via the Web LB, expects HTTP 200
 
 Prints a deployment summary with the Web LB external IP, all VM names and IPs, and the DSM connection endpoint.
+
+### sslip.io DNS Alias
+
+When `USE_SSLIP_DNS=true` (default), the deployment summary includes an sslip.io alias for the Web LB IP (e.g., `ha-web.<IP>.sslip.io`). Since the HA VM App uses VirtualMachineService LoadBalancers (not Kubernetes Ingress), no Ingress or TLS certificate is created — the sslip.io hostname is a convenience alias that resolves to the Web LB external IP without requiring `/etc/hosts` entries. VM-based LoadBalancers cannot use Kubernetes Ingress, so the sslip.io hostname is printed in the summary for convenience only.
 
 ---
 

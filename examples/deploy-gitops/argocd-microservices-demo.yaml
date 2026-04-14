@@ -23,16 +23,14 @@ spec:
   # Source — where ArgoCD fetches the Kubernetes manifests
   # ---------------------------------------------------------------------------
   source:
-    # Git repository containing the microservices demo manifests
+    # Git repository containing the Kustomize overlay for the microservices demo.
+    # The overlay references upstream Google manifests and applies VCF-specific
+    # patches (e.g., frontend-external changed from LoadBalancer to ClusterIP).
     repoURL: HELM_CHARTS_REPO_URL
-    # Track the latest commit on the default branch
-    targetRevision: HEAD
-    # Path within the repository where the Kubernetes manifests live
-    path: release
-    # Exclude Istio-specific manifests (ServiceEntry, VirtualService, Gateway)
-    # since Istio is not installed on the VKS cluster
-    directory:
-      exclude: 'istio-manifests.yaml'
+    # Track the current branch (defaults to main after PR merge)
+    targetRevision: ARGOCD_TARGET_REVISION
+    # Path within the repository where the Kustomize overlay lives
+    path: examples/deploy-gitops/microservices-overlay
 
   # ---------------------------------------------------------------------------
   # Destination — the target cluster and namespace for deployment

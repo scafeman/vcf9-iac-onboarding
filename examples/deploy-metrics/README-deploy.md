@@ -2,9 +2,13 @@
 
 ## Overview
 
-`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Deploy Cluster. It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+`deploy-metrics.sh` installs the metrics observability stack on an existing VKS cluster provisioned by Deploy Cluster.
 
-Grafana is exposed externally via a Contour Ingress with TLS termination using a self-signed wildcard certificate (same pattern as Deploy GitOps). Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
+> See the [Architecture Diagram](../../docs/architecture/deploy-metrics.md) for a visual overview of this deployment pattern.
+
+It registers the VKS standard packages repository, installs Telegraf for node and pod metrics collection, installs cert-manager and Contour as prerequisites, installs Prometheus for metrics storage and querying, and deploys Grafana with pre-configured Kubernetes dashboards for visualization.
+
+Grafana is exposed externally via a Contour Ingress with TLS termination. When `USE_SSLIP_DNS=true` (default), Grafana uses an sslip.io hostname with optional Let's Encrypt TLS — no DNS entries or hosts file changes needed. When `USE_SSLIP_DNS=false`, a self-signed wildcard certificate is used with CoreDNS patching for internal resolution. Authentication is enabled with a randomly generated admin password displayed in the deployment summary.
 
 The script is fully non-interactive. All configuration is driven by environment variables (loaded from `.env` via Docker Compose). No user input is required during execution.
 
@@ -56,11 +60,13 @@ Installs Contour (`contour.kubernetes.vmware.com`) as a prerequisite for Prometh
 
 ### Phase 7b: Self-Signed Certificate Generation
 
-Generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DOMAIN>`). If certificates already exist in the `./certs` directory (e.g., from a previous Deploy GitOps deployment), this phase is skipped. The wildcard certificate is used for TLS termination on the Grafana Ingress.
+When `USE_SSLIP_DNS=false`, generates a self-signed CA and wildcard certificate for `*.lab.local` (or `*.<DOMAIN>`). If certificates already exist in the `./certs` directory (e.g., from a previous Deploy GitOps deployment), this phase is skipped. The wildcard certificate is used for TLS termination on the Grafana Ingress.
+
+When `USE_SSLIP_DNS=true` (default), this phase is skipped entirely — Grafana uses cert-manager for TLS via the sslip.io Ingress instead of self-signed certificates.
 
 ### Phase 7c: Contour LoadBalancer IP & CoreDNS Configuration
 
-Waits for the Contour Envoy LoadBalancer service (in `tanzu-system-ingress`) to receive an external IP from NSX. Patches the CoreDNS ConfigMap with a static host entry mapping `grafana.<DOMAIN>` to the Contour LB IP, then restarts CoreDNS pods. Skips the patch if the entry already exists.
+Waits for the Contour Envoy LoadBalancer service (in `tanzu-system-ingress`) to receive an external IP from NSX. When `USE_SSLIP_DNS=true` (default), the script uses an sslip.io hostname for Grafana (e.g., `grafana.<IP>.sslip.io`) and skips CoreDNS patching — sslip.io resolves externally without any cluster DNS configuration. When `USE_SSLIP_DNS=false`, the script falls back to the original behavior: patches the CoreDNS ConfigMap with a static host entry mapping `grafana.<DOMAIN>` to the Contour LB IP, then restarts CoreDNS pods. Skips the patch if the entry already exists.
 
 ### Phase 8: Prometheus Installation
 
@@ -170,7 +176,13 @@ docker exec vcf9-dev bash -c "export KUBECONFIG=./kubeconfig-<CLUSTER_NAME>.yaml
 
 After the deploy completes, Grafana is accessible via HTTPS through the Contour ingress controller.
 
-### 1. Add DNS entry to your local machine
+### When `USE_SSLIP_DNS=true` (default)
+
+Grafana is accessible via the sslip.io hostname shown in the deployment summary (e.g., `https://grafana.<IP>.sslip.io`). No DNS entries or hosts file changes are needed — sslip.io resolves automatically. If Let's Encrypt TLS is configured, the certificate is trusted by browsers with no additional setup.
+
+### When `USE_SSLIP_DNS=false`
+
+#### 1. Add DNS entry to your local machine
 
 The deployment summary prints the Contour LoadBalancer IP and the required hosts file entry. Add it to your local machine:
 
@@ -220,19 +232,28 @@ The observability stack has a specific dependency chain that the script respects
 
 ```
 Package Repository → Telegraf (independent)
-Package Repository → cert-manager → Contour → Certificates → CoreDNS → Prometheus → Grafana (Ingress + datasource)
+Package Repository → cert-manager → Contour → Envoy LB IP → Prometheus → Grafana
 ```
 
+When `USE_SSLIP_DNS=true` (default):
+- **Self-signed certificates** (Phase 7b) are skipped — cert-manager provides TLS via Let's Encrypt
+- **CoreDNS patching** (Phase 7c) is skipped — sslip.io resolves externally
+- **Grafana Ingress** uses cert-manager annotations for automatic TLS certificate provisioning
+
+When `USE_SSLIP_DNS=false`:
+- **Self-signed certificates** are generated for `*.<DOMAIN>`
+- **CoreDNS** is patched with a static host entry for `grafana.<DOMAIN>`
+- **Grafana Ingress** uses the self-signed wildcard certificate for TLS
+
+Common to both modes:
 - The **Package Repository** must be registered first — all VKS standard packages are sourced from it.
 - **Telegraf** is independent of the Prometheus chain and is installed immediately after the repository.
 - **cert-manager** must be installed before Contour and Prometheus (provides TLS certificate management).
 - **Contour** must be installed before Prometheus (provides HTTP ingress) and before Grafana (provides external access).
-- **Certificates** must be generated before the Grafana Ingress can serve HTTPS traffic.
-- **CoreDNS** must be patched with the Grafana hostname before Grafana is accessible by name.
 - **Prometheus** must be installed before Grafana (Grafana uses it as a datasource).
 - **Grafana** is installed last, after Prometheus is reconciled and serving metrics.
 
-The teardown script (`teardown-metrics.sh`) reverses this order: Grafana → Prometheus → Contour → cert-manager → Telegraf → repository → namespace.
+The teardown script (`teardown-metrics.sh`) reverses this order: Grafana → Prometheus → Contour → cert-manager → Telegraf → repository → namespace. CRD finalizers are stripped before deletion to prevent hanging.
 
 ---
 

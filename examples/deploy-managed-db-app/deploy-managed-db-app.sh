@@ -90,6 +90,12 @@ POD_TIMEOUT="${POD_TIMEOUT:-300}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
 
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+SSLIP_HOSTNAME_PREFIX="${SSLIP_HOSTNAME_PREFIX:-managed-db-dashboard}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
 ###############################################################################
 # Exit Codes
 #   0 = Success
@@ -100,6 +106,12 @@ POLL_INTERVAL="${POLL_INTERVAL:-30}"
 #   5 = Frontend service deployment failure / vault setup failure
 #   6 = Connectivity verification failure
 ###############################################################################
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -452,7 +464,7 @@ log_success "Phase 1c complete — ServiceAccount 'internal-app' with long-lived
 log_step 2 "Building and pushing container images"
 
 API_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-api:${IMAGE_TAG}"
-FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
+FRONTEND_IMAGE="${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}"
 
 # Login to DockerHub if credentials are available
 if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -469,7 +481,7 @@ fi
 log_success "API container image '${API_IMAGE}' built successfully"
 
 # Build Frontend image
-if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
+if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-managed-db-app/dashboard/; then
   log_error "Failed to build Frontend container image '${FRONTEND_IMAGE}'"
   exit 3
 fi
@@ -615,13 +627,101 @@ fi
 
 log_success "Phase 3b complete — vault-injector deployed, supervisor token copied"
 
+# Ensure vault-injector RBAC exists (may have been deleted by a previous teardown)
+if ! kubectl get clusterrole vault-injector-clusterrole >/dev/null 2>&1; then
+  echo "vault-injector ClusterRole missing — recreating RBAC"
+  cat <<RBACEOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-injector-clusterrole
+rules:
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources: ["mutatingwebhookconfigurations"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: [""]
+  resources: ["secrets", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-injector-clusterrolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-injector-clusterrole
+subjects:
+- kind: ServiceAccount
+  name: vault-injector
+  namespace: tkg-packages
+RBACEOF
+  # Restart vault-injector to pick up the new RBAC
+  kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
+  log_success "vault-injector RBAC recreated and pod restarted"
+  sleep 10
+fi
+
 # Wait for vault-injector mutating webhook to be registered
 # (the webhook must be active before creating pods with vault annotations)
 if ! wait_for_condition "vault-injector webhook to be registered" \
-  60 10 \
+  300 10 \
   "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
-  log_warn "Vault-injector webhook not found — vault-agent sidecar may not be injected"
+  # Restart-and-retry if webhook not registered after initial wait
+  log_warn "Webhook not registered after initial wait — recreating webhook config..."
+
+  # The vault-injector pod does NOT create the MutatingWebhookConfiguration itself.
+  # It only watches/updates an existing one. If the teardown deleted it, we must recreate it.
+  CA_BUNDLE=$(kubectl get secret vault-injector-certs -n tkg-packages -o jsonpath='{.data.cert}' 2>/dev/null || true)
+  if [ -n "$CA_BUNDLE" ]; then
+    cat <<WHEOF | kubectl apply -f -
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: vault-agent-injector-cfg
+  labels:
+    app.kubernetes.io/instance: vault
+    app.kubernetes.io/name: vault-injector
+webhooks:
+- name: vault.hashicorp.com
+  admissionReviewVersions: ["v1", "v1beta1"]
+  clientConfig:
+    caBundle: "${CA_BUNDLE}"
+    service:
+      name: vault-agent-injector-svc
+      namespace: tkg-packages
+      path: /mutate
+  failurePolicy: Ignore
+  matchPolicy: Exact
+  reinvocationPolicy: Never
+  rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    operations: ["CREATE", "UPDATE"]
+    resources: ["pods"]
+  sideEffects: None
+  timeoutSeconds: 30
+WHEOF
+    log_success "MutatingWebhookConfiguration recreated from vault-injector-certs secret"
+  else
+    log_warn "vault-injector-certs secret not found — cannot recreate webhook config"
+  fi
+
+  # Restart vault-injector so it picks up the recreated webhook config
+  kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
+  kubectl rollout status deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector --timeout=120s 2>/dev/null || true
+
+  # Wait for webhook after restart
+  if ! wait_for_condition "vault-injector webhook to be registered (after restart)" \
+    300 5 \
+    "kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1"; then
+    log_error "vault-injector webhook did not register within timeout after restart"
+    exit 1
+  fi
 fi
+
+# Brief pause to ensure webhook is fully ready to intercept pod creation
+sleep 5
 
 # Deploy API Deployment with vault annotations
 if ! cat <<EOF | kubectl apply -f -
@@ -713,9 +813,17 @@ log_success "API ClusterIP Service applied on port ${API_PORT}"
 if ! wait_for_condition "API pod to be running" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
   "kubectl get pods -n '${APP_NAMESPACE}' -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'"; then
-  log_error "API pod did not reach Running state within ${POD_TIMEOUT}s"
-  kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api -o wide 2>/dev/null || true
-  exit 4
+  # Pod may be in CrashLoopBackOff if vault-injector sidecar wasn't injected on first create.
+  # Restart the deployment to trigger re-injection, then wait again.
+  log_warn "API pod not running — restarting deployment to trigger vault-agent sidecar injection"
+  kubectl rollout restart deployment/managed-db-api -n "${APP_NAMESPACE}" 2>/dev/null || true
+  if ! wait_for_condition "API pod to be running (after restart)" \
+    "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get pods -n '${APP_NAMESPACE}' -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'"; then
+    log_error "API pod did not reach Running state within ${POD_TIMEOUT}s"
+    kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api -o wide 2>/dev/null || true
+    exit 4
+  fi
 fi
 
 log_success "API pod is running"
@@ -746,7 +854,7 @@ spec:
     spec:
       containers:
       - name: dashboard
-        image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
+        image: ${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}
         env:
         - name: API_HOST
           value: "managed-db-api.${APP_NAMESPACE}.svc.cluster.local"
@@ -762,7 +870,12 @@ fi
 
 log_success "Frontend Deployment applied"
 
-# Deploy Frontend LoadBalancer Service
+# Deploy Frontend Service (ClusterIP when using Ingress, LoadBalancer otherwise)
+DASHBOARD_SVC_TYPE="LoadBalancer"
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  DASHBOARD_SVC_TYPE="ClusterIP"
+fi
+
 if ! cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
@@ -770,7 +883,7 @@ metadata:
   name: managed-db-dashboard-lb
   namespace: ${APP_NAMESPACE}
 spec:
-  type: LoadBalancer
+  type: ${DASHBOARD_SVC_TYPE}
   selector:
     app: managed-db-dashboard
   ports:
@@ -779,11 +892,11 @@ spec:
     protocol: TCP
 EOF
 then
-  log_error "Failed to deploy Frontend LoadBalancer Service"
+  log_error "Failed to deploy Frontend Service"
   exit 5
 fi
 
-log_success "Frontend LoadBalancer Service applied (port 80 → ${FRONTEND_PORT})"
+log_success "Frontend Service applied (type: ${DASHBOARD_SVC_TYPE}, port 80 → ${FRONTEND_PORT})"
 
 # Wait for Frontend pod to reach Running state
 if ! wait_for_condition "Frontend pod to be running" \
@@ -796,24 +909,82 @@ fi
 
 log_success "Frontend pod is running"
 
-# Wait for LoadBalancer external IP
-if ! wait_for_condition "LoadBalancer 'managed-db-dashboard-lb' to receive external IP" \
-  "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
-  "[[ -n \$(kubectl get svc managed-db-dashboard-lb -n '${APP_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
-  log_error "LoadBalancer 'managed-db-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
-  kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
-  exit 5
+# Get frontend access URL
+FRONTEND_IP=""
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+  # Wait for LoadBalancer external IP (only when not using Ingress)
+  if ! wait_for_condition "LoadBalancer 'managed-db-dashboard-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc managed-db-dashboard-lb -n '${APP_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    log_error "LoadBalancer 'managed-db-dashboard-lb' did not receive an external IP within ${LB_TIMEOUT}s"
+    kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+    exit 5
+  fi
+
+  FRONTEND_IP=$(kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  log_success "Frontend LoadBalancer assigned external IP: ${FRONTEND_IP}"
 fi
 
-FRONTEND_IP=$(kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-log_success "Frontend LoadBalancer assigned external IP: ${FRONTEND_IP}"
-log_success "Phase 4 complete — Frontend service deployed with external IP ${FRONTEND_IP}"
+log_success "Phase 4 complete — Frontend service deployed"
 
 ###############################################################################
-# Phase 5: Connectivity Verification
+# Phase 5: sslip.io DNS + TLS (guarded by USE_SSLIP_DNS)
 ###############################################################################
 
-log_step 5 "Verifying end-to-end connectivity"
+SSLIP_HOSTNAME=""
+SSLIP_URL=""
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  # sslip.io hostname must use the Contour envoy-lb IP (Ingress routes through Contour)
+  if ! wait_for_condition "Envoy LoadBalancer 'envoy-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    echo "  ⚠ WARNING: Envoy LoadBalancer did not receive an external IP — skipping sslip.io"
+  else
+    CONTOUR_LB_IP=$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    SSLIP_HOSTNAME=$(construct_sslip_hostname "${SSLIP_HOSTNAME_PREFIX}" "${CONTOUR_LB_IP}")
+    log_success "sslip.io hostname: ${SSLIP_HOSTNAME}"
+
+    # Determine TLS capability
+    TLS_ENABLED=false
+    if check_cert_manager_available && check_cluster_issuer_ready "${CLUSTER_ISSUER_NAME}"; then
+      TLS_ENABLED=true
+    fi
+
+    # Create Ingress
+    create_ingress_with_tls "managed-db-dashboard-sslip-ingress" "${APP_NAMESPACE}" \
+      "${SSLIP_HOSTNAME}" "managed-db-dashboard-lb" 80 "${TLS_ENABLED}" "${CLUSTER_ISSUER_NAME}"
+
+    log_success "sslip.io Ingress created (TLS: ${TLS_ENABLED})"
+
+    if [[ "${TLS_ENABLED}" == "true" ]]; then
+      if wait_for_certificate "managed-db-dashboard-sslip-ingress-tls" "${APP_NAMESPACE}" "${CERT_WAIT_TIMEOUT}"; then
+        SSLIP_URL="https://${SSLIP_HOSTNAME}"
+      else
+        echo "  ⚠ WARNING: TLS certificate not ready — falling back to HTTP"
+        SSLIP_URL="http://${SSLIP_HOSTNAME}"
+      fi
+    else
+      SSLIP_URL="http://${SSLIP_HOSTNAME}"
+    fi
+  fi
+fi
+
+###############################################################################
+# Phase 5b: Connectivity Verification
+###############################################################################
+
+log_step "5b" "Verifying end-to-end connectivity"
+
+# Determine the test URL (sslip.io Ingress or raw LB IP)
+if [[ -n "${SSLIP_URL}" ]]; then
+  TEST_URL="${SSLIP_URL}"
+elif [[ -n "${FRONTEND_IP}" ]]; then
+  TEST_URL="http://${FRONTEND_IP}"
+else
+  log_error "No frontend URL available for connectivity test"
+  exit 6
+fi
 
 RETRY_TIMEOUT=120
 RETRY_INTERVAL=10
@@ -822,9 +993,9 @@ RETRY_INTERVAL=10
 ELAPSED=0
 HTTP_STATUS=""
 while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
-  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
   if [[ "${HTTP_STATUS}" == "200" ]]; then
-    log_success "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+    log_success "Frontend HTTP connectivity test passed — received status 200 from ${TEST_URL}"
     break
   fi
   echo "  Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -832,17 +1003,17 @@ while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
   ELAPSED=$((ELAPSED + RETRY_INTERVAL))
 done
 if [[ "${HTTP_STATUS}" != "200" ]]; then
-  log_error "Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
+  log_error "Frontend HTTP test returned status ${HTTP_STATUS} from ${TEST_URL} (expected 200)"
   exit 6
 fi
 
-# HTTP GET to API health check via frontend (with retries — API may still be initializing schema)
+# HTTP GET to API health check via frontend (with retries)
 ELAPSED=0
 HEALTH_STATUS=""
 while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
-  HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+  HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TEST_URL}/api/healthz" --max-time 10 || true)
   if [[ "${HEALTH_STATUS}" == "200" ]]; then
-    log_success "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+    log_success "API health check passed — received status 200 from ${TEST_URL}/api/healthz"
     break
   fi
   echo "  API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -850,11 +1021,11 @@ while [[ "${ELAPSED}" -lt "${RETRY_TIMEOUT}" ]]; do
   ELAPSED=$((ELAPSED + RETRY_INTERVAL))
 done
 if [[ "${HEALTH_STATUS}" != "200" ]]; then
-  log_error "API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
+  log_error "API health check returned status ${HEALTH_STATUS} from ${TEST_URL}/api/healthz (expected 200)"
   exit 6
 fi
 
-log_success "Phase 5 complete — end-to-end connectivity verified"
+log_success "Phase 5b complete — end-to-end connectivity verified"
 
 ###############################################################################
 # Success Summary
@@ -868,7 +1039,12 @@ echo "  Cluster:       ${CLUSTER_NAME}"
 echo "  Namespace:     ${APP_NAMESPACE}"
 echo "  DSM Host:      ${DSM_HOST}:${DSM_PORT}"
 echo "  Database:      ${DSM_DBNAME}"
+if [[ -n "${FRONTEND_IP}" ]]; then
 echo "  Frontend:      http://${FRONTEND_IP}"
+fi
+if [[ -n "${SSLIP_URL}" ]]; then
+echo "  sslip.io:      ${SSLIP_URL}"
+fi
 echo "============================================="
 echo ""
 

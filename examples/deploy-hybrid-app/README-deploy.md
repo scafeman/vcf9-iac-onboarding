@@ -2,7 +2,9 @@
 
 ## Overview
 
-`deploy-hybrid-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates VM-to-container connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
+`deploy-hybrid-app.sh` deploys a full-stack Infrastructure Asset Tracker demo that demonstrates container-to-VM connectivity within a VCF 9 namespace. It provisions a PostgreSQL 16 database on a dedicated VM via the VCF VM Service, builds and pushes API and Frontend container images, deploys them as containerized workloads in a VKS guest cluster, and verifies end-to-end connectivity.
+
+> See the [Architecture Diagram](../../docs/architecture/deploy-hybrid-app.md) for a visual overview of this deployment pattern.
 
 The system spans two compute models in the same VCF namespace and NSX VPC:
 
@@ -67,9 +69,9 @@ The script waits for the API pod to reach Running state (timeout: 300s).
 Deploys the Next.js dashboard:
 
 1. **Frontend Deployment** (`apps/v1`) — Next.js container configured to proxy API requests to the API ClusterIP Service via cluster DNS (`hybrid-app-api.<APP_NAMESPACE>.svc.cluster.local`).
-2. **Frontend LoadBalancer Service** (`v1`) — Exposes the dashboard on port 80 (mapping to container port 3000) with an NSX-provisioned external IP.
+2. **Frontend Service** (`v1`) — When `USE_SSLIP_DNS=true` (default), the service uses ClusterIP and traffic routes through the shared envoy-lb Ingress with an sslip.io hostname. When `USE_SSLIP_DNS=false`, the service uses LoadBalancer type with an NSX-provisioned external IP on port 80.
 
-The script waits for the Frontend pod to reach Running state and the LoadBalancer to receive an external IP (timeout: 300s).
+The script waits for the Frontend pod to reach Running state and (if using LoadBalancer) for the external IP (timeout: 300s).
 
 ### Phase 5: Connectivity Verification
 
@@ -79,6 +81,17 @@ Performs end-to-end validation:
 2. **API health check** — `curl` to `/api/healthz` via the frontend proxy, expects HTTP 200 with healthy database status
 
 Prints a deployment summary with the Frontend LoadBalancer IP, PostgreSQL VM IP, cluster name, and namespace.
+
+### sslip.io DNS & TLS
+
+When `USE_SSLIP_DNS=true` (default), the script creates a Contour Ingress resource with an sslip.io hostname (e.g., `hybrid-app.<IP>.sslip.io`) pointing to the Envoy LoadBalancer IP. This provides a human-readable DNS name without requiring external DNS configuration. If a Let's Encrypt ClusterIssuer is available (installed by Deploy Cluster Phase 5i), the Ingress includes a `cert-manager.io/cluster-issuer` annotation to automatically provision a trusted TLS certificate.
+
+| Variable | Default | Description |
+|---|---|---|
+| `USE_SSLIP_DNS` | `true` | Enable/disable sslip.io DNS integration |
+| `SSLIP_HOSTNAME_PREFIX` | `hybrid-app` | Hostname prefix for sslip.io DNS name |
+| `CLUSTER_ISSUER_NAME` | `letsencrypt-prod` | ClusterIssuer for TLS certificate requests |
+| `CERT_WAIT_TIMEOUT` | `300` | Seconds to wait for TLS certificate Ready |
 
 ---
 

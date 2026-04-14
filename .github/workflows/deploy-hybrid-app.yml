@@ -104,6 +104,11 @@ jobs:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      SSLIP_HOSTNAME_PREFIX: "hybrid-dashboard"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
+
       # --- Static Configuration ---
       CONTEXT_NAME: hybrid-app-deploy
 
@@ -547,6 +552,13 @@ jobs:
       - name: Deploy Frontend Service
         run: |
           set -euo pipefail
+
+          # Determine service type: ClusterIP when using sslip.io Ingress, LoadBalancer otherwise
+          DASHBOARD_SVC_TYPE="LoadBalancer"
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            DASHBOARD_SVC_TYPE="ClusterIP"
+          fi
+
           cat <<EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -580,7 +592,7 @@ jobs:
             name: hybrid-app-dashboard-lb
             namespace: ${APP_NAMESPACE}
           spec:
-            type: LoadBalancer
+            type: ${DASHBOARD_SVC_TYPE}
             selector:
               app: hybrid-app-dashboard
             ports:
@@ -588,7 +600,7 @@ jobs:
               targetPort: ${FRONTEND_PORT}
               protocol: TCP
           EOF
-          echo "Frontend Deployment and LoadBalancer Service applied (port 80 → ${FRONTEND_PORT})"
+          echo "Frontend Deployment and Service applied (type: ${DASHBOARD_SVC_TYPE}, port 80 → ${FRONTEND_PORT})"
 
       # Step 14: Wait for Frontend Pod Running
       - name: Wait for Frontend Pod Running
@@ -612,47 +624,152 @@ jobs:
           kubectl get pods -n "${APP_NAMESPACE}" -l app=hybrid-app-dashboard -o wide 2>/dev/null || true
           exit 1
 
-      # Step 15: Wait for LoadBalancer IP
-      - name: Wait for LoadBalancer IP
+      # Step 15: Wait for LoadBalancer IP or Create sslip.io Ingress
+      - name: Wait for LoadBalancer IP or Create sslip.io Ingress
         id: get-lb-ip
         run: |
           set -euo pipefail
-          TIMEOUT="${LB_TIMEOUT}"
-          INTERVAL="${POLL_INTERVAL}"
-          ELAPSED=0
           FRONTEND_IP=""
+          DASHBOARD_URL=""
 
-          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            FRONTEND_IP=$(kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$FRONTEND_IP" ]; then
-              echo "LoadBalancer 'hybrid-app-dashboard-lb' assigned external IP: $FRONTEND_IP"
-              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
-              echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
-              exit 0
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            # sslip.io mode: create Ingress via shared envoy-lb
+            echo "USE_SSLIP_DNS=true — creating sslip.io Ingress (ClusterIP service, no public IP wasted)"
+
+            # Get the envoy-lb IP from tanzu-system-ingress namespace
+            TIMEOUT="${LB_TIMEOUT}"
+            INTERVAL="${POLL_INTERVAL}"
+            ELAPSED=0
+            ENVOY_LB_IP=""
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              ENVOY_LB_IP=$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$ENVOY_LB_IP" ]; then
+                echo "Envoy LB IP: $ENVOY_LB_IP"
+                break
+              fi
+              echo "Waiting for envoy-lb external IP... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ -z "$ENVOY_LB_IP" ]; then
+              echo "::error::Envoy LoadBalancer 'envoy-lb' did not receive an external IP within ${TIMEOUT}s"
+              exit 1
             fi
-            echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
-            sleep "$INTERVAL"
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
 
-          echo "::error::LoadBalancer 'hybrid-app-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
-          kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
-          exit 1
+            SSLIP_HOST="${SSLIP_HOSTNAME_PREFIX}.${ENVOY_LB_IP}.sslip.io"
+
+            # Check if ClusterIssuer is ready for TLS
+            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+            TLS_ENABLED="false"
+            if kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+              TLS_ENABLED="true"
+            fi
+
+            # Create sslip.io Ingress (with TLS if ClusterIssuer is ready)
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: hybrid-dashboard-sslip-ingress
+            namespace: ${APP_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${SSLIP_HOST}
+                secretName: hybrid-dashboard-sslip-tls
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: hybrid-app-dashboard-lb
+                      port:
+                        number: 80
+          EOF
+            else
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: hybrid-dashboard-sslip-ingress
+            namespace: ${APP_NAMESPACE}
+          spec:
+            ingressClassName: contour
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: hybrid-app-dashboard-lb
+                      port:
+                        number: 80
+          EOF
+            fi
+            echo "sslip.io Ingress created: ${SSLIP_HOST} (TLS: ${TLS_ENABLED})"
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              DASHBOARD_URL="https://${SSLIP_HOST}"
+            else
+              DASHBOARD_URL="http://${SSLIP_HOST}"
+            fi
+            echo "DASHBOARD_URL=$DASHBOARD_URL" >> "$GITHUB_ENV"
+            echo "frontend_ip=$SSLIP_HOST" >> "$GITHUB_OUTPUT"
+          else
+            # LoadBalancer mode: wait for external IP
+            TIMEOUT="${LB_TIMEOUT}"
+            INTERVAL="${POLL_INTERVAL}"
+            ELAPSED=0
+
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              FRONTEND_IP=$(kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$FRONTEND_IP" ]; then
+                echo "LoadBalancer 'hybrid-app-dashboard-lb' assigned external IP: $FRONTEND_IP"
+                echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+                echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
+                DASHBOARD_URL="http://${FRONTEND_IP}"
+                echo "DASHBOARD_URL=$DASHBOARD_URL" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            echo "::error::LoadBalancer 'hybrid-app-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
+            kubectl get svc hybrid-app-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+            exit 1
+          fi
 
       # Step 16: HTTP Connectivity Test
       - name: HTTP Connectivity Test
         run: |
           set -euo pipefail
-          FRONTEND_IP="${{ steps.get-lb-ip.outputs.frontend_ip }}"
           RETRY_TIMEOUT=120
           RETRY_INTERVAL=10
+
+          # Determine test URL
+          if [ -n "${DASHBOARD_URL:-}" ]; then
+            TEST_URL="${DASHBOARD_URL}"
+          else
+            TEST_URL="http://${{ steps.get-lb-ip.outputs.frontend_ip }}"
+          fi
 
           # Test frontend HTTP connectivity (with retries — Next.js may need a moment)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+            HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
             if [ "$HTTP_STATUS" = "200" ]; then
-              echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+              echo "Frontend HTTP connectivity test passed — received status 200 from ${TEST_URL}"
               break
             fi
             echo "Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -660,16 +777,16 @@ jobs:
             ELAPSED=$((ELAPSED + RETRY_INTERVAL))
           done
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
+            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from ${TEST_URL} (expected 200)"
             exit 1
           fi
 
           # Test API health check via frontend (with retries — API may still be initializing schema)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+            HEALTH_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}/api/healthz" --max-time 10 || true)
             if [ "$HEALTH_STATUS" = "200" ]; then
-              echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+              echo "API health check passed — received status 200 from ${TEST_URL}/api/healthz"
               break
             fi
             echo "API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -677,7 +794,7 @@ jobs:
             ELAPSED=$((ELAPSED + RETRY_INTERVAL))
           done
           if [ "$HEALTH_STATUS" != "200" ]; then
-            echo "::error::API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
+            echo "::error::API health check returned status ${HEALTH_STATUS} from ${TEST_URL}/api/healthz (expected 200)"
             exit 1
           fi
 
@@ -686,6 +803,21 @@ jobs:
       # Step 17: Write Job Summary
       - name: Write Job Summary
         run: |
+          # Determine dashboard URL for summary
+          SUMMARY_URL="${DASHBOARD_URL:-http://${FRONTEND_IP:-N/A}}"
+
+          # Extract sslip.io hostname if Ingress was created
+          SSLIP_HOST=$(kubectl get ingress hybrid-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+          if [ -n "$SSLIP_HOST" ]; then
+            # Check if Ingress has TLS configured
+            TLS_HOST=$(kubectl get ingress hybrid-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.tls[0].hosts[0]}' 2>/dev/null || true)
+            if [ -n "$TLS_HOST" ]; then
+              SUMMARY_URL="https://${SSLIP_HOST}"
+            else
+              SUMMARY_URL="http://${SSLIP_HOST}"
+            fi
+          fi
+
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ Hybrid App Deployment Complete
 
@@ -695,7 +827,7 @@ jobs:
           | Supervisor Namespace | \`${SUPERVISOR_NAMESPACE}\` |
           | App Namespace | \`${APP_NAMESPACE}\` |
           | PostgreSQL VM | \`${VM_IP}\` |
-          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+          | Frontend | ${SUMMARY_URL} |
           | Environment | \`${ENVIRONMENT}\` |
 
           ### Deployed Services
@@ -703,7 +835,7 @@ jobs:
           |---|---|
           | PostgreSQL VM | \`${VM_IP}:5432\` |
           | API | \`hybrid-app-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
-          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+          | Frontend | ${SUMMARY_URL} |
 
           ### Container Images
           | Image | Tag |

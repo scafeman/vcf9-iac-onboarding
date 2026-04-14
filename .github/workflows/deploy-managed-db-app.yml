@@ -137,6 +137,11 @@ jobs:
       # --- Secret Store (vault-injector) ---
       SECRET_STORE_IP: ${{ github.event.client_payload.secret_store_ip || secrets.SECRET_STORE_IP }}
 
+      # --- sslip.io DNS ---
+      USE_SSLIP_DNS: "true"
+      SSLIP_HOSTNAME_PREFIX: "managed-db-dashboard"
+      CLUSTER_ISSUER_NAME: ${{ secrets.CLUSTER_ISSUER_NAME || 'letsencrypt-prod' }}
+
       # --- Static Configuration ---
       CONTEXT_NAME: managed-db-app-deploy
 
@@ -502,9 +507,9 @@ jobs:
       - name: Build and Push Frontend Image
         run: |
           set -euo pipefail
-          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}"
+          FRONTEND_IMAGE="${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}"
 
-          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-hybrid-app/dashboard/; then
+          if ! docker build -t "${FRONTEND_IMAGE}" examples/deploy-managed-db-app/dashboard/; then
             echo "::error::Failed to build Frontend container image '${FRONTEND_IMAGE}'"
             exit 1
           fi
@@ -580,6 +585,28 @@ jobs:
           fi
 
           # Ensure tkg-packages namespace exists (vault-injector installs here)
+          # If the namespace is in Terminating state (from a recent teardown), wait for it to finish
+          NS_PHASE=$(kubectl get ns tkg-packages -o jsonpath='{.status.phase}' 2>/dev/null || true)
+          if [ "$NS_PHASE" = "Terminating" ]; then
+            echo "Namespace 'tkg-packages' is Terminating — waiting for it to finish..."
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
+                echo "Namespace 'tkg-packages' terminated"
+                break
+              fi
+              if [ "$ELAPSED" -ge 60 ]; then
+                echo "Forcing namespace finalizer removal..."
+                kubectl get ns tkg-packages -o json 2>/dev/null \
+                  | jq '.spec.finalizers = []' \
+                  | kubectl replace --raw "/api/v1/namespaces/tkg-packages/finalize" -f - 2>/dev/null || true
+              fi
+              echo "Waiting for tkg-packages termination... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          fi
+
           if ! kubectl get ns tkg-packages >/dev/null 2>&1; then
             kubectl create ns tkg-packages
             kubectl label ns tkg-packages pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null 2>&1 || true
@@ -593,10 +620,52 @@ jobs:
           kubectl label ns tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
           kubectl label limitrange ns-limit-range -n tkg-packages kapp.k14s.io/app- kapp.k14s.io/association- 2>/dev/null || true
 
+          # --- Ensure package repository is registered (may have been removed by a previous teardown) ---
+          PACKAGE_REPO_NAME="tkg-packages"
+          PACKAGE_REPO_URL="${PACKAGE_REPO_URL:-projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211}"
+          if ! vcf package repository list --namespace tkg-packages 2>/dev/null | grep -q "$PACKAGE_REPO_NAME"; then
+            echo "Package repository not found — registering..."
+            vcf package repository add "$PACKAGE_REPO_NAME" \
+              --url "$PACKAGE_REPO_URL" \
+              --namespace tkg-packages
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              if vcf package repository list --namespace tkg-packages 2>/dev/null | grep "$PACKAGE_REPO_NAME" | grep -qi "reconcile"; then
+                echo "Package repository reconciled"
+                break
+              fi
+              echo "Waiting for package repository to reconcile... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          fi
+
           # Install vault-injector (idempotent — shared with secrets-demo)
+          VAULT_INSTALLED=false
           if vcf package installed list -n tkg-packages 2>/dev/null | grep -q "vault-injector"; then
-            echo "vault-injector package already installed, skipping"
-          else
+            if kubectl get pods -A -l app.kubernetes.io/name=vault-injector --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "vault-injector package already installed and pod is running"
+              # Check if webhook is registered — if not, restart the pod to re-register
+              if ! kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1; then
+                echo "vault-injector webhook missing — restarting pod to re-register"
+                kubectl delete pod -n tkg-packages -l app.kubernetes.io/name=vault-injector --force --grace-period=0 2>/dev/null || true
+                sleep 10
+              fi
+              VAULT_INSTALLED=true
+            else
+              echo "vault-injector package exists but pod is not running — removing and reinstalling"
+              kubectl patch packageinstall vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              kubectl patch app vault-injector -n tkg-packages --type merge \
+                -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+              vcf package installed delete vault-injector -n tkg-packages --yes 2>/dev/null || true
+              kubectl delete packageinstall vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              kubectl delete app vault-injector -n tkg-packages --ignore-not-found 2>/dev/null || true
+              sleep 5
+            fi
+          fi
+
+          if [ "$VAULT_INSTALLED" != "true" ]; then
             VAULT_VALUES_FILE=$(mktemp /tmp/vault-injector-values-XXXXXX.yaml)
             cat > "${VAULT_VALUES_FILE}" <<VALEOF
           externalIP: "${SECRET_STORE_IP}"
@@ -630,6 +699,121 @@ jobs:
             sleep "${POLL_INTERVAL}"
             ELAPSED=$((ELAPSED + POLL_INTERVAL))
           done
+
+          # Ensure vault-injector RBAC exists (may have been deleted by a previous teardown)
+          if ! kubectl get clusterrole vault-injector-clusterrole >/dev/null 2>&1; then
+            echo "vault-injector ClusterRole missing — recreating RBAC"
+            cat <<RBACEOF | kubectl create -f -
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: vault-injector-clusterrole
+          rules:
+          - apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations"]
+            verbs: ["get", "list", "watch", "create", "update", "patch"]
+          - apiGroups: [""]
+            resources: ["secrets", "configmaps"]
+            verbs: ["get", "list", "watch", "create", "update", "patch"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: vault-injector-clusterrolebinding
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: vault-injector-clusterrole
+          subjects:
+          - kind: ServiceAccount
+            name: vault-injector
+            namespace: tkg-packages
+          RBACEOF
+            # Restart vault-injector to pick up the new RBAC
+            kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector 2>/dev/null || true
+            echo "vault-injector RBAC recreated and pod restarted"
+            sleep 10
+          fi
+
+          # Wait for vault-injector mutating webhook to be registered
+          # (webhook must be active before creating pods with vault annotations)
+          ELAPSED=0
+          while [ "$ELAPSED" -lt 300 ]; do
+            if kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1; then
+              echo "vault-injector webhook registered"
+              break
+            fi
+            echo "Waiting for vault-injector webhook... (${ELAPSED}s/300s)"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
+
+          # Restart-and-retry if webhook not registered after initial wait
+          if ! kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1; then
+            echo "Webhook not registered after initial wait — recreating webhook config..."
+
+            # The vault-injector pod does NOT create the MutatingWebhookConfiguration itself.
+            # It only watches/updates an existing one. If the teardown deleted it, we must recreate it.
+            CA_BUNDLE=$(kubectl get secret vault-injector-certs -n tkg-packages -o jsonpath='{.data.cert}' 2>/dev/null || true)
+            if [ -n "$CA_BUNDLE" ]; then
+              cat <<WHEOF | kubectl apply -f -
+          apiVersion: admissionregistration.k8s.io/v1
+          kind: MutatingWebhookConfiguration
+          metadata:
+            name: vault-agent-injector-cfg
+            labels:
+              app.kubernetes.io/instance: vault
+              app.kubernetes.io/name: vault-injector
+          webhooks:
+          - name: vault.hashicorp.com
+            admissionReviewVersions: ["v1", "v1beta1"]
+            clientConfig:
+              caBundle: "${CA_BUNDLE}"
+              service:
+                name: vault-agent-injector-svc
+                namespace: tkg-packages
+                path: /mutate
+            failurePolicy: Ignore
+            matchPolicy: Exact
+            reinvocationPolicy: Never
+            rules:
+            - apiGroups: [""]
+              apiVersions: ["v1"]
+              operations: ["CREATE", "UPDATE"]
+              resources: ["pods"]
+            sideEffects: None
+            timeoutSeconds: 30
+          WHEOF
+              echo "MutatingWebhookConfiguration recreated from vault-injector-certs secret"
+            else
+              echo "WARNING: vault-injector-certs secret not found — cannot recreate webhook config"
+            fi
+
+            # Restart vault-injector so it picks up the recreated webhook config
+            kubectl rollout restart deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector
+            kubectl rollout status deployment -n tkg-packages -l app.kubernetes.io/name=vault-injector --timeout=120s
+
+            # Wait for webhook after restart
+            ELAPSED=0
+            while [ $ELAPSED -lt 300 ]; do
+              if kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1; then
+                echo "vault-injector webhook registered after restart (${ELAPSED}s)"
+                break
+              fi
+              echo "Waiting for vault-injector webhook after restart... (${ELAPSED}s/300s)"
+              sleep 5
+              ELAPSED=$((ELAPSED + 5))
+            done
+          fi
+
+          # Explicit failure if webhook still not registered after retry
+          if ! kubectl get mutatingwebhookconfiguration vault-agent-injector-cfg >/dev/null 2>&1; then
+            echo "::error::vault-injector webhook did not register within timeout after restart"
+            exit 1
+          fi
+
+          # Brief pause to ensure webhook is fully ready to intercept pod creation
+          sleep 5
 
           # Deploy API with vault annotations
           cat <<EOF | kubectl apply -f -
@@ -721,14 +905,63 @@ jobs:
             ELAPSED=$((ELAPSED + INTERVAL))
           done
 
-          echo "::error::API pod did not reach Running state within ${TIMEOUT}s"
+          # Pod may be in CrashLoopBackOff if vault-injector sidecar wasn't injected on first create.
+          # Restart the deployment to trigger re-injection, then wait again.
+          echo "::warning::API pod not running — restarting deployment to trigger vault-agent sidecar injection"
+          kubectl rollout restart deployment/managed-db-api -n "${APP_NAMESPACE}" 2>/dev/null || true
+
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            if kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'; then
+              echo "API pod is running (after restart)"
+              exit 0
+            fi
+            echo "Waiting for API pod after restart... (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::error::API pod did not reach Running state within ${TIMEOUT}s (even after restart)"
           kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api -o wide 2>/dev/null || true
+          kubectl logs -n "${APP_NAMESPACE}" -l app=managed-db-api --tail=20 2>/dev/null || true
           exit 1
+
+      # Step 10b: Verify vault-agent sidecar injection
+      - name: Verify Vault Agent Sidecar
+        run: |
+          set -euo pipefail
+          # Verify vault-agent sidecar was injected — if not, restart to trigger injection
+          CONTAINER_COUNT=$(kubectl get pod -n "${APP_NAMESPACE}" -l app=managed-db-api -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null | wc -w || echo "0")
+          if [ "$CONTAINER_COUNT" -lt 2 ]; then
+            echo "::warning::vault-agent sidecar not injected into API pod (only ${CONTAINER_COUNT} container) — restarting"
+            kubectl rollout restart deployment/managed-db-api -n "${APP_NAMESPACE}" 2>/dev/null || true
+            sleep 15
+            ELAPSED=0
+            while [ "$ELAPSED" -lt 120 ]; do
+              NEW_COUNT=$(kubectl get pod -n "${APP_NAMESPACE}" -l app=managed-db-api -o jsonpath='{.items[0].spec.containers[*].name}' 2>/dev/null | wc -w || echo "0")
+              if [ "$NEW_COUNT" -ge 2 ] && kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-api --no-headers 2>/dev/null | grep -q 'Running'; then
+                echo "vault-agent sidecar injected after restart (${NEW_COUNT} containers)"
+                break
+              fi
+              echo "Waiting for vault-agent sidecar injection... (${ELAPSED}s/120s)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+          else
+            echo "vault-agent sidecar confirmed (${CONTAINER_COUNT} containers)"
+          fi
 
       # Step 11: Deploy Frontend Service
       - name: Deploy Frontend Service
         run: |
           set -euo pipefail
+
+          # Determine service type: ClusterIP when using sslip.io Ingress, LoadBalancer otherwise
+          DASHBOARD_SVC_TYPE="LoadBalancer"
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            DASHBOARD_SVC_TYPE="ClusterIP"
+          fi
+
           cat <<EOF | kubectl apply -f -
           apiVersion: apps/v1
           kind: Deployment
@@ -747,7 +980,7 @@ jobs:
               spec:
                 containers:
                 - name: dashboard
-                  image: ${CONTAINER_REGISTRY}/hybrid-app-dashboard:${IMAGE_TAG}
+                  image: ${CONTAINER_REGISTRY}/managed-db-dashboard:${IMAGE_TAG}
                   env:
                   - name: API_HOST
                     value: "managed-db-api.${APP_NAMESPACE}.svc.cluster.local"
@@ -762,7 +995,7 @@ jobs:
             name: managed-db-dashboard-lb
             namespace: ${APP_NAMESPACE}
           spec:
-            type: LoadBalancer
+            type: ${DASHBOARD_SVC_TYPE}
             selector:
               app: managed-db-dashboard
             ports:
@@ -770,7 +1003,7 @@ jobs:
               targetPort: ${FRONTEND_PORT}
               protocol: TCP
           EOF
-          echo "Frontend Deployment and LoadBalancer Service applied (port 80 → ${FRONTEND_PORT})"
+          echo "Frontend Deployment and Service applied (type: ${DASHBOARD_SVC_TYPE}, port 80 → ${FRONTEND_PORT})"
 
       # Step 12: Wait for Frontend Pod Running
       - name: Wait for Frontend Pod Running
@@ -794,47 +1027,152 @@ jobs:
           kubectl get pods -n "${APP_NAMESPACE}" -l app=managed-db-dashboard -o wide 2>/dev/null || true
           exit 1
 
-      # Step 13: Wait for LoadBalancer IP
-      - name: Wait for LoadBalancer IP
+      # Step 13: Wait for LoadBalancer IP or Create sslip.io Ingress
+      - name: Wait for LoadBalancer IP or Create sslip.io Ingress
         id: get-lb-ip
         run: |
           set -euo pipefail
-          TIMEOUT="${LB_TIMEOUT}"
-          INTERVAL="${POLL_INTERVAL}"
-          ELAPSED=0
           FRONTEND_IP=""
+          DASHBOARD_URL=""
 
-          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-            FRONTEND_IP=$(kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$FRONTEND_IP" ]; then
-              echo "LoadBalancer 'managed-db-dashboard-lb' assigned external IP: $FRONTEND_IP"
-              echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
-              echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
-              exit 0
+          if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+            # sslip.io mode: create Ingress via shared envoy-lb
+            echo "USE_SSLIP_DNS=true — creating sslip.io Ingress (ClusterIP service, no public IP wasted)"
+
+            # Get the envoy-lb IP from tanzu-system-ingress namespace
+            TIMEOUT="${LB_TIMEOUT}"
+            INTERVAL="${POLL_INTERVAL}"
+            ELAPSED=0
+            ENVOY_LB_IP=""
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              ENVOY_LB_IP=$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$ENVOY_LB_IP" ]; then
+                echo "Envoy LB IP: $ENVOY_LB_IP"
+                break
+              fi
+              echo "Waiting for envoy-lb external IP... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            if [ -z "$ENVOY_LB_IP" ]; then
+              echo "::error::Envoy LoadBalancer 'envoy-lb' did not receive an external IP within ${TIMEOUT}s"
+              exit 1
             fi
-            echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
-            sleep "$INTERVAL"
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
 
-          echo "::error::LoadBalancer 'managed-db-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
-          kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
-          exit 1
+            SSLIP_HOST="${SSLIP_HOSTNAME_PREFIX}.${ENVOY_LB_IP}.sslip.io"
+
+            # Check if ClusterIssuer is ready for TLS
+            CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+            TLS_ENABLED="false"
+            if kubectl get clusterissuer "${CLUSTER_ISSUER_NAME}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null | grep -q "True"; then
+              TLS_ENABLED="true"
+            fi
+
+            # Create sslip.io Ingress (with TLS if ClusterIssuer is ready)
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: managed-db-dashboard-sslip-ingress
+            namespace: ${APP_NAMESPACE}
+            annotations:
+              cert-manager.io/cluster-issuer: "${CLUSTER_ISSUER_NAME}"
+          spec:
+            ingressClassName: contour
+            tls:
+              - hosts:
+                  - ${SSLIP_HOST}
+                secretName: managed-db-dashboard-sslip-tls
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: managed-db-dashboard-lb
+                      port:
+                        number: 80
+          EOF
+            else
+              cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: managed-db-dashboard-sslip-ingress
+            namespace: ${APP_NAMESPACE}
+          spec:
+            ingressClassName: contour
+            rules:
+            - host: ${SSLIP_HOST}
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: managed-db-dashboard-lb
+                      port:
+                        number: 80
+          EOF
+            fi
+            echo "sslip.io Ingress created: ${SSLIP_HOST} (TLS: ${TLS_ENABLED})"
+            if [[ "${TLS_ENABLED}" == "true" ]]; then
+              DASHBOARD_URL="https://${SSLIP_HOST}"
+            else
+              DASHBOARD_URL="http://${SSLIP_HOST}"
+            fi
+            echo "DASHBOARD_URL=$DASHBOARD_URL" >> "$GITHUB_ENV"
+            echo "frontend_ip=$SSLIP_HOST" >> "$GITHUB_OUTPUT"
+          else
+            # LoadBalancer mode: wait for external IP
+            TIMEOUT="${LB_TIMEOUT}"
+            INTERVAL="${POLL_INTERVAL}"
+            ELAPSED=0
+
+            while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+              FRONTEND_IP=$(kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+              if [ -n "$FRONTEND_IP" ]; then
+                echo "LoadBalancer 'managed-db-dashboard-lb' assigned external IP: $FRONTEND_IP"
+                echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+                echo "frontend_ip=$FRONTEND_IP" >> "$GITHUB_OUTPUT"
+                DASHBOARD_URL="http://${FRONTEND_IP}"
+                echo "DASHBOARD_URL=$DASHBOARD_URL" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              echo "Waiting for LoadBalancer to receive external IP... (${ELAPSED}s/${TIMEOUT}s)"
+              sleep "$INTERVAL"
+              ELAPSED=$((ELAPSED + INTERVAL))
+            done
+
+            echo "::error::LoadBalancer 'managed-db-dashboard-lb' did not receive an external IP within ${TIMEOUT}s"
+            kubectl get svc managed-db-dashboard-lb -n "${APP_NAMESPACE}" -o wide 2>/dev/null || true
+            exit 1
+          fi
 
       # Step 14: HTTP Connectivity Test
       - name: HTTP Connectivity Test
         run: |
           set -euo pipefail
-          FRONTEND_IP="${{ steps.get-lb-ip.outputs.frontend_ip }}"
           RETRY_TIMEOUT=120
           RETRY_INTERVAL=10
+
+          # Determine test URL
+          if [ -n "${DASHBOARD_URL:-}" ]; then
+            TEST_URL="${DASHBOARD_URL}"
+          else
+            TEST_URL="http://${{ steps.get-lb-ip.outputs.frontend_ip }}"
+          fi
 
           # Test frontend HTTP connectivity (with retries — Next.js may need a moment)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}" --max-time 10 || true)
+            HTTP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}" --max-time 10 || true)
             if [ "$HTTP_STATUS" = "200" ]; then
-              echo "Frontend HTTP connectivity test passed — received status 200 from http://${FRONTEND_IP}"
+              echo "Frontend HTTP connectivity test passed — received status 200 from ${TEST_URL}"
               break
             fi
             echo "Frontend returned HTTP ${HTTP_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -842,16 +1180,16 @@ jobs:
             ELAPSED=$((ELAPSED + RETRY_INTERVAL))
           done
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from http://${FRONTEND_IP} (expected 200)"
+            echo "::error::Frontend HTTP test returned status ${HTTP_STATUS} from ${TEST_URL} (expected 200)"
             exit 1
           fi
 
           # Test API health check via frontend (with retries — API may still be initializing schema)
           ELAPSED=0
           while [ "$ELAPSED" -lt "$RETRY_TIMEOUT" ]; do
-            HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${FRONTEND_IP}/api/healthz" --max-time 10 || true)
+            HEALTH_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" "${TEST_URL}/api/healthz" --max-time 10 || true)
             if [ "$HEALTH_STATUS" = "200" ]; then
-              echo "API health check passed — received status 200 from http://${FRONTEND_IP}/api/healthz"
+              echo "API health check passed — received status 200 from ${TEST_URL}/api/healthz"
               break
             fi
             echo "API health check returned HTTP ${HEALTH_STATUS}, retrying... (${ELAPSED}s/${RETRY_TIMEOUT}s)"
@@ -859,7 +1197,7 @@ jobs:
             ELAPSED=$((ELAPSED + RETRY_INTERVAL))
           done
           if [ "$HEALTH_STATUS" != "200" ]; then
-            echo "::error::API health check returned status ${HEALTH_STATUS} from http://${FRONTEND_IP}/api/healthz (expected 200)"
+            echo "::error::API health check returned status ${HEALTH_STATUS} from ${TEST_URL}/api/healthz (expected 200)"
             exit 1
           fi
 
@@ -868,6 +1206,20 @@ jobs:
       # Step 15: Write Job Summary
       - name: Write Job Summary
         run: |
+          # Determine dashboard URL for summary
+          SUMMARY_URL="${DASHBOARD_URL:-http://${FRONTEND_IP:-N/A}}"
+
+          # Extract sslip.io hostname if Ingress was created
+          SSLIP_HOST=$(kubectl get ingress managed-db-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)
+          if [ -n "$SSLIP_HOST" ]; then
+            TLS_HOST=$(kubectl get ingress managed-db-dashboard-sslip-ingress -n "${APP_NAMESPACE}" -o jsonpath='{.spec.tls[0].hosts[0]}' 2>/dev/null || true)
+            if [ -n "$TLS_HOST" ]; then
+              SUMMARY_URL="https://${SSLIP_HOST}"
+            else
+              SUMMARY_URL="http://${SSLIP_HOST}"
+            fi
+          fi
+
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
           ## ✅ Managed DB App Deployment Complete
 
@@ -878,14 +1230,14 @@ jobs:
           | App Namespace | \`${APP_NAMESPACE}\` |
           | DSM Host | \`${DSM_HOST}:${DSM_PORT}\` |
           | Database | \`${DSM_DBNAME}\` |
-          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+          | Frontend | ${SUMMARY_URL} |
 
           ### Deployed Services
           | Service | Endpoint |
           |---|---|
           | DSM PostgreSQL | \`${DSM_HOST}:${DSM_PORT}\` |
           | API | \`managed-db-api.${APP_NAMESPACE}.svc.cluster.local:${API_PORT}\` |
-          | Frontend | http://${{ steps.get-lb-ip.outputs.frontend_ip }} |
+          | Frontend | ${SUMMARY_URL} |
 
           ### Container Images
           | Image | Tag |

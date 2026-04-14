@@ -106,6 +106,12 @@ LB_TIMEOUT="${LB_TIMEOUT:-300}"
 DSM_TIMEOUT="${DSM_TIMEOUT:-1800}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+SSLIP_HOSTNAME_PREFIX="${SSLIP_HOSTNAME_PREFIX:-knative-dashboard}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
 ###############################################################################
 # Derived Variables (computed — do not edit)
 ###############################################################################
@@ -115,6 +121,12 @@ KNATIVE_CORE_URL="https://github.com/knative/serving/releases/download/knative-v
 CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/contour.yaml"
 NET_CONTOUR_URL="https://github.com/knative-extensions/net-contour/releases/download/knative-v${NET_CONTOUR_VERSION}/net-contour.yaml"
 DASHBOARD_IMAGE="${CONTAINER_REGISTRY}/knative-dashboard:${IMAGE_TAG}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -748,6 +760,12 @@ spec:
               value: "http://knative-api-server.${DEMO_NAMESPACE}.svc.cluster.local:${API_PORT}"
 EOF
 
+# Deploy Dashboard Service (ClusterIP when using Ingress, LoadBalancer otherwise)
+DASHBOARD_SVC_TYPE="LoadBalancer"
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  DASHBOARD_SVC_TYPE="ClusterIP"
+fi
+
 cat <<EOF | kubectl apply -f -
 apiVersion: v1
 kind: Service
@@ -755,7 +773,7 @@ metadata:
   name: knative-dashboard
   namespace: ${DEMO_NAMESPACE}
 spec:
-  type: LoadBalancer
+  type: ${DASHBOARD_SVC_TYPE}
   selector:
     app: knative-dashboard
   ports:
@@ -765,6 +783,8 @@ spec:
       protocol: TCP
 EOF
 
+log_success "Dashboard Service applied (type: ${DASHBOARD_SVC_TYPE})"
+
 # Wait for dashboard pod to be ready
 if ! wait_for_condition "Dashboard pod to be ready" \
   "${POD_TIMEOUT}" "${POLL_INTERVAL}" \
@@ -773,16 +793,59 @@ if ! wait_for_condition "Dashboard pod to be ready" \
   exit 8
 fi
 
-# Wait for dashboard LoadBalancer IP
-if ! wait_for_condition "Dashboard LoadBalancer to get external IP" \
-  "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
-  "kubectl get svc knative-dashboard -n '${DEMO_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
-  log_error "Dashboard LoadBalancer did not receive an external IP within ${LB_TIMEOUT}s"
-  exit 8
+# Wait for dashboard LoadBalancer IP (only when not using Ingress)
+DASHBOARD_IP=""
+if [[ "${USE_SSLIP_DNS}" != "true" ]]; then
+  if ! wait_for_condition "Dashboard LoadBalancer to get external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "kubectl get svc knative-dashboard -n '${DEMO_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -q '.'"; then
+    log_error "Dashboard LoadBalancer did not receive an external IP within ${LB_TIMEOUT}s"
+    exit 8
+  fi
+
+  DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  log_success "Dashboard deployed: http://${DASHBOARD_IP}"
 fi
 
-DASHBOARD_IP=$(kubectl get svc knative-dashboard -n "${DEMO_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-log_success "Dashboard deployed: http://${DASHBOARD_IP}"
+# --- sslip.io DNS + TLS for dashboard (guarded by USE_SSLIP_DNS) ---
+SSLIP_HOSTNAME=""
+SSLIP_URL=""
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  # Use Contour envoy-lb IP for Ingress-based routing (separate from Knative's contour-external Envoy)
+  if ! wait_for_condition "Envoy LoadBalancer 'envoy-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    echo "  ⚠ WARNING: Envoy LoadBalancer did not receive an external IP — skipping sslip.io"
+  else
+    CONTOUR_LB_IP=$(kubectl get svc envoy-lb -n tanzu-system-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    SSLIP_HOSTNAME=$(construct_sslip_hostname "${SSLIP_HOSTNAME_PREFIX}" "${CONTOUR_LB_IP}")
+    log_success "sslip.io hostname: ${SSLIP_HOSTNAME}"
+
+    # Determine TLS capability
+    TLS_ENABLED=false
+    if check_cert_manager_available && check_cluster_issuer_ready "${CLUSTER_ISSUER_NAME}"; then
+      TLS_ENABLED=true
+    fi
+
+    # Create Ingress
+    create_ingress_with_tls "knative-dashboard-sslip-ingress" "${DEMO_NAMESPACE}" \
+      "${SSLIP_HOSTNAME}" "knative-dashboard" 80 "${TLS_ENABLED}" "${CLUSTER_ISSUER_NAME}"
+
+    log_success "sslip.io Ingress created for dashboard (TLS: ${TLS_ENABLED})"
+
+    if [[ "${TLS_ENABLED}" == "true" ]]; then
+      if wait_for_certificate "knative-dashboard-sslip-ingress-tls" "${DEMO_NAMESPACE}" "${CERT_WAIT_TIMEOUT}"; then
+        SSLIP_URL="https://${SSLIP_HOSTNAME}"
+      else
+        echo "  ⚠ WARNING: TLS certificate not ready — falling back to HTTP"
+        SSLIP_URL="http://${SSLIP_HOSTNAME}"
+      fi
+    else
+      SSLIP_URL="http://${SSLIP_HOSTNAME}"
+    fi
+  fi
+fi
 
 ###############################################################################
 # Phase 11: Verification & Scale-to-Zero Demo
@@ -882,7 +945,12 @@ echo "  API Server:           ${API_INTERNAL_URL}"
 echo "  API Image:            ${API_IMAGE}"
 echo "  Audit Function:       ${AUDIT_FUNCTION_URL}"
 echo "  Audit Image:          ${AUDIT_IMAGE}"
+if [[ -n "${DASHBOARD_IP}" ]]; then
 echo "  Dashboard:            http://${DASHBOARD_IP}"
+fi
+if [[ -n "${SSLIP_URL}" ]]; then
+echo "  Dashboard sslip.io:  ${SSLIP_URL}"
+fi
 echo "  Scale-to-Zero Grace:  ${SCALE_TO_ZERO_GRACE_PERIOD}"
 echo "============================================="
 echo ""

@@ -301,7 +301,7 @@ Common causes: storage class name mismatch, CSI driver not running, NFS backend 
 
 **EKS Equivalent:** Pod scheduling on managed node groups with Pod Security Standards
 
-In AWS, pods are scheduled on EC2 instances in managed node groups. Security is enforced via Pod Security Standards (PSS) or third-party admission controllers. VKS enforces the same Kubernetes Pod Security Standards. The validation deploys a hardened nginx container to confirm scheduling and security enforcement work correctly.
+In AWS, pods are scheduled on EC2 instances in managed node groups. Security is enforced via Pod Security Standards (PSS) or third-party admission controllers. VKS enforces the same Kubernetes Pod Security Standards. The validation deploys a hardened test app container (`scafeman/vks-test-app:latest`) to confirm scheduling and security enforcement work correctly.
 
 | # | Check | Command | Pass Criteria |
 |---|---|---|---|
@@ -332,7 +332,7 @@ In AWS, LoadBalancer services provision an NLB or ALB via the AWS Load Balancer 
 | 9.1 | LoadBalancer service created | `kubectl get svc vks-test-lb` | Service exists with type `LoadBalancer` |
 | 9.2 | External IP assigned | `kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}'` | Returns a valid IP address (not empty or `<pending>`) |
 | 9.3 | HTTP connectivity | `curl -s -o /dev/null -w '%{http_code}' http://<EXTERNAL_IP>` | Returns `200` |
-| 9.4 | Response content valid | `curl -s http://<EXTERNAL_IP>` | Returns HTML content from the nginx test app |
+| 9.4 | Response content valid | `curl -s http://<EXTERNAL_IP>` | Returns HTML content from the test app |
 
 ### LoadBalancer Mapping
 
@@ -365,7 +365,7 @@ Common causes: NSX Edge cluster at capacity, VPC connectivity profile blocks ext
 
 Once the VKS cluster passes Phases 1–9, you can deploy application workloads using the toolkit's deployment patterns. Each pattern validates a different VCF capability.
 
-### Deploy Hybrid App — VM-to-Container Connectivity
+### Deploy Hybrid App — Container-to-VM Connectivity
 
 **EKS Equivalent:** EC2 instance + EKS pods in the same VPC
 
@@ -528,7 +528,7 @@ This script executes all phases non-interactively and reports pass/fail status f
 | **Secrets Management** | Secrets Manager | VCF Secret Store + vault-injector |
 | **VM Workloads** | EC2 instances | VM Service (VirtualMachine CRD) |
 | **Bastion / Jump Host** | EC2 + Security Groups | VM Service + VirtualMachineService LoadBalancer |
-| **DNS** | Route 53 | CoreDNS with static host entries |
-| **Certificates** | ACM (AWS Certificate Manager) | Self-signed CA + wildcard certs (cert-manager optional) |
+| **DNS** | Route 53 | sslip.io magic DNS (`<IP>.sslip.io`) — no external DNS provider required |
+| **Certificates** | ACM (AWS Certificate Manager) | Let's Encrypt + cert-manager (automated ACME HTTP-01 certificates) |
 | **CLI** | `aws` + `eksctl` + `kubectl` | `vcf` + `kubectl` |
 | **IaC** | CloudFormation / Terraform | YAML manifests via `kubectl apply` (CCI APIs) |

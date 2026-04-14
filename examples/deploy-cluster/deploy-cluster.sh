@@ -10,7 +10,10 @@ set -euo pipefail
 #   Phase 3: Context Bridge Execution
 #   Phase 4: VKS Cluster Deployment
 #   Phase 5: Kubeconfig Retrieval via VksCredentialRequest
-#   Phase 6: Functional Validation Workload Deployment
+#   Phase 5g: cert-manager Installation
+#   Phase 5h: Contour Installation + envoy-lb Service
+#   Phase 5i: Let's Encrypt ClusterIssuer Creation
+#   Phase 6: Functional Validation Workload Deployment (with sslip.io + TLS)
 #
 # Edit the variable block below with your environment-specific values,
 # then run: bash examples/deploy-cluster/deploy-cluster.sh
@@ -64,6 +67,10 @@ NODE_DISK_SIZE="${NODE_DISK_SIZE:-50Gi}"
 CONTROL_PLANE_REPLICAS="${CONTROL_PLANE_REPLICAS:-1}"
 NODE_POOL_NAME="${NODE_POOL_NAME:-node-pool-01}"
 
+# --- Container Image ---
+CONTAINER_REGISTRY="${CONTAINER_REGISTRY:-scafeman}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+
 # --- Autoscaler Tuning ---
 AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME="${AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME:-5m}"
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="${AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD:-5m}"
@@ -87,6 +94,20 @@ KUBECONFIG_TIMEOUT="${KUBECONFIG_TIMEOUT:-300}"
 PVC_TIMEOUT="${PVC_TIMEOUT:-300}"
 LB_TIMEOUT="${LB_TIMEOUT:-300}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
+
+# --- sslip.io & Let's Encrypt ---
+USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
+LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-}"
+CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
+SSLIP_HOSTNAME_PREFIX="${SSLIP_HOSTNAME_PREFIX:-vks-test}"
+CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+CONTOUR_INGRESS_NAMESPACE="${CONTOUR_INGRESS_NAMESPACE:-tanzu-system-ingress}"
+
+###############################################################################
+# Shared Helper Library
+###############################################################################
+
+source "$(dirname "$0")/../shared/sslip-helpers.sh"
 
 ###############################################################################
 # Helper Functions
@@ -548,6 +569,137 @@ else
 fi
 
 ###############################################################################
+# Phase 5g: Install cert-manager VKS Package (idempotent)
+###############################################################################
+
+log_step "5g" "Installing cert-manager VKS package"
+
+if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "cert-manager"; then
+  log_success "cert-manager already installed, skipping"
+else
+  if ! vcf package install cert-manager \
+    -p cert-manager.kubernetes.vmware.com \
+    -n "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to install cert-manager package"
+    exit 9
+  fi
+
+  if ! wait_for_condition "cert-manager package to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package installed list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep 'cert-manager' | grep -qi 'reconcile'"; then
+    log_error "cert-manager package did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 9
+  fi
+fi
+
+log_success "cert-manager installed and reconciled"
+
+###############################################################################
+# Phase 5h: Install Contour VKS Package + envoy-lb Service (idempotent)
+###############################################################################
+
+log_step "5h" "Installing Contour VKS package"
+
+if vcf package installed list --namespace "${PACKAGE_NAMESPACE}" 2>/dev/null | grep -q "contour"; then
+  log_success "Contour already installed, skipping"
+else
+  if ! vcf package install contour \
+    -p contour.kubernetes.vmware.com \
+    -n "${PACKAGE_NAMESPACE}"; then
+    log_error "Failed to install Contour package"
+    exit 10
+  fi
+
+  if ! wait_for_condition "Contour package to reconcile" \
+    "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+    "vcf package installed list --namespace '${PACKAGE_NAMESPACE}' 2>/dev/null | grep 'contour' | grep -qi 'reconcile'"; then
+    log_error "Contour package did not reconcile within ${PACKAGE_TIMEOUT}s"
+    exit 10
+  fi
+fi
+
+log_success "Contour installed and reconciled"
+
+# Create envoy-lb LoadBalancer Service if not already present
+if kubectl get svc envoy-lb -n "${CONTOUR_INGRESS_NAMESPACE}" >/dev/null 2>&1; then
+  log_success "Envoy LoadBalancer service 'envoy-lb' already exists"
+else
+  cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-lb
+  namespace: ${CONTOUR_INGRESS_NAMESPACE}
+spec:
+  type: LoadBalancer
+  selector:
+    app: envoy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+EOF
+  log_success "Envoy LoadBalancer service 'envoy-lb' created"
+fi
+
+# Ensure CoreDNS can resolve sslip.io hostnames (required for cert-manager HTTP-01 self-checks)
+CURRENT_COREFILE=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+if echo "${CURRENT_COREFILE}" | grep -q 'sslip.io'; then
+  log_success "CoreDNS already has sslip.io forwarding rule, skipping"
+else
+  kubectl get configmap coredns -n kube-system -o json | python3 -c "
+import json, sys
+cm = json.load(sys.stdin)
+corefile = cm['data']['Corefile']
+sslip_block = 'sslip.io:53 {\n    forward . 8.8.8.8 1.1.1.1\n    cache 30\n}\n\n'
+cm['data']['Corefile'] = sslip_block + corefile
+json.dump(cm, sys.stdout)
+" | kubectl apply -f - >/dev/null 2>&1
+  kubectl rollout restart deployment/coredns -n kube-system >/dev/null 2>&1
+  log_success "CoreDNS patched with sslip.io forwarding rule (→ 8.8.8.8, 1.1.1.1)"
+  # Wait for CoreDNS to be ready after restart
+  sleep 10
+fi
+
+###############################################################################
+# Phase 5i: Create Let's Encrypt ClusterIssuers
+###############################################################################
+
+log_step "5i" "Creating Let's Encrypt ClusterIssuers"
+
+if [[ -n "${LETSENCRYPT_EMAIL}" ]]; then
+  log_success "ACME registration email: ${LETSENCRYPT_EMAIL}"
+else
+  echo "  ⚠ WARNING: LETSENCRYPT_EMAIL is empty — ACME registration may fail and no expiry notifications will be sent"
+fi
+
+# Create production ClusterIssuer
+create_cluster_issuer "letsencrypt-prod" \
+  "https://acme-v02.api.letsencrypt.org/directory" \
+  "${LETSENCRYPT_EMAIL}"
+
+# Create staging ClusterIssuer (for testing)
+create_cluster_issuer "letsencrypt-staging" \
+  "https://acme-staging-v02.api.letsencrypt.org/directory" \
+  "${LETSENCRYPT_EMAIL}"
+
+# Wait for the active ClusterIssuer to reach Ready status
+CLUSTER_ISSUER_READY=false
+if wait_for_condition "ClusterIssuer '${CLUSTER_ISSUER_NAME}' to reach Ready status" \
+  120 "${POLL_INTERVAL}" \
+  "check_cluster_issuer_ready '${CLUSTER_ISSUER_NAME}'"; then
+  CLUSTER_ISSUER_READY=true
+  log_success "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready"
+else
+  echo "  ⚠ WARNING: ClusterIssuer '${CLUSTER_ISSUER_NAME}' did not reach Ready within 120s — continuing without TLS"
+fi
+
+###############################################################################
 # Phase 6: Functional Validation Workload Deployment
 ###############################################################################
 
@@ -589,7 +741,7 @@ spec:
         fsGroup: 101
       containers:
       - name: nginx
-        image: nginxinc/nginx-unprivileged:latest
+        image: ${CONTAINER_REGISTRY}/vks-test-app:${IMAGE_TAG}
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -597,6 +749,13 @@ spec:
             - ALL
         ports:
         - containerPort: 8080
+        volumeMounts:
+        - name: pvc-volume
+          mountPath: /data
+      volumes:
+      - name: pvc-volume
+        persistentVolumeClaim:
+          claimName: vks-test-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -638,7 +797,7 @@ fi
 EXTERNAL_IP=$(kubectl get svc vks-test-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 log_success "LoadBalancer 'vks-test-lb' assigned external IP: ${EXTERNAL_IP}"
 
-# HTTP connectivity test
+# HTTP connectivity test (raw IP)
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${EXTERNAL_IP}")
 if [[ "${HTTP_STATUS}" != "200" ]]; then
   log_error "HTTP test failed — expected status 200 but got ${HTTP_STATUS} from http://${EXTERNAL_IP}"
@@ -646,6 +805,71 @@ if [[ "${HTTP_STATUS}" != "200" ]]; then
 fi
 
 log_success "HTTP connectivity test passed — received status 200 from http://${EXTERNAL_IP}"
+
+# --- sslip.io DNS + TLS (guarded by USE_SSLIP_DNS) ---
+SSLIP_HOSTNAME=""
+SSLIP_HTTP_URL=""
+SSLIP_HTTPS_URL=""
+TLS_READY=false
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  # sslip.io hostname must use the Contour envoy-lb IP (not the test app's LB IP)
+  # because Ingress traffic routes through Contour/Envoy, not directly to the backend
+  if ! wait_for_condition "Envoy LoadBalancer 'envoy-lb' to receive external IP" \
+    "${LB_TIMEOUT}" "${POLL_INTERVAL}" \
+    "[[ -n \$(kubectl get svc envoy-lb -n '${CONTOUR_INGRESS_NAMESPACE}' -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null) ]]"; then
+    echo "  ⚠ WARNING: Envoy LoadBalancer did not receive an external IP — skipping sslip.io"
+  else
+    CONTOUR_LB_IP=$(kubectl get svc envoy-lb -n "${CONTOUR_INGRESS_NAMESPACE}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    SSLIP_HOSTNAME=$(construct_sslip_hostname "${SSLIP_HOSTNAME_PREFIX}" "${CONTOUR_LB_IP}")
+    SSLIP_HTTP_URL="http://${SSLIP_HOSTNAME}"
+  log_success "sslip.io hostname: ${SSLIP_HOSTNAME} (via Contour LB ${CONTOUR_LB_IP})"
+
+  # Determine TLS capability
+  TLS_ENABLED=false
+  if [[ "${CLUSTER_ISSUER_READY}" == "true" ]]; then
+    TLS_ENABLED=true
+  fi
+
+  # Create Ingress (with or without TLS)
+  create_ingress_with_tls "vks-test-sslip-ingress" "default" \
+    "${SSLIP_HOSTNAME}" "vks-test-lb" 80 "${TLS_ENABLED}" "${CLUSTER_ISSUER_NAME}"
+
+  log_success "sslip.io Ingress created (TLS: ${TLS_ENABLED})"
+
+  # Wait for certificate if TLS is enabled
+  if [[ "${TLS_ENABLED}" == "true" ]]; then
+    if wait_for_certificate "vks-test-sslip-ingress-tls" "default" "${CERT_WAIT_TIMEOUT}"; then
+      TLS_READY=true
+      SSLIP_HTTPS_URL="https://${SSLIP_HOSTNAME}"
+      log_success "TLS certificate is Ready"
+    else
+      echo "  ⚠ WARNING: TLS certificate not ready within ${CERT_WAIT_TIMEOUT}s — continuing with HTTP-only"
+    fi
+  fi
+
+  # Verify HTTP connectivity via sslip.io hostname
+  SSLIP_HTTP_STATUS=""
+  SSLIP_HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${SSLIP_HTTP_URL}" 2>/dev/null) || true
+  if [[ "${SSLIP_HTTP_STATUS}" == "200" ]]; then
+    log_success "sslip.io HTTP test passed — received status 200 from ${SSLIP_HTTP_URL}"
+  else
+    echo "  ⚠ WARNING: sslip.io HTTP test returned status ${SSLIP_HTTP_STATUS:-000} from ${SSLIP_HTTP_URL}"
+    echo "  Falling back to raw LoadBalancer IP for connectivity test"
+  fi
+
+  # Verify HTTPS connectivity if certificate is ready
+  if [[ "${TLS_READY}" == "true" ]]; then
+    SSLIP_HTTPS_STATUS=""
+    SSLIP_HTTPS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${SSLIP_HTTPS_URL}" 2>/dev/null) || true
+    if [[ "${SSLIP_HTTPS_STATUS}" == "200" ]]; then
+      log_success "sslip.io HTTPS test passed — received status 200 from ${SSLIP_HTTPS_URL}"
+    else
+      echo "  ⚠ WARNING: HTTPS test returned status ${SSLIP_HTTPS_STATUS:-000} from ${SSLIP_HTTPS_URL}"
+    fi
+  fi
+  fi
+fi
 
 ###############################################################################
 # Success Summary
@@ -659,6 +883,12 @@ echo "  Cluster:    ${CLUSTER_NAME}"
 echo "  Namespace:  ${DYNAMIC_NS_NAME}"
 echo "  Kubeconfig: ${KUBECONFIG_FILE}"
 echo "  External IP: ${EXTERNAL_IP}"
+if [[ -n "${SSLIP_HOSTNAME}" ]]; then
+echo "  sslip.io:   ${SSLIP_HTTP_URL}"
+fi
+if [[ -n "${SSLIP_HTTPS_URL}" ]]; then
+echo "  HTTPS:      ${SSLIP_HTTPS_URL}"
+fi
 echo "============================================="
 echo ""
 
