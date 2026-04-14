@@ -1714,7 +1714,8 @@ build:
   stage: build
   image: docker:24-cli
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=harbor-core.harbor.svc.cluster.local:80"]
   variables:
     DOCKER_HOST: tcp://docker:2375
   before_script:
