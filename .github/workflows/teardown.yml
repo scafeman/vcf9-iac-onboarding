@@ -157,20 +157,21 @@ jobs:
           if [ ! -f "$KUBECONFIG_PATH" ]; then
             echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
             CONTEXT_NAME="teardown-deploy"
-            # Delete all contexts matching this name (parent + sub-contexts)
-            for ctx in $(vcf context list 2>/dev/null | awk '{print $1}' | grep "^${CONTEXT_NAME}" || true); do
-              vcf context delete "$ctx" --yes 2>/dev/null || true
-            done
-            sleep 1
-            if ! vcf context create "$CONTEXT_NAME" \
+            # Create an empty kubeconfig if missing — vcf context delete needs it
+            if [ ! -f "$KUBECONFIG_PATH" ]; then
+              touch "$KUBECONFIG_PATH"
+            fi
+            vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+            # Remove the empty placeholder so we know to retrieve it
+            if [ ! -s "$KUBECONFIG_PATH" ]; then
+              rm -f "$KUBECONFIG_PATH"
+            fi
+            vcf context create "$CONTEXT_NAME" \
               --endpoint "https://$VCFA_ENDPOINT" \
               --type cci \
               --tenant-name "$TENANT_NAME" \
               --api-token "$VCF_API_TOKEN" \
-              --set-current 2>/dev/null; then
-              echo "Context create failed — using existing context"
-              vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-            fi
+              --set-current
 
             # Find and switch to the namespace context that contains this cluster
             # Convention: cluster name is <project>-clus-<id>, project name is <project>
@@ -814,19 +815,13 @@ jobs:
           unset KUBECONFIG
 
           # Establish VCF CLI context for supervisor operations
-          for ctx in $(vcf context list 2>/dev/null | awk '{print $1}' | grep "^${CONTEXT_NAME}" || true); do
-            vcf context delete "$ctx" --yes 2>/dev/null || true
-          done
-          sleep 1
-          if ! vcf context create "$CONTEXT_NAME" \
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current 2>/dev/null; then
-            echo "Context create failed — using existing context"
-            vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-          fi
+            --set-current
 
           # Discover the namespace context from the cluster name
           PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
@@ -922,19 +917,13 @@ jobs:
           unset KUBECONFIG
 
           # Establish VCF CLI context for supervisor operations
-          for ctx in $(vcf context list 2>/dev/null | awk '{print $1}' | grep "^${CONTEXT_NAME}" || true); do
-            vcf context delete "$ctx" --yes 2>/dev/null || true
-          done
-          sleep 1
-          if ! vcf context create "$CONTEXT_NAME" \
+          vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
+          vcf context create "$CONTEXT_NAME" \
             --endpoint "https://$VCFA_ENDPOINT" \
             --type cci \
             --tenant-name "$TENANT_NAME" \
             --api-token "$VCF_API_TOKEN" \
-            --set-current 2>/dev/null; then
-            echo "Context create failed — using existing context"
-            vcf context use "$CONTEXT_NAME" 2>/dev/null || true
-          fi
+            --set-current
 
           # Discover the namespace context
           PROJECT_PATTERN=$(echo "$CLUSTER_NAME" | sed 's/-clus-[0-9]*$//')
