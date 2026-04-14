@@ -1695,7 +1695,7 @@ patches:
 
 images:
   - name: us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend
-    newName: harbor-core.harbor.svc.cluster.local:80/${HARBOR_CI_PROJECT}/frontend
+    newName: harbor-registry.harbor.svc.cluster.local:5000/${HARBOR_CI_PROJECT}/frontend
     newTag: v0.10.5
 KUSTOMEOF
 
@@ -1715,7 +1715,7 @@ build:
   image: docker:24-cli
   services:
     - name: docker:24-dind
-      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=harbor-core.harbor.svc.cluster.local:80"]
+      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=harbor-registry.harbor.svc.cluster.local:5000"]
   variables:
     DOCKER_HOST: tcp://docker:2375
   before_script:
@@ -1743,8 +1743,8 @@ update-manifests:
 CIEOF
 
 # Substitute placeholder values into .gitlab-ci.yml
-# Use Harbor's internal service name for image operations (CI push + kubelet pull)
-HARBOR_INTERNAL="harbor-core.harbor.svc.cluster.local:80"
+# Use Harbor's internal registry service for image operations (bypasses token auth)
+HARBOR_INTERNAL="harbor-registry.harbor.svc.cluster.local:5000"
 sed -i \
   -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_INTERNAL}|g" \
   -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_INTERNAL}/${HARBOR_CI_PROJECT}/frontend|g" \
