@@ -1586,13 +1586,23 @@ if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
 fi
 
 # Create a personal access token for the root user via GitLab API
-# First, obtain an OAuth token using the root password
-GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
-  -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
-  | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+# First, obtain an OAuth token using the root password (retry up to 60s — GitLab may still be warming up)
+GITLAB_OAUTH_TOKEN=""
+ELAPSED=0
+while [ "$ELAPSED" -lt 60 ]; do
+  GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+    -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+  if [ -n "${GITLAB_OAUTH_TOKEN}" ]; then
+    break
+  fi
+  echo "Waiting for GitLab OAuth endpoint... (${ELAPSED}s/60s)"
+  sleep 10
+  ELAPSED=$((ELAPSED + 10))
+done
 
 if [[ -z "${GITLAB_OAUTH_TOKEN}" ]]; then
-  log_error "Failed to obtain GitLab OAuth token for root user"
+  log_error "Failed to obtain GitLab OAuth token for root user after 60s"
   exit 16
 fi
 

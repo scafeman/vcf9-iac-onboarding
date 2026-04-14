@@ -1431,13 +1431,23 @@ jobs:
           echo "::add-mask::${GITLAB_ROOT_PASSWORD}"
           echo "GITLAB_ROOT_PASSWORD=$GITLAB_ROOT_PASSWORD" >> "$GITHUB_ENV"
 
-          # Obtain an OAuth token using the root password
-          GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
-            -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+          # Obtain an OAuth token using the root password (retry up to 60s — GitLab may still be warming up)
+          GITLAB_OAUTH_TOKEN=""
+          ELAPSED=0
+          while [ "$ELAPSED" -lt 60 ]; do
+            GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+              -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+            if [ -n "${GITLAB_OAUTH_TOKEN}" ]; then
+              break
+            fi
+            echo "Waiting for GitLab OAuth endpoint... (${ELAPSED}s/60s)"
+            sleep 10
+            ELAPSED=$((ELAPSED + 10))
+          done
 
           if [ -z "${GITLAB_OAUTH_TOKEN}" ]; then
-            echo "::error::Failed to obtain GitLab OAuth token for root user"
+            echo "::error::Failed to obtain GitLab OAuth token for root user after 60s"
             exit 1
           fi
 
