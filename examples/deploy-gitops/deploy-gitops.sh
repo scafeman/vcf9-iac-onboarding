@@ -1729,10 +1729,7 @@ build:
   stage: build
   image: docker:24-cli
   services:
-    - name: docker:24-dind
-      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=PLACEHOLDER_HARBOR_HOST"]
-  variables:
-    DOCKER_HOST: tcp://docker:2375
+    - docker:24-dind
   before_script:
     - 'until docker info >/dev/null 2>&1; do sleep 1; done'
     - 'docker login -u admin -p "${HARBOR_PASSWORD}" "${HARBOR_HOST}"'
