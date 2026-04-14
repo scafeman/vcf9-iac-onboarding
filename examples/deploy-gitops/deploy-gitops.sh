@@ -919,6 +919,21 @@ subjects:
 RBACEOF
 log_success "GitLab Runner RBAC created in namespace '${GITLAB_RUNNER_NAMESPACE}'"
 
+# Create Docker daemon config ConfigMap for DinD insecure registry
+# This is mounted into CI job pods so the DinD service trusts Harbor's internal endpoint
+HARBOR_INTERNAL="harbor-registry.harbor.svc.cluster.local:5000"
+cat <<DAEMONEOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-docker-config
+  namespace: ${GITLAB_RUNNER_NAMESPACE}
+data:
+  daemon.json: |
+    {"insecure-registries": ["${HARBOR_INTERNAL}"]}
+DAEMONEOF
+log_success "Docker daemon config ConfigMap created with insecure registry '${HARBOR_INTERNAL}'"
+
 # Create GitLab wildcard TLS secret (idempotent)
 if ! kubectl create secret tls gitlab-wildcard-tls \
   --cert="${CERT_DIR}/wildcard.crt" \
@@ -1715,7 +1730,7 @@ build:
   image: docker:24-cli
   services:
     - name: docker:24-dind
-      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=harbor-registry.harbor.svc.cluster.local:5000"]
+      command: ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=${HARBOR_HOST}"]
   variables:
     DOCKER_HOST: tcp://docker:2375
   before_script:
@@ -1743,11 +1758,11 @@ update-manifests:
 CIEOF
 
 # Substitute placeholder values into .gitlab-ci.yml
-# Use Harbor's internal registry service for image operations (bypasses token auth)
+# CI jobs run as pods and use CoreDNS — sslip.io hostname works for docker login/push
 HARBOR_INTERNAL="harbor-registry.harbor.svc.cluster.local:5000"
 sed -i \
-  -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_INTERNAL}|g" \
-  -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_INTERNAL}/${HARBOR_CI_PROJECT}/frontend|g" \
+  -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_HOSTNAME}|g" \
+  -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend|g" \
   "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
 
 # Set GitLab CI/CD variables for sensitive values (Harbor password, GitLab push token)
