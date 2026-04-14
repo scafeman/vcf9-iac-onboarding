@@ -1014,42 +1014,31 @@ log_step 11 "Installing GitLab Runner"
 if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
   log_success "No GITLAB_RUNNER_TOKEN provided — retrieving from GitLab instance"
 
-  # The GitLab Operator stores the runner registration token in a K8s Secret.
-  # The secret name follows the pattern: <gitlab-release>-gitlab-runner-secret
-  RUNNER_SECRET_NAME=$(kubectl get secrets -n "${GITLAB_NAMESPACE}" --no-headers 2>/dev/null \
-    | grep -i 'runner.*secret\|runner-registration-token' \
-    | awk '{print $1}' \
-    | head -1)
+  # GitLab 16+ uses the new runner registration API (POST /api/v4/user/runners)
+  GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
 
-  if [[ -n "${RUNNER_SECRET_NAME}" ]]; then
-    GITLAB_RUNNER_TOKEN=$(kubectl get secret "${RUNNER_SECRET_NAME}" -n "${GITLAB_NAMESPACE}" \
-      -o jsonpath='{.data.runner-registration-token}' 2>/dev/null | base64 -d)
-  fi
-
-  # Fallback: try the shared-secrets runner token
-  if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
-    GITLAB_RUNNER_TOKEN=$(kubectl get secret gitlab-gitlab-runner-secret -n "${GITLAB_NAMESPACE}" \
-      -o jsonpath='{.data.runner-registration-token}' 2>/dev/null | base64 -d 2>/dev/null || true)
-  fi
-
-  # Fallback: try the initial-root-token and use the GitLab API
-  if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
-    log_warn "Could not find runner registration token in K8s secrets. Attempting GitLab API..."
-    GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
-      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
-
-    if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
-      # Authenticate to GitLab API and create a runner token
+  if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
+    # Wait for GitLab API to be ready (retry up to 60s)
+    GITLAB_API_TOKEN=""
+    ELAPSED=0
+    while [ "$ELAPSED" -lt 60 ]; do
       GITLAB_API_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
         -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
         | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+      if [ -n "${GITLAB_API_TOKEN}" ]; then break; fi
+      echo "Waiting for GitLab API... (${ELAPSED}s/60s)"
+      sleep 10
+      ELAPSED=$((ELAPSED + 10))
+    done
 
-      if [[ -n "${GITLAB_API_TOKEN}" ]]; then
-        GITLAB_RUNNER_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/api/v4/runners" \
-          -H "Authorization: Bearer ${GITLAB_API_TOKEN}" \
-          -d "runner_type=instance_type&description=vks-runner" 2>/dev/null \
-          | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
-      fi
+    if [[ -n "${GITLAB_API_TOKEN}" ]]; then
+      GITLAB_RUNNER_TOKEN=$(curl -sSk -X POST \
+        "https://${GITLAB_HOSTNAME}/api/v4/user/runners" \
+        -H "Authorization: Bearer ${GITLAB_API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{"runner_type":"instance_type","description":"vks-runner","tag_list":["kubernetes","privileged"]}' 2>/dev/null \
+        | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
     fi
   fi
 
