@@ -45,7 +45,7 @@ runners:
     [[runners]]
       executor = "kubernetes"
       tls_verify = false
-      environment = ["DOCKER_TLS_CERTDIR=", "DOCKER_HOST=tcp://localhost:2375"]
+      environment = ["DOCKER_TLS_CERTDIR="]
       [runners.kubernetes]
         namespace = "gitlab-runners"
         image = "ubuntu:22.04"
