@@ -45,11 +45,15 @@ runners:
     [[runners]]
       executor = "kubernetes"
       tls_verify = false
+      environment = ["DOCKER_TLS_CERTDIR="]
       [runners.kubernetes]
         namespace = "gitlab-runners"
         image = "ubuntu:22.04"
         poll_timeout = 600
         privileged = true
+        [[runners.kubernetes.services]]
+          name = "docker:24-dind"
+          command = ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=HARBOR_HOSTNAME"]
 
 # ---------------------------------------------------------------------------
 # Resource limits for the runner manager pod

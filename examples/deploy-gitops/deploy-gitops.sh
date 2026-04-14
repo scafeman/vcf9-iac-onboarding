@@ -1712,12 +1712,13 @@ variables:
 
 build:
   stage: build
-  image: docker:24-dind
+  image: docker:24-cli
   services:
     - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
   before_script:
-    - mkdir -p /etc/docker
-    - 'echo "{\"insecure-registries\":[\"${HARBOR_HOST}\"]}" > /etc/docker/daemon.json'
+    - 'until docker info >/dev/null 2>&1; do sleep 1; done'
     - 'docker login -u admin -p "${HARBOR_PASSWORD}" "${HARBOR_HOST}"'
   script:
     - "BANNER_TEXT=$(grep 'banner_text:' demo-config.yaml | sed 's/banner_text:[[:space:]]*\"\\(.*\\)\"/\\1/' | sed 's/banner_text:[[:space:]]*//')"
