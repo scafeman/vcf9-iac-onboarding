@@ -1728,6 +1728,8 @@ build:
 update-manifests:
   stage: update-manifests
   image: alpine:3.19
+  variables:
+    GIT_SSL_NO_VERIFY: "true"
   before_script:
     - apk add --no-cache git sed
   script:
