@@ -1500,6 +1500,9 @@ jobs:
               newTag: v0.10.5
           KUSTOMEOF
 
+          # Strip leading whitespace from the generated kustomization.yaml
+          sed -i 's/^          //' "${CICD_TEMP_DIR}/repo/kustomization.yaml"
+
           # Generate .gitlab-ci.yml
           cat > "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml" <<'CIEOF'
           stages:
@@ -1542,6 +1545,9 @@ jobs:
               - git push "https://root:${GITLAB_ROOT_PASSWORD}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git" HEAD:main
           CIEOF
 
+          # Strip leading whitespace from the generated .gitlab-ci.yml (heredoc inherits workflow indentation)
+          sed -i 's/^          //' "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
+
           # Substitute runtime variables into .gitlab-ci.yml
           sed -i \
             -e "s|\${HARBOR_HOST}|${HARBOR_HOSTNAME}|g" \
@@ -1557,6 +1563,9 @@ jobs:
           ENV FRONTEND_MESSAGE=${FRONTEND_MESSAGE}
           DOCKEREOF
 
+          # Strip leading whitespace from the generated Dockerfile
+          sed -i 's/^          //' "${CICD_TEMP_DIR}/repo/Dockerfile"
+
           # Generate demo-config.yaml
           cat > "${CICD_TEMP_DIR}/repo/demo-config.yaml" <<DEMOEOF
           # Demo Configuration — Edit this file in GitLab's web UI to trigger the CI/CD pipeline.
@@ -1564,6 +1573,9 @@ jobs:
           banner_text: "${DEMO_BANNER_TEXT}"
           banner_color: "#C2185B"
           DEMOEOF
+
+          # Strip leading whitespace from the generated demo-config.yaml
+          sed -i 's/^          //' "${CICD_TEMP_DIR}/repo/demo-config.yaml"
 
           # Commit and push all files
           git add -A
