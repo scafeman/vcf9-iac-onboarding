@@ -1695,7 +1695,7 @@ patches:
 
 images:
   - name: us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend
-    newName: ${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend
+    newName: harbor-core.harbor.svc.cluster.local:80/${HARBOR_CI_PROJECT}/frontend
     newTag: v0.10.5
 KUSTOMEOF
 
@@ -1741,10 +1741,12 @@ update-manifests:
     - 'git push https://root:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git HEAD:main'
 CIEOF
 
-# Substitute placeholder values (non-sensitive) into .gitlab-ci.yml
+# Substitute placeholder values into .gitlab-ci.yml
+# Use Harbor's internal service name for image operations (CI push + kubelet pull)
+HARBOR_INTERNAL="harbor-core.harbor.svc.cluster.local:80"
 sed -i \
-  -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_HOSTNAME}|g" \
-  -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend|g" \
+  -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_INTERNAL}|g" \
+  -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_INTERNAL}/${HARBOR_CI_PROJECT}/frontend|g" \
   "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
 
 # Set GitLab CI/CD variables for sensitive values (Harbor password, GitLab push token)

@@ -53,7 +53,7 @@ runners:
         privileged = true
         [[runners.kubernetes.services]]
           name = "docker:24-dind"
-          command = ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=HARBOR_HOSTNAME"]
+          command = ["dockerd", "--host=tcp://0.0.0.0:2375", "--insecure-registry=harbor-core.harbor.svc.cluster.local:80"]
 
 # ---------------------------------------------------------------------------
 # Resource limits for the runner manager pod
