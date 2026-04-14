@@ -1019,15 +1019,15 @@ if [[ -z "${GITLAB_RUNNER_TOKEN}" ]]; then
     -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
 
   if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
-    # Wait for GitLab API to be ready (retry up to 60s)
+    # Wait for GitLab API to be ready (retry up to 300s — GitLab Rails takes time to warm up)
     GITLAB_API_TOKEN=""
     ELAPSED=0
-    while [ "$ELAPSED" -lt 60 ]; do
+    while [ "$ELAPSED" -lt 300 ]; do
       GITLAB_API_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
         -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
         | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
       if [ -n "${GITLAB_API_TOKEN}" ]; then break; fi
-      echo "Waiting for GitLab API... (${ELAPSED}s/60s)"
+      echo "Waiting for GitLab API... (${ELAPSED}s/300s)"
       sleep 10
       ELAPSED=$((ELAPSED + 10))
     done
