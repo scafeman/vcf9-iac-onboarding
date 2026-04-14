@@ -157,6 +157,10 @@ jobs:
           if [ ! -f "$KUBECONFIG_PATH" ]; then
             echo "Kubeconfig not found at '$KUBECONFIG_PATH', retrieving via VCF CLI..."
             CONTEXT_NAME="teardown-deploy"
+            # Force-delete all sub-contexts first, then the parent context
+            for ctx in $(vcf context list 2>/dev/null | grep "^  ${CONTEXT_NAME}" | awk '{print $1}' || true); do
+              vcf context delete "$ctx" --yes 2>/dev/null || true
+            done
             vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
             sleep 1
             vcf context create "$CONTEXT_NAME" \
@@ -808,6 +812,9 @@ jobs:
           unset KUBECONFIG
 
           # Establish VCF CLI context for supervisor operations
+          for ctx in $(vcf context list 2>/dev/null | grep "^  ${CONTEXT_NAME}" | awk '{print $1}' || true); do
+            vcf context delete "$ctx" --yes 2>/dev/null || true
+          done
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
           sleep 1
           vcf context create "$CONTEXT_NAME" \
@@ -911,6 +918,9 @@ jobs:
           unset KUBECONFIG
 
           # Establish VCF CLI context for supervisor operations
+          for ctx in $(vcf context list 2>/dev/null | grep "^  ${CONTEXT_NAME}" | awk '{print $1}' || true); do
+            vcf context delete "$ctx" --yes 2>/dev/null || true
+          done
           vcf context delete "$CONTEXT_NAME" --yes 2>/dev/null || true
           sleep 1
           vcf context create "$CONTEXT_NAME" \
