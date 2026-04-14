@@ -1662,12 +1662,12 @@ build:
     - docker:24-dind
   before_script:
     - mkdir -p /etc/docker
-    - echo "{\"insecure-registries\":[\"${HARBOR_HOST}\"]}" > /etc/docker/daemon.json
-    - docker login -u admin -p "${HARBOR_PASSWORD}" "${HARBOR_HOST}"
+    - 'echo "{\"insecure-registries\":[\"${HARBOR_HOST}\"]}" > /etc/docker/daemon.json'
+    - 'docker login -u admin -p "${HARBOR_PASSWORD}" "${HARBOR_HOST}"'
   script:
-    - BANNER_TEXT=$(grep 'banner_text:' demo-config.yaml | sed 's/banner_text:[[:space:]]*"\(.*\)"/\1/' | sed 's/banner_text:[[:space:]]*//')
-    - docker build --build-arg FRONTEND_MESSAGE="${BANNER_TEXT}" -t "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" .
-    - docker push "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+    - "BANNER_TEXT=$(grep 'banner_text:' demo-config.yaml | sed 's/banner_text:[[:space:]]*\"\\(.*\\)\"/\\1/' | sed 's/banner_text:[[:space:]]*//')"
+    - 'docker build --build-arg FRONTEND_MESSAGE="${BANNER_TEXT}" -t "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" .'
+    - 'docker push "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"'
 
 update-manifests:
   stage: update-manifests
@@ -1675,11 +1675,11 @@ update-manifests:
   before_script:
     - apk add --no-cache git sed
   script:
-    - sed -i "s|newTag:.*|newTag: ${CI_COMMIT_SHORT_SHA}|" kustomization.yaml
-    - git config user.email "ci@gitlab.local"
-    - git config user.name "GitLab CI"
+    - 'sed -i "s|newTag:.*|newTag: ${CI_COMMIT_SHORT_SHA}|" kustomization.yaml'
+    - 'git config user.email "ci@gitlab.local"'
+    - 'git config user.name "GitLab CI"'
     - git add kustomization.yaml
-    - if ! git diff --cached --quiet; then git commit -m "Update frontend image to ${CI_COMMIT_SHORT_SHA}"; fi
+    - 'if ! git diff --cached --quiet; then git commit -m "Update frontend image to ${CI_COMMIT_SHORT_SHA}"; fi'
     - 'git push https://root:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git HEAD:main'
 CIEOF
 
