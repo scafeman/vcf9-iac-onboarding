@@ -25,6 +25,9 @@ set -euo pipefail
 #   Phase 13: ArgoCD Application Bootstrap
 #   Phase 14: Microservices Demo Verification
 #   Phase 14b: Let's Encrypt TLS Ingress (external-facing trusted certs)
+#   Phase 16: Harbor CI Project & GitLab Project Creation
+#   Phase 17: ArgoCD Re-Point to GitLab
+#   Phase 18: Pipeline Verification & Demo Instructions
 #   Phase 15: Summary
 #
 # Prerequisites:
@@ -109,6 +112,11 @@ POLL_INTERVAL="${POLL_INTERVAL:-15}"
 USE_SSLIP_DNS="${USE_SSLIP_DNS:-true}"
 CLUSTER_ISSUER_NAME="${CLUSTER_ISSUER_NAME:-letsencrypt-prod}"
 CERT_WAIT_TIMEOUT="${CERT_WAIT_TIMEOUT:-300}"
+
+# --- CI/CD Pipeline Configuration ---
+GITLAB_PROJECT_NAME="${GITLAB_PROJECT_NAME:-microservices-demo}"
+HARBOR_CI_PROJECT="${HARBOR_CI_PROJECT:-microservices-ci}"
+DEMO_BANNER_TEXT="${DEMO_BANNER_TEXT:-}"
 
 ###############################################################################
 # Derived Variables (computed from DOMAIN — do not edit)
@@ -1463,6 +1471,373 @@ EOF
 fi
 
 ###############################################################################
+# Phase 16: Harbor CI Project & GitLab Project Creation
+#
+# Creates the Harbor project for CI-built images, creates a GitLab project
+# with the microservices-demo Kustomize overlay, Dockerfile, .gitlab-ci.yml,
+# and demo-config.yaml, then pushes all files to the GitLab default branch.
+###############################################################################
+
+log_step 16 "Creating Harbor CI project and GitLab project for CI/CD pipeline"
+
+# --- 16a: Create Harbor CI project via REST API ---
+
+HARBOR_API_URL="https://${HARBOR_HOSTNAME}/api/v2.0"
+
+# Check if Harbor CI project already exists
+HARBOR_PROJECT_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+  "${HARBOR_API_URL}/projects?name=${HARBOR_CI_PROJECT}" -k)
+
+HARBOR_PROJECT_LIST=$(curl -s \
+  -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+  "${HARBOR_API_URL}/projects?name=${HARBOR_CI_PROJECT}" -k)
+
+# Check if the project name matches exactly in the response
+if echo "${HARBOR_PROJECT_LIST}" | python3 -c "
+import sys, json
+projects = json.load(sys.stdin)
+sys.exit(0 if any(p['name'] == '${HARBOR_CI_PROJECT}' for p in projects) else 1)
+" 2>/dev/null; then
+  log_success "Harbor CI project '${HARBOR_CI_PROJECT}' already exists, skipping creation"
+else
+  HARBOR_CREATE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST \
+    -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+    -H "Content-Type: application/json" \
+    -d '{"project_name":"'"${HARBOR_CI_PROJECT}"'","public":true}' \
+    "${HARBOR_API_URL}/projects" -k)
+
+  if [[ "${HARBOR_CREATE_RESPONSE}" == "201" || "${HARBOR_CREATE_RESPONSE}" == "409" ]]; then
+    log_success "Harbor CI project '${HARBOR_CI_PROJECT}' created"
+  else
+    log_error "Failed to create Harbor CI project '${HARBOR_CI_PROJECT}' (HTTP ${HARBOR_CREATE_RESPONSE})"
+    exit 16
+  fi
+fi
+
+# --- 16b: Create GitLab personal access token for API operations ---
+
+# Retrieve GitLab root password from K8s secret (reuse pattern from Phase 11)
+if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
+  GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+fi
+
+if [[ -z "${GITLAB_ROOT_PASSWORD:-}" ]]; then
+  log_error "Failed to retrieve GitLab root password from K8s secret 'gitlab-gitlab-initial-root-password'"
+  exit 16
+fi
+
+# Create a personal access token for the root user via GitLab API
+# First, obtain an OAuth token using the root password
+GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+  -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+if [[ -z "${GITLAB_OAUTH_TOKEN}" ]]; then
+  log_error "Failed to obtain GitLab OAuth token for root user"
+  exit 16
+fi
+
+# Create a PAT with api scope for subsequent operations
+GITLAB_PAT_RESPONSE=$(curl -sSk -X POST \
+  "https://${GITLAB_HOSTNAME}/api/v4/users/1/personal_access_tokens" \
+  -H "Authorization: Bearer ${GITLAB_OAUTH_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"deploy-cicd-pat","scopes":["api","write_repository"],"expires_at":"'"$(date -d '+1 year' '+%Y-%m-%d' 2>/dev/null || date -v+1y '+%Y-%m-%d' 2>/dev/null)"'"}' 2>/dev/null || true)
+
+GITLAB_API_PAT=$(echo "${GITLAB_PAT_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+
+if [[ -z "${GITLAB_API_PAT}" ]]; then
+  # Fallback: use the OAuth token directly for API operations
+  log_warn "Could not create GitLab PAT, falling back to OAuth token for API operations"
+  GITLAB_API_PAT="${GITLAB_OAUTH_TOKEN}"
+fi
+
+log_success "GitLab API token obtained for root user"
+
+# --- 16c: Create GitLab project via REST API ---
+
+# Check if project already exists
+GITLAB_PROJECT_ID=$(curl -sSk \
+  "https://${GITLAB_HOSTNAME}/api/v4/projects?search=${GITLAB_PROJECT_NAME}" \
+  -H "PRIVATE-TOKEN: ${GITLAB_API_PAT}" 2>/dev/null \
+  | python3 -c "
+import sys, json
+projects = json.load(sys.stdin)
+for p in projects:
+    if p['path'] == '${GITLAB_PROJECT_NAME}':
+        print(p['id'])
+        sys.exit(0)
+print('')
+" 2>/dev/null || true)
+
+if [[ -n "${GITLAB_PROJECT_ID}" ]]; then
+  log_success "GitLab project '${GITLAB_PROJECT_NAME}' already exists (ID: ${GITLAB_PROJECT_ID}), skipping creation"
+else
+  GITLAB_PROJECT_RESPONSE=$(curl -sSk -X POST \
+    "https://${GITLAB_HOSTNAME}/api/v4/projects" \
+    -H "PRIVATE-TOKEN: ${GITLAB_API_PAT}" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"'"${GITLAB_PROJECT_NAME}"'","visibility":"public","initialize_with_readme":false}' 2>/dev/null)
+
+  GITLAB_PROJECT_ID=$(echo "${GITLAB_PROJECT_RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+
+  if [[ -z "${GITLAB_PROJECT_ID}" ]]; then
+    log_error "Failed to create GitLab project '${GITLAB_PROJECT_NAME}'"
+    log_error "API response: ${GITLAB_PROJECT_RESPONSE}"
+    exit 16
+  fi
+
+  log_success "GitLab project '${GITLAB_PROJECT_NAME}' created (ID: ${GITLAB_PROJECT_ID})"
+fi
+
+# --- 16d: Generate and push CI/CD files to GitLab project ---
+
+CICD_TEMP_DIR=$(mktemp -d)
+log_success "CI/CD temp directory created at '${CICD_TEMP_DIR}'"
+
+# Clone the GitLab project (may be empty)
+GIT_SSL_NO_VERIFY=true git clone \
+  "https://root:${GITLAB_API_PAT}@${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}.git" \
+  "${CICD_TEMP_DIR}/repo" 2>/dev/null || {
+  # If clone fails (empty repo), initialize manually
+  mkdir -p "${CICD_TEMP_DIR}/repo"
+  cd "${CICD_TEMP_DIR}/repo"
+  git init
+  git remote add origin "https://root:${GITLAB_API_PAT}@${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}.git"
+  cd - >/dev/null
+}
+
+cd "${CICD_TEMP_DIR}/repo"
+
+# Configure git for this repo
+git config user.email "admin@${DOMAIN}"
+git config user.name "Deploy Script"
+git config http.sslVerify false
+
+# Copy kubernetes-manifests.yaml from the existing overlay
+cp "$(dirname "$0")/microservices-overlay/kubernetes-manifests.yaml" \
+  "${CICD_TEMP_DIR}/repo/kubernetes-manifests.yaml"
+
+# Generate kustomization.yaml (GitLab version with images section for Harbor CI)
+cat > "${CICD_TEMP_DIR}/repo/kustomization.yaml" <<KUSTOMEOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - kubernetes-manifests.yaml
+
+patches:
+  - target:
+      kind: Service
+      name: frontend-external
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: ClusterIP
+
+images:
+  - name: us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend
+    newName: ${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend
+    newTag: v0.10.5
+KUSTOMEOF
+
+# Generate .gitlab-ci.yml
+cat > "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml" <<'CIEOF'
+stages:
+  - build
+  - update-manifests
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+
+build:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - |
+      if [ -f /etc/gitlab-runner/certs/ca.crt ]; then
+        cp /etc/gitlab-runner/certs/ca.crt /usr/local/share/ca-certificates/harbor-ca.crt
+        update-ca-certificates
+      fi
+    - mkdir -p /etc/docker
+    - echo '{"insecure-registries":["'"${HARBOR_HOST}"'"]}' > /etc/docker/daemon.json
+    - docker login -u admin -p "${HARBOR_ADMIN_PASSWORD}" "${HARBOR_HOST}"
+  script:
+    - BANNER_TEXT=$(grep 'banner_text:' demo-config.yaml | sed 's/banner_text:[[:space:]]*"\(.*\)"/\1/' | sed 's/banner_text:[[:space:]]*//')
+    - docker build --build-arg FRONTEND_MESSAGE="${BANNER_TEXT}" -t "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" .
+    - docker push "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+
+update-manifests:
+  stage: update-manifests
+  image: alpine:3.19
+  before_script:
+    - apk add --no-cache git sed
+  script:
+    - sed -i "s|newTag:.*|newTag: ${CI_COMMIT_SHORT_SHA}|" kustomization.yaml
+    - git config user.email "ci@gitlab.local"
+    - git config user.name "GitLab CI"
+    - git add kustomization.yaml
+    - git diff --cached --quiet || git commit -m "Update frontend image to ${CI_COMMIT_SHORT_SHA}"
+    - git push "https://root:${GITLAB_ROOT_PASSWORD}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git" HEAD:main
+CIEOF
+
+# Substitute runtime variables into .gitlab-ci.yml
+# (The heredoc uses single-quotes to prevent shell expansion, so we substitute now)
+sed -i \
+  -e "s|\${HARBOR_HOST}|${HARBOR_HOSTNAME}|g" \
+  -e "s|\${HARBOR_ADMIN_PASSWORD}|${HARBOR_ADMIN_PASSWORD}|g" \
+  -e "s|\${IMAGE_NAME}|${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend|g" \
+  -e "s|\${GITLAB_ROOT_PASSWORD}|${GITLAB_ROOT_PASSWORD}|g" \
+  "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
+
+# Generate Dockerfile for the frontend image
+cat > "${CICD_TEMP_DIR}/repo/Dockerfile" <<'DOCKEREOF'
+FROM us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend:v0.10.5
+ARG FRONTEND_MESSAGE=""
+ENV FRONTEND_MESSAGE=${FRONTEND_MESSAGE}
+DOCKEREOF
+
+# Generate demo-config.yaml
+cat > "${CICD_TEMP_DIR}/repo/demo-config.yaml" <<DEMOEOF
+# Demo Configuration — Edit this file in GitLab's web UI to trigger the CI/CD pipeline.
+# Change the banner_text to display a message on the Online Boutique frontend.
+banner_text: "${DEMO_BANNER_TEXT}"
+banner_color: "#C2185B"
+DEMOEOF
+
+# Commit and push all files
+git add -A
+if git diff --cached --quiet 2>/dev/null; then
+  log_success "GitLab project '${GITLAB_PROJECT_NAME}' already contains CI/CD files, skipping push"
+else
+  git commit -m "Initial CI/CD pipeline setup
+
+- kustomization.yaml: Kustomize overlay with Harbor CI image reference
+- kubernetes-manifests.yaml: Upstream microservices-demo manifests
+- .gitlab-ci.yml: Build and update-manifests pipeline stages
+- Dockerfile: Frontend image with configurable banner message
+- demo-config.yaml: Demo banner configuration"
+
+  if ! GIT_SSL_NO_VERIFY=true git push -u origin HEAD:main 2>/dev/null; then
+    # Try pushing to master if main doesn't work
+    if ! GIT_SSL_NO_VERIFY=true git push -u origin HEAD:master 2>/dev/null; then
+      log_error "Failed to push CI/CD files to GitLab project '${GITLAB_PROJECT_NAME}'"
+      cd - >/dev/null
+      rm -rf "${CICD_TEMP_DIR}"
+      exit 16
+    fi
+  fi
+
+  log_success "CI/CD files pushed to GitLab project '${GITLAB_PROJECT_NAME}'"
+fi
+
+cd - >/dev/null
+rm -rf "${CICD_TEMP_DIR}"
+
+log_success "Phase 16 complete — Harbor CI project and GitLab project ready"
+
+###############################################################################
+# Phase 17: ArgoCD Re-Point to GitLab
+#
+# Adds the GitLab repository credentials to ArgoCD and patches the existing
+# ArgoCD Application to point at the GitLab project instead of GitHub.
+###############################################################################
+
+log_step 17 "Re-pointing ArgoCD to GitLab repository"
+
+# --- 17a: Add ArgoCD repository credentials for GitLab ---
+
+GITLAB_REPO_URL="https://${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}.git"
+
+# Check if the GitLab repo is already registered with ArgoCD
+if argocd_exec "argocd repo list" 2>/dev/null | grep -q "${GITLAB_HOSTNAME}"; then
+  log_success "ArgoCD already has credentials for '${GITLAB_HOSTNAME}', skipping repo add"
+else
+  if ! argocd_exec "argocd repo add '${GITLAB_REPO_URL}' \
+    --username root \
+    --password '${GITLAB_ROOT_PASSWORD}' \
+    --insecure-skip-server-verification"; then
+    log_error "Failed to add GitLab repository '${GITLAB_REPO_URL}' to ArgoCD"
+    exit 17
+  fi
+  log_success "GitLab repository credentials added to ArgoCD"
+fi
+
+# --- 17b: Patch ArgoCD Application source to GitLab ---
+
+if ! kubectl patch application microservices-demo -n "${ARGOCD_NAMESPACE}" --type merge -p '{
+  "spec": {
+    "source": {
+      "repoURL": "'"${GITLAB_REPO_URL}"'",
+      "path": ".",
+      "targetRevision": "main"
+    }
+  }
+}'; then
+  log_error "Failed to patch ArgoCD Application 'microservices-demo' to point to GitLab"
+  exit 17
+fi
+log_success "ArgoCD Application 'microservices-demo' patched to source from GitLab"
+
+# Wait for ArgoCD Application to reach Synced and Healthy status after re-point
+if ! wait_for_condition "ArgoCD application 'microservices-demo' to be Synced and Healthy (GitLab source)" \
+  "${PACKAGE_TIMEOUT}" "${POLL_INTERVAL}" \
+  "kubectl exec -n '${ARGOCD_NAMESPACE}' '${ARGOCD_POD}' -- argocd app get microservices-demo 2>/dev/null | tee /tmp/argocd-app-status | grep -q 'Healthy' && grep -q 'Synced' /tmp/argocd-app-status"; then
+  log_error "ArgoCD application 'microservices-demo' did not reach Synced/Healthy state within ${PACKAGE_TIMEOUT}s after re-pointing to GitLab"
+  exit 17
+fi
+
+log_success "Phase 17 complete — ArgoCD now watches GitLab repository '${GITLAB_REPO_URL}'"
+
+###############################################################################
+# Phase 18: Pipeline Verification & Demo Instructions
+#
+# Verifies the CI/CD pipeline is ready: GitLab Runner registered, ArgoCD
+# Application synced with GitLab source, and frontend pod running.
+# All checks are non-fatal (log_warn) — the pipeline may need a few minutes
+# to fully converge after initial setup.
+###############################################################################
+
+log_step 18 "Verifying CI/CD pipeline readiness"
+
+# --- 18a: Check GitLab Runner is registered ---
+RUNNER_CHECK=$(curl -sSk \
+  "https://${GITLAB_HOSTNAME}/api/v4/runners/all" \
+  -H "PRIVATE-TOKEN: ${GITLAB_API_PAT}" 2>/dev/null || true)
+
+if echo "${RUNNER_CHECK}" | python3 -c "import sys,json; runners=json.load(sys.stdin); sys.exit(0 if len(runners)>0 else 1)" 2>/dev/null; then
+  log_success "GitLab Runner is registered and available"
+else
+  log_warn "No GitLab Runner detected — the runner may still be registering. Check https://${GITLAB_HOSTNAME}/admin/runners"
+fi
+
+# --- 18b: Check ArgoCD Application is Synced/Healthy with GitLab source ---
+ARGOCD_APP_STATUS=$(kubectl exec -n "${ARGOCD_NAMESPACE}" "${ARGOCD_POD}" -- \
+  argocd app get microservices-demo 2>/dev/null || true)
+
+if echo "${ARGOCD_APP_STATUS}" | grep -q "Healthy" && echo "${ARGOCD_APP_STATUS}" | grep -q "Synced"; then
+  log_success "ArgoCD Application 'microservices-demo' is Synced and Healthy with GitLab source"
+else
+  log_warn "ArgoCD Application 'microservices-demo' is not yet Synced/Healthy — it may still be reconciling"
+fi
+
+# --- 18c: Check frontend pod is running ---
+FRONTEND_POD_COUNT=$(kubectl get pods -n "${APP_NAMESPACE}" -l app=frontend --no-headers 2>/dev/null | grep -c "Running" || true)
+
+if [[ "${FRONTEND_POD_COUNT}" -gt 0 ]]; then
+  log_success "Frontend pod is running in namespace '${APP_NAMESPACE}'"
+else
+  log_warn "Frontend pod is not running in namespace '${APP_NAMESPACE}' — ArgoCD may still be syncing"
+fi
+
+log_success "Phase 18 complete — pipeline verification finished"
+
+###############################################################################
 # Phase 15: Summary Banner
 ###############################################################################
 
@@ -1530,6 +1905,22 @@ echo "  Login credentials:"
 echo "    GitLab:    root  / ${GITLAB_ROOT_PASSWORD}"
 echo "    Harbor:    admin / ${HARBOR_ADMIN_PASSWORD}"
 echo "    ArgoCD:    admin / ${ARGOCD_PASSWORD}"
+echo ""
+echo "  CI/CD Pipeline:"
+echo "    GitLab Project:   https://${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}"
+echo "    Harbor CI Project: https://${HARBOR_HOSTNAME}/harbor/projects (${HARBOR_CI_PROJECT})"
+echo "    ArgoCD Application: https://${ARGOCD_HOSTNAME}/applications/argocd/microservices-demo"
+echo ""
+echo "  Live Demo Instructions:"
+echo "    1. Navigate to https://${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}"
+echo "       and open the file 'demo-config.yaml' for editing."
+echo "    2. Change the 'banner_text' value to a custom message"
+echo "       (e.g., banner_text: \"Welcome to VCF 9\")."
+echo "    3. Commit the change — watch the CI pipeline run at:"
+echo "       https://${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}/-/pipelines"
+echo "    4. ArgoCD will automatically sync the new image. Monitor at:"
+echo "       https://${ARGOCD_HOSTNAME}/applications/argocd/microservices-demo"
+echo "       Then refresh the Online Boutique frontend to see the banner."
 echo ""
 
 log_success "Deploy GitOps deployment complete"
