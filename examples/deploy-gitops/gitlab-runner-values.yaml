@@ -48,7 +48,6 @@ runners:
       [runners.kubernetes]
         namespace = "gitlab-runners"
         image = "ubuntu:22.04"
-        helper_image = "HARBOR_HOSTNAME/library/gitlab-runner-helper:x86_64-latest"
         poll_timeout = 600
         privileged = true
 
