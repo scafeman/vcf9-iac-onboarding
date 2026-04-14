@@ -1680,7 +1680,7 @@ update-manifests:
     - git config user.name "GitLab CI"
     - git add kustomization.yaml
     - if ! git diff --cached --quiet; then git commit -m "Update frontend image to ${CI_COMMIT_SHORT_SHA}"; fi
-    - git push "https://root:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git" HEAD:main
+    - 'git push https://root:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git HEAD:main'
 CIEOF
 
 # Substitute placeholder values (non-sensitive) into .gitlab-ci.yml
