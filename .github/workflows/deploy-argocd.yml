@@ -1511,6 +1511,8 @@ jobs:
 
           variables:
             DOCKER_TLS_CERTDIR: ""
+            HARBOR_HOST: "PLACEHOLDER_HARBOR_HOST"
+            IMAGE_NAME: "PLACEHOLDER_IMAGE_NAME"
 
           build:
             stage: build
@@ -1518,14 +1520,9 @@ jobs:
             services:
               - docker:24-dind
             before_script:
-              - |
-                if [ -f /etc/gitlab-runner/certs/ca.crt ]; then
-                  cp /etc/gitlab-runner/certs/ca.crt /usr/local/share/ca-certificates/harbor-ca.crt
-                  update-ca-certificates
-                fi
               - mkdir -p /etc/docker
-              - echo '{"insecure-registries":["'"${HARBOR_HOST}"'"]}' > /etc/docker/daemon.json
-              - docker login -u admin -p "${HARBOR_ADMIN_PASSWORD}" "${HARBOR_HOST}"
+              - echo "{\"insecure-registries\":[\"${HARBOR_HOST}\"]}" > /etc/docker/daemon.json
+              - docker login -u admin -p "${HARBOR_PASSWORD}" "${HARBOR_HOST}"
             script:
               - BANNER_TEXT=$(grep 'banner_text:' demo-config.yaml | sed 's/banner_text:[[:space:]]*"\(.*\)"/\1/' | sed 's/banner_text:[[:space:]]*//')
               - docker build --build-arg FRONTEND_MESSAGE="${BANNER_TEXT}" -t "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" .
@@ -1541,20 +1538,34 @@ jobs:
               - git config user.email "ci@gitlab.local"
               - git config user.name "GitLab CI"
               - git add kustomization.yaml
-              - git diff --cached --quiet || git commit -m "Update frontend image to ${CI_COMMIT_SHORT_SHA}"
-              - git push "https://root:${GITLAB_ROOT_PASSWORD}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git" HEAD:main
+              - "git diff --cached --quiet || git commit -m \"Update frontend image to ${CI_COMMIT_SHORT_SHA}\""
+              - git push "https://root:${GITLAB_PUSH_TOKEN}@${CI_SERVER_HOST}/root/${CI_PROJECT_NAME}.git" HEAD:main
           CIEOF
 
           # Strip leading whitespace from the generated .gitlab-ci.yml (heredoc inherits workflow indentation)
           sed -i 's/^          //' "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
 
-          # Substitute runtime variables into .gitlab-ci.yml
+          # Substitute placeholder values (non-sensitive) into .gitlab-ci.yml
           sed -i \
-            -e "s|\${HARBOR_HOST}|${HARBOR_HOSTNAME}|g" \
-            -e "s|\${HARBOR_ADMIN_PASSWORD}|${HARBOR_ADMIN_PASSWORD}|g" \
-            -e "s|\${IMAGE_NAME}|${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend|g" \
-            -e "s|\${GITLAB_ROOT_PASSWORD}|${GITLAB_ROOT_PASSWORD}|g" \
+            -e "s|PLACEHOLDER_HARBOR_HOST|${HARBOR_HOSTNAME}|g" \
+            -e "s|PLACEHOLDER_IMAGE_NAME|${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend|g" \
             "${CICD_TEMP_DIR}/repo/.gitlab-ci.yml"
+
+          # Set GitLab CI/CD variables for sensitive values (Harbor password, GitLab push token)
+          # These are stored as project-level CI/CD variables, not hardcoded in .gitlab-ci.yml
+          curl -sSk -X POST \
+            "https://${GITLAB_HOSTNAME}/api/v4/projects/${GITLAB_PROJECT_ID}/variables" \
+            -H "PRIVATE-TOKEN: ${GITLAB_API_PAT}" \
+            -H "Content-Type: application/json" \
+            -d '{"key":"HARBOR_PASSWORD","value":"'"${HARBOR_ADMIN_PASSWORD}"'","masked":true}' 2>/dev/null || true
+
+          curl -sSk -X POST \
+            "https://${GITLAB_HOSTNAME}/api/v4/projects/${GITLAB_PROJECT_ID}/variables" \
+            -H "PRIVATE-TOKEN: ${GITLAB_API_PAT}" \
+            -H "Content-Type: application/json" \
+            -d '{"key":"GITLAB_PUSH_TOKEN","value":"'"${GITLAB_API_PAT}"'","masked":true}' 2>/dev/null || true
+
+          echo "GitLab CI/CD variables set for Harbor password and push token"
 
           # Generate Dockerfile for the frontend image
           cat > "${CICD_TEMP_DIR}/repo/Dockerfile" <<'DOCKEREOF'
