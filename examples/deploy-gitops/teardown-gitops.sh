@@ -417,6 +417,10 @@ log_success "CoreDNS restore complete"
 # Delete node DNS patcher DaemonSet (defensive — deployed by deploy-cluster.sh)
 kubectl delete daemonset node-dns-patcher -n kube-system --ignore-not-found 2>/dev/null || true
 
+# Delete node CA installer DaemonSet and ConfigMap (deployed by Phase 8b)
+kubectl delete daemonset node-ca-installer -n kube-system --ignore-not-found 2>/dev/null || true
+kubectl delete configmap node-ca-bundle -n kube-system --ignore-not-found 2>/dev/null || true
+
 ###############################################################################
 # Phase 7: Delete Harbor
 ###############################################################################

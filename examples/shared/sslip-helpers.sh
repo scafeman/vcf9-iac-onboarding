@@ -356,3 +356,108 @@ spec:
             privileged: true
 EOF
 }
+
+###############################################################################
+# install_node_ca_bundle — Install a CA bundle into VKS node trust stores
+#
+# Creates a ConfigMap containing the CA bundle and deploys a DaemonSet that
+# copies the CA certificates into each node's system trust store using
+# nsenter. This enables the kubelet and containerd to trust custom CAs
+# (self-signed CA, Let's Encrypt staging, Let's Encrypt prod) when pulling
+# container images from registries using those certificates.
+#
+# The DaemonSet container runs a loop that:
+#   1. Reads the CA bundle from the mounted ConfigMap
+#   2. Copies each certificate to the node's /etc/ssl/certs/ directory
+#   3. Runs update-ca-certificates (or equivalent) to rebuild the trust store
+#   4. Sleeps 300s and repeats (handles node reboots)
+#
+# Uses nsenter to access the host's mount namespace (required on Photon OS).
+# Uses kubectl apply for idempotent create-or-update semantics.
+#
+# Arguments:
+#   $1 - ca_bundle_file : Path to the CA bundle PEM file containing one or
+#                         more CA certificates to trust
+#   $2 - namespace      : Kubernetes namespace (default: "kube-system")
+#
+# Returns:
+#   0 on success
+#   Non-zero on kubectl apply failure
+#
+# Example:
+#   install_node_ca_bundle "/tmp/ca-bundle.crt"
+#   install_node_ca_bundle "/tmp/ca-bundle.crt" "custom-namespace"
+###############################################################################
+install_node_ca_bundle() {
+  local ca_bundle_file="$1"
+  local namespace="${2:-kube-system}"
+
+  if [[ ! -f "${ca_bundle_file}" ]]; then
+    echo "⚠ WARNING: CA bundle file '${ca_bundle_file}' not found — skipping node CA installation"
+    return 1
+  fi
+
+  # Create/update ConfigMap with the CA bundle
+  kubectl create configmap node-ca-bundle \
+    --from-file=ca-bundle.crt="${ca_bundle_file}" \
+    --namespace "${namespace}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Deploy DaemonSet that installs the CA bundle on each node
+  kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-ca-installer
+  namespace: ${namespace}
+  labels:
+    app: node-ca-installer
+spec:
+  selector:
+    matchLabels:
+      app: node-ca-installer
+  template:
+    metadata:
+      labels:
+        app: node-ca-installer
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: ca-installer
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                if [ -f /ca-bundle/ca-bundle.crt ]; then
+                  # Pipe CA bundle into host /etc/ssl/certs/ via nsenter + tee
+                  # Photon OS uses /etc/ssl/certs/ with hashed symlinks (no update-ca-trust)
+                  cat /ca-bundle/ca-bundle.crt | nsenter --target 1 --mount -- tee /etc/ssl/certs/sslip-ca-bundle.pem > /dev/null
+                  # Create hash symlink for the first cert in the bundle
+                  nsenter --target 1 --mount -- sh -c 'cd /etc/ssl/certs && ln -sf sslip-ca-bundle.pem \$(openssl x509 -hash -noout -in sslip-ca-bundle.pem 2>/dev/null).0 2>/dev/null || true'
+                  # Restart containerd to pick up new trust store
+                  nsenter --target 1 --mount --pid -- systemctl restart containerd 2>/dev/null || true
+                  echo "[\$(date)] Installed CA bundle on node and restarted containerd"
+                  # Only need to do this once per boot — sleep long
+                  sleep 3600
+                else
+                  echo "[\$(date)] CA bundle not found — waiting"
+                  sleep 30
+                fi
+              done
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /ca-bundle
+              readOnly: true
+      volumes:
+        - name: ca-bundle
+          configMap:
+            name: node-ca-bundle
+EOF
+}

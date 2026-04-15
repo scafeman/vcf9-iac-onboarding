@@ -886,6 +886,23 @@ if ! kubectl create secret generic harbor-ca-cert \
   exit 9
 fi
 
+# Install CA bundle on VKS nodes so kubelet/containerd trusts Harbor certs
+# This covers self-signed CA, Let's Encrypt staging, and Let's Encrypt prod
+log_step "8b" "Installing CA bundle on VKS node trust stores"
+install_node_ca_bundle "${CA_BUNDLE_FILE}"
+
+if wait_for_condition "node-ca-installer DaemonSet to be ready" \
+  120 "${POLL_INTERVAL}" \
+  "[[ \$(kubectl get daemonset node-ca-installer -n kube-system -o jsonpath='{.status.numberReady}' 2>/dev/null) -gt 0 ]] && \
+   [[ \$(kubectl get daemonset node-ca-installer -n kube-system -o jsonpath='{.status.desiredNumberScheduled}') == \$(kubectl get daemonset node-ca-installer -n kube-system -o jsonpath='{.status.numberReady}') ]]"; then
+  log_success "Node CA installer DaemonSet is ready on all nodes"
+else
+  log_warn "Node CA installer DaemonSet not fully ready within 120s — continuing"
+fi
+
+# Allow time for the first CA install cycle to complete
+sleep 10
+
 rm -f "${CA_BUNDLE_FILE}"
 
 # Create RBAC for GitLab Runner service account (Kubernetes executor needs pod/secret permissions)
