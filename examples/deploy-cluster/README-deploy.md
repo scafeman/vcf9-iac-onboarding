@@ -115,6 +115,10 @@ When `USE_SSLIP_DNS=true`, this phase also adds a CoreDNS forwarding rule for `s
 
 Creates a `letsencrypt-prod` ClusterIssuer resource that configures cert-manager to request TLS certificates from Let's Encrypt via the ACME HTTP-01 challenge solver. If `LETSENCRYPT_EMAIL` is set, it is used as the ACME account registration email. The ClusterIssuer is referenced by Ingress annotations in subsequent deployment patterns to automatically provision trusted TLS certificates.
 
+### Phase 5j: Node DNS Patcher DaemonSet (sslip.io node-level resolution)
+
+When `USE_SSLIP_DNS=true`, deploys a privileged DaemonSet (`node-dns-patcher`) to `kube-system` that configures `systemd-resolved` on each VKS node to include public DNS servers (8.8.8.8, 1.1.1.1) alongside the existing corporate DNS. This is required because the kubelet uses node-level DNS (not CoreDNS) for container image pulls, and the Supervisor Cluster's corporate DNS cannot resolve sslip.io addresses. The DaemonSet uses `nsenter` + `resolvectl` to configure DNS on each node and loops every 60 seconds to handle node reboots. All downstream deployment patterns (deploy-gitops, deploy-metrics, etc.) inherit this DNS configuration.
+
 ### Phase 6: Functional Validation Workload Deployment
 
 Deploys three resources to the guest cluster to validate storage, compute, and networking:
@@ -251,6 +255,6 @@ A successful run produces output like this:
 | Phase 5 (API server reachable) | 1-2 min |
 | Phase 5b (Worker nodes ready) | 2-3 min |
 | Phase 5c-5f (Cluster Autoscaler) | 1-3 min |
-| Phase 5g-5i (cert-manager, Contour, CoreDNS sslip.io forwarding, ClusterIssuer) | 2-5 min |
+| Phase 5g-5j (cert-manager, Contour, CoreDNS sslip.io forwarding, ClusterIssuer, Node DNS patcher) | 2-5 min |
 | Phase 6 (Workload validation) | 1-2 min |
 | **Total** | **~6-21 min** |
