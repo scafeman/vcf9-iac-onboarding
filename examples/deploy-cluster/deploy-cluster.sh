@@ -13,6 +13,7 @@ set -euo pipefail
 #   Phase 5g: cert-manager Installation
 #   Phase 5h: Contour Installation + envoy-lb Service
 #   Phase 5i: Let's Encrypt ClusterIssuer Creation
+#   Step 5j: Deploy Node DNS Patcher DaemonSet (sslip.io node-level resolution)
 #   Phase 6: Functional Validation Workload Deployment (with sslip.io + TLS)
 #
 # Edit the variable block below with your environment-specific values,
@@ -697,6 +698,28 @@ if wait_for_condition "ClusterIssuer '${CLUSTER_ISSUER_NAME}' to reach Ready sta
   log_success "ClusterIssuer '${CLUSTER_ISSUER_NAME}' is Ready"
 else
   echo "  ⚠ WARNING: ClusterIssuer '${CLUSTER_ISSUER_NAME}' did not reach Ready within 120s — continuing without TLS"
+fi
+
+###############################################################################
+# Phase 5j: Deploy Node DNS Patcher DaemonSet (sslip.io node-level resolution)
+###############################################################################
+
+if [[ "${USE_SSLIP_DNS}" == "true" ]]; then
+  log_step "5j" "Deploying node DNS patcher DaemonSet for sslip.io resolution"
+  deploy_node_dns_daemonset
+
+  # Wait for DaemonSet to be ready (all desired pods scheduled and ready)
+  if wait_for_condition "node-dns-patcher DaemonSet to be ready" \
+    120 "${POLL_INTERVAL}" \
+    "[[ \$(kubectl get daemonset node-dns-patcher -n kube-system -o jsonpath='{.status.numberReady}' 2>/dev/null) -gt 0 ]] && \
+     [[ \$(kubectl get daemonset node-dns-patcher -n kube-system -o jsonpath='{.status.desiredNumberScheduled}') == \$(kubectl get daemonset node-dns-patcher -n kube-system -o jsonpath='{.status.numberReady}') ]]"; then
+    log_success "Node DNS patcher DaemonSet is ready on all nodes"
+  else
+    echo "  ⚠ WARNING: Node DNS patcher DaemonSet not fully ready within 120s — continuing"
+  fi
+
+  # Allow time for the first DNS patch cycle to complete
+  sleep 5
 fi
 
 ###############################################################################

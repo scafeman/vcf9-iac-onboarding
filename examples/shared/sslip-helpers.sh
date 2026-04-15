@@ -275,3 +275,85 @@ wait_for_certificate() {
   echo "  Timeout waiting for certificate '${secret_name}' after ${elapsed}s"
   return 1
 }
+
+###############################################################################
+# deploy_node_dns_daemonset — Deploy a DaemonSet to patch node /etc/resolv.conf
+#
+# Deploys a privileged DaemonSet named 'node-dns-patcher' that runs on every
+# node (including control plane) and ensures public DNS servers (8.8.8.8 and
+# 1.1.1.1) are present in /etc/resolv.conf. This enables the kubelet and
+# containerd to resolve sslip.io hostnames for container image pulls.
+#
+# The DaemonSet container runs a loop that:
+#   1. Checks if 8.8.8.8 and 1.1.1.1 are already in /etc/resolv.conf
+#   2. Appends them if missing
+#   3. Sleeps 60s and repeats (handles node reboots that regenerate resolv.conf)
+#
+# Uses kubectl apply for idempotent create-or-update semantics.
+#
+# Arguments:
+#   $1 - namespace : Kubernetes namespace for the DaemonSet (default: "kube-system")
+#
+# Returns:
+#   0 on success
+#   Non-zero on kubectl apply failure
+#
+# Example:
+#   deploy_node_dns_daemonset
+#   deploy_node_dns_daemonset "custom-namespace"
+###############################################################################
+deploy_node_dns_daemonset() {
+  local namespace="${1:-kube-system}"
+
+  kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-dns-patcher
+  namespace: ${namespace}
+  labels:
+    app: node-dns-patcher
+spec:
+  selector:
+    matchLabels:
+      app: node-dns-patcher
+  template:
+    metadata:
+      labels:
+        app: node-dns-patcher
+    spec:
+      hostNetwork: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: dns-patcher
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                CHANGED=false
+                for ns in 8.8.8.8 1.1.1.1; do
+                  if ! grep -q "nameserver ${ns}" /host-etc/resolv.conf; then
+                    echo "nameserver ${ns}" >> /host-etc/resolv.conf
+                    CHANGED=true
+                  fi
+                done
+                if [ "\$CHANGED" = "true" ]; then
+                  echo "[\$(date)] Patched /etc/resolv.conf with public DNS servers"
+                fi
+                sleep 60
+              done
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: host-etc
+              mountPath: /host-etc
+      volumes:
+        - name: host-etc
+          hostPath:
+            path: /etc
+            type: Directory
+EOF
+}

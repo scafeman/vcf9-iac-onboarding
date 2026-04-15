@@ -757,3 +757,35 @@ def knative_workflow_yaml_text() -> str:
 def knative_workflow_yaml(knative_workflow_yaml_text: str) -> dict:
     """Return the parsed YAML dict of the deploy-knative workflow file."""
     return yaml.safe_load(knative_workflow_yaml_text)
+
+
+# ---------------------------------------------------------------------------
+# sslip-helpers.sh Fixtures
+# ---------------------------------------------------------------------------
+
+SSLIP_HELPERS_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "shared", "sslip-helpers.sh"
+)
+
+
+@pytest.fixture(scope="session")
+def sslip_helpers_text() -> str:
+    """Return the full text of the sslip-helpers.sh shared helper library."""
+    with open(SSLIP_HELPERS_PATH, encoding="utf-8") as f:
+        return f.read()
+
+
+# ---------------------------------------------------------------------------
+# Teardown Cluster Script Fixtures
+# ---------------------------------------------------------------------------
+
+TEARDOWN_CLUSTER_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "examples", "deploy-cluster", "teardown-cluster.sh"
+)
+
+
+@pytest.fixture(scope="session")
+def teardown_cluster_text() -> str:
+    """Return the full text of the teardown-cluster.sh script."""
+    with open(TEARDOWN_CLUSTER_PATH, encoding="utf-8") as f:
+        return f.read()
