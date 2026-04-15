@@ -28,7 +28,8 @@ Kubeconfig Setup
                           └─► ArgoCD Installation (Helm, ingress via Contour)
                                 └─► ArgoCD CLI Installation (auto-download)
                                       └─► Certificate Distribution (Harbor CA, GitLab TLS)
-                                            └─► GitLab (Helm)
+                                            └─► Node CA Bundle Installation (Phase 8b)
+                                                  └─► GitLab (Helm)
                                                   └─► Harbor Proxy Patching (image registry)
                                                         └─► GitLab Runner (Helm)
                                                               └─► GitLab Sign-Up Disabled (API)
@@ -103,6 +104,12 @@ Checks if the `argocd` CLI is already in PATH. If not, downloads it from GitHub 
 ### Phase 8: Certificate Distribution
 
 Creates Harbor CA certificate secrets in the GitLab and GitLab Runner namespaces. Creates the GitLab wildcard TLS secret in the GitLab namespace. Creates namespaces with PodSecurity labels if they do not already exist. Uses `--dry-run=client -o yaml | kubectl apply -f -` for idempotent Secret creation. Exits with code 9 on failure.
+
+The CA bundle includes the self-signed CA certificate plus Let's Encrypt staging and production root CAs (downloaded at runtime). This ensures the GitLab Runner trusts GitLab regardless of whether the ingress uses self-signed certs, Let's Encrypt staging, or Let's Encrypt production certificates.
+
+### Phase 8b: Node CA Bundle Installation
+
+Creates a CA bundle combining the self-signed CA, Let's Encrypt staging root CA (`letsencrypt-stg-root-x1.pem`), and Let's Encrypt production root CA (`isrgrootx1.pem`). Stores the bundle in a `node-ca-bundle` ConfigMap in `kube-system`. Deploys a `node-ca-installer` DaemonSet that runs on every node (including control plane) and installs the CA bundle into each node's system trust store at `/etc/ssl/certs/sslip-ca-bundle.pem` using `nsenter` to access the host mount namespace. Creates a hash symlink for OpenSSL certificate lookup and restarts `containerd` on each node to pick up the new trust store. The DaemonSet loops every hour to handle node reboots. This ensures the kubelet and containerd trust Harbor's TLS certificates for container image pulls, regardless of which CA issued them.
 
 ### Phase 9: GitLab Installation
 

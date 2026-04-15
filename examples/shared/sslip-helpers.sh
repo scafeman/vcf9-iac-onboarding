@@ -4,7 +4,8 @@
 #
 # Provides reusable functions for constructing sslip.io hostnames, managing
 # cert-manager ClusterIssuers, creating Kubernetes Ingress resources with
-# optional TLS, and waiting for certificate readiness.
+# optional TLS, waiting for certificate readiness, deploying node-level DNS
+# patching, and installing CA bundles on VKS node trust stores.
 #
 # Usage:
 #   source "$(dirname "$0")/../shared/sslip-helpers.sh"
@@ -22,6 +23,8 @@
 #   create_cluster_issuer <name> <acme_server> <email>
 #   create_ingress_with_tls <name> <namespace> <hostname> <service_name> <service_port> [tls_enabled] [issuer_name]
 #   wait_for_certificate <secret_name> <namespace> [timeout]
+#   deploy_node_dns_daemonset [namespace]
+#   install_node_ca_bundle <ca_bundle_file> [namespace]
 ###############################################################################
 
 ###############################################################################

@@ -728,6 +728,93 @@ jobs:
             exit 1
           fi
 
+          # Phase 8b: Install CA bundle on VKS node trust stores
+          # This ensures kubelet/containerd trusts Harbor certs (self-signed, LE staging, LE prod)
+          echo "Installing CA bundle on VKS node trust stores..."
+
+          # Create/update ConfigMap with the CA bundle
+          kubectl create configmap node-ca-bundle \
+            --from-file=ca-bundle.crt="${CA_BUNDLE_FILE}" \
+            --namespace kube-system \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Deploy DaemonSet that installs the CA bundle on each node
+          cat <<CAEOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: DaemonSet
+          metadata:
+            name: node-ca-installer
+            namespace: kube-system
+            labels:
+              app: node-ca-installer
+          spec:
+            selector:
+              matchLabels:
+                app: node-ca-installer
+            template:
+              metadata:
+                labels:
+                  app: node-ca-installer
+              spec:
+                hostNetwork: true
+                hostPID: true
+                tolerations:
+                  - operator: Exists
+                containers:
+                  - name: ca-installer
+                    image: busybox:1.36
+                    command:
+                      - /bin/sh
+                      - -c
+                      - |
+                        while true; do
+                          if [ -f /ca-bundle/ca-bundle.crt ]; then
+                            cat /ca-bundle/ca-bundle.crt | nsenter --target 1 --mount -- tee /etc/ssl/certs/sslip-ca-bundle.pem > /dev/null
+                            nsenter --target 1 --mount -- sh -c 'cd /etc/ssl/certs && ln -sf sslip-ca-bundle.pem \$(openssl x509 -hash -noout -in sslip-ca-bundle.pem 2>/dev/null).0 2>/dev/null || true'
+                            nsenter --target 1 --mount --pid -- systemctl restart containerd 2>/dev/null || true
+                            echo "[\$(date)] Installed CA bundle on node and restarted containerd"
+                            sleep 3600
+                          else
+                            echo "[\$(date)] CA bundle not found — waiting"
+                            sleep 30
+                          fi
+                        done
+                    securityContext:
+                      privileged: true
+                    volumeMounts:
+                      - name: ca-bundle
+                        mountPath: /ca-bundle
+                        readOnly: true
+                volumes:
+                  - name: ca-bundle
+                    configMap:
+                      name: node-ca-bundle
+          CAEOF
+
+          # Wait for node-ca-installer DaemonSet readiness
+          TIMEOUT=120
+          INTERVAL=10
+          ELAPSED=0
+          while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+            READY=$(kubectl get daemonset node-ca-installer -n kube-system -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+            DESIRED=$(kubectl get daemonset node-ca-installer -n kube-system -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+            if [ "${READY:-0}" -gt 0 ] && [ "$READY" = "$DESIRED" ]; then
+              echo "Node CA installer DaemonSet is ready on all nodes ($READY/$DESIRED)"
+              break
+            fi
+            echo "Waiting for node-ca-installer DaemonSet to be ready... ($READY/$DESIRED) (${ELAPSED}s/${TIMEOUT}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            echo "::warning::Node CA installer DaemonSet not fully ready within ${TIMEOUT}s — continuing"
+          fi
+
+          # Allow time for the first CA install cycle to complete
+          sleep 10
+          echo "Phase 8b: Node CA installer setup complete"
+
           rm -f "${CA_BUNDLE_FILE}"
 
           # Create RBAC for GitLab Runner service account (Kubernetes executor needs pod/secret permissions)

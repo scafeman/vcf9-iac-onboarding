@@ -45,6 +45,12 @@ Uninstalls the ArgoCD Helm release via `helm uninstall`. Strips finalizers from 
 
 When `USE_SSLIP_DNS=false` was used during deployment, reads the current CoreDNS ConfigMap and removes the custom `hosts { ... }` block that was added by the deploy script (containing Harbor, GitLab, and ArgoCD static entries). Restarts CoreDNS pods to pick up the restored configuration. Skips if the hosts block is not present or if sslip.io DNS was used (no CoreDNS patching to revert).
 
+Also performs defensive cleanup of node-level DaemonSets:
+- Deletes the `node-dns-patcher` DaemonSet from `kube-system` (deployed by `deploy-cluster.sh` Phase 5j — defensive cleanup in case `teardown-cluster.sh` was not run first).
+- Deletes the `node-ca-installer` DaemonSet and `node-ca-bundle` ConfigMap from `kube-system` (deployed by Phase 8b). This removes the node-level CA trust store installation and stops containerd restarts on each node.
+
+All deletes use `--ignore-not-found` and `|| true` for idempotency.
+
 ### Phase 7: Delete Harbor
 
 Uninstalls the Harbor Helm release via `helm uninstall`. Strips finalizers from all resources in the Harbor namespace. Deletes the Harbor namespace.
