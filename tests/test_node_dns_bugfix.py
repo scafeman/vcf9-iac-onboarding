@@ -152,16 +152,18 @@ class TestDaemonSetNodeAccess:
             "The DaemonSet cannot access node-level networking — this is the bug."
         )
 
-    def test_daemonset_mounts_host_etc(self, sslip_helpers_text: str):
-        """The DaemonSet must mount the host /etc directory."""
-        # Check for hostPath mount of /etc
-        has_host_etc = (
-            "hostPath" in sslip_helpers_text
-            and re.search(r'path:\s*/etc\b', sslip_helpers_text)
+    def test_daemonset_has_host_pid(self, sslip_helpers_text: str):
+        """The DaemonSet must use hostPID: true for nsenter access to host PID 1."""
+        assert "hostPID: true" in sslip_helpers_text, (
+            "sslip-helpers.sh does not contain 'hostPID: true'. "
+            "The DaemonSet cannot use nsenter to access host systemd-resolved — this is the bug."
         )
-        assert has_host_etc, (
-            "sslip-helpers.sh does not mount host /etc directory. "
-            "The DaemonSet cannot patch /etc/resolv.conf — this is the bug."
+
+    def test_daemonset_uses_nsenter(self, sslip_helpers_text: str):
+        """The DaemonSet must use nsenter to access the host mount namespace."""
+        assert "nsenter" in sslip_helpers_text, (
+            "sslip-helpers.sh does not contain 'nsenter'. "
+            "The DaemonSet cannot access host systemd-resolved — this is the bug."
         )
 
     def test_daemonset_has_tolerations(self, sslip_helpers_text: str):

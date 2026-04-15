@@ -281,13 +281,18 @@ wait_for_certificate() {
 #
 # Deploys a privileged DaemonSet named 'node-dns-patcher' that runs on every
 # node (including control plane) and ensures public DNS servers (8.8.8.8 and
-# 1.1.1.1) are present in /etc/resolv.conf. This enables the kubelet and
-# containerd to resolve sslip.io hostnames for container image pulls.
+# 1.1.1.1) are configured in systemd-resolved alongside the existing corporate
+# DNS. This enables the kubelet and containerd to resolve sslip.io hostnames
+# for container image pulls.
 #
 # The DaemonSet container runs a loop that:
-#   1. Checks if 8.8.8.8 and 1.1.1.1 are already in /etc/resolv.conf
-#   2. Appends them if missing
-#   3. Sleeps 60s and repeats (handles node reboots that regenerate resolv.conf)
+#   1. Checks if 8.8.8.8 and 1.1.1.1 are configured in systemd-resolved on eth0
+#   2. Adds them via resolvectl if missing (alongside existing corporate DNS)
+#   3. Sleeps 60s and repeats (handles node reboots that reset DNS config)
+#
+# Uses nsenter to access the host's mount/network namespace and resolvectl to
+# configure systemd-resolved (required on Photon OS where /etc/resolv.conf is
+# a symlink to the systemd-resolved stub file).
 #
 # Uses kubectl apply for idempotent create-or-update semantics.
 #
@@ -323,6 +328,7 @@ spec:
         app: node-dns-patcher
     spec:
       hostNetwork: true
+      hostPID: true
       tolerations:
         - operator: Exists
       containers:
@@ -334,26 +340,19 @@ spec:
             - |
               while true; do
                 CHANGED=false
+                CURRENT_DNS=\$(nsenter --target 1 --mount --uts --ipc --net -- resolvectl dns eth0 2>/dev/null || echo "")
                 for ns in 8.8.8.8 1.1.1.1; do
-                  if ! grep -q "nameserver ${ns}" /host-etc/resolv.conf; then
-                    echo "nameserver ${ns}" >> /host-etc/resolv.conf
+                  if ! echo "\$CURRENT_DNS" | grep -q "\$ns"; then
                     CHANGED=true
                   fi
                 done
                 if [ "\$CHANGED" = "true" ]; then
-                  echo "[\$(date)] Patched /etc/resolv.conf with public DNS servers"
+                  nsenter --target 1 --mount --uts --ipc --net -- resolvectl dns eth0 172.20.10.41 8.8.8.8 1.1.1.1 2>/dev/null
+                  echo "[\$(date)] Configured systemd-resolved with public DNS servers (8.8.8.8, 1.1.1.1) on eth0"
                 fi
                 sleep 60
               done
           securityContext:
             privileged: true
-          volumeMounts:
-            - name: host-etc
-              mountPath: /host-etc
-      volumes:
-        - name: host-etc
-          hostPath:
-            path: /etc
-            type: Directory
 EOF
 }
