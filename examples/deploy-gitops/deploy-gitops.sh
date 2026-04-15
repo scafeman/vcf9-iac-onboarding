@@ -1710,7 +1710,7 @@ patches:
 
 images:
   - name: us-central1-docker.pkg.dev/google-samples/microservices-demo/frontend
-    newName: harbor-registry.harbor.svc.cluster.local:5000/${HARBOR_CI_PROJECT}/frontend
+    newName: ${HARBOR_HOSTNAME}/${HARBOR_CI_PROJECT}/frontend
     newTag: v0.10.5
 KUSTOMEOF
 
