@@ -27,7 +27,7 @@ Coming from AWS EKS? Here's how the core concepts map to VCF 9 and where this to
 | EBS / EFS | Cloud Native Storage (CNS) | Validated in Phase 7 (Functional Validation) with PVC + `nfs` StorageClass |
 | ALB / NLB | NSX Load Balancer | LoadBalancer Services provisioned automatically via NSX VPC |
 | ECR | Harbor (self-hosted) | Deployed via `examples/deploy-gitops/` with Helm |
-| CodePipeline / CodeBuild | GitLab CI + ArgoCD | Full GitOps stack in `examples/deploy-gitops/` |
+| CodePipeline / CodeBuild | GitLab CI + ArgoCD | Full GitOps stack with self-contained CI/CD pipeline in `examples/deploy-gitops/` |
 | Secrets Manager | VCF Secret Store Service | Demonstrated in `examples/deploy-secrets-demo/` |
 | RDS (PostgreSQL) | Data Services Manager (DSM) | Fully managed PostgresCluster via DSM CRD in `examples/deploy-managed-db-app/` |
 | Lambda | Knative Service | Scale-to-zero serverless functions in `examples/deploy-knative/` |
@@ -54,7 +54,8 @@ Every deployment pattern starts with a running VKS cluster. The Deploy Cluster w
 5. **Kubeconfig Retrieval** — Admin kubeconfig via VCF CLI with guest cluster connectivity verification
 6. **Cluster Autoscaler Installation** — VKS standard package for automatic node scaling based on pod resource demands
 7. **cert-manager, Contour & Let's Encrypt** — TLS certificate lifecycle management, Envoy-based ingress controller, CoreDNS sslip.io forwarding rule (for cert-manager HTTP-01 self-checks), and Let's Encrypt ClusterIssuer for automated trusted certificates via sslip.io DNS
-8. **Functional Validation** — PVC, Deployment (custom `scafeman/vks-test-app:latest` image), and LoadBalancer Service to validate storage, compute, and networking
+8. **Node DNS Patcher** — DaemonSet that configures `systemd-resolved` on each VKS node with public DNS servers (8.8.8.8, 1.1.1.1) for sslip.io resolution, ensuring kubelet and containerd can resolve sslip.io hostnames for container image pulls
+9. **Functional Validation** — PVC, Deployment (custom `scafeman/vks-test-app:latest` image), and LoadBalancer Service to validate storage, compute, and networking
 
 > [!TIP]
 > **The Context Bridge** is the critical step that most engineers miss. In VCF 9, Cluster API resources are hidden from the global context. This toolkit automates the switch to the namespace-scoped context, effectively "unlocking" `kubectl get clusters`. Without it, the command returns nothing — even though the cluster exists.
@@ -66,7 +67,7 @@ Once the VKS cluster is running, the toolkit offers eight additional deployment 
 | Pattern | What It Proves | AWS Equivalent |
 |---|---|---|
 | **Deploy Metrics** | VKS standard packages (Telegraf, Prometheus, Grafana) | EKS Add-ons + CloudWatch |
-| **Deploy GitOps** | Full CI/CD stack (Harbor, ArgoCD, GitLab) on VKS | ECR + CodePipeline + ArgoCD |
+| **Deploy GitOps** | Full CI/CD stack (Harbor, ArgoCD, GitLab) with self-contained CI/CD pipeline on VKS | ECR + CodePipeline + ArgoCD |
 | **Deploy Hybrid App** | Container-to-VM connectivity over NSX VPC | EC2 + EKS in same VPC |
 | **Deploy Managed DB App** | DSM-managed PostgreSQL with vault-injected credentials | EKS + RDS + Secrets Manager |
 | **Deploy Secrets Demo** | VCF Secret Store with vault-injected Redis + PostgreSQL | Secrets Manager + EKS |
@@ -133,7 +134,7 @@ Deploy Cluster must complete before Deploy Metrics, Deploy GitOps, or Deploy Hyb
 |---|---|---|
 | Deploy Cluster | Provisions VKS cluster with autoscaling, packages, and functional validation | [`examples/deploy-cluster/`](examples/deploy-cluster/) |
 | Deploy Metrics | Installs Telegraf, Prometheus, and Grafana on the VKS cluster | [`examples/deploy-metrics/`](examples/deploy-metrics/) |
-| Deploy GitOps | Installs Harbor, ArgoCD, GitLab, and deploys Microservices Demo | [`examples/deploy-gitops/`](examples/deploy-gitops/) |
+| Deploy GitOps | Installs Harbor, ArgoCD, GitLab, deploys Microservices Demo, and configures a self-contained CI/CD pipeline (Harbor CI project, GitLab project with `.gitlab-ci.yml`, ArgoCD re-point to GitLab) | [`examples/deploy-gitops/`](examples/deploy-gitops/) |
 | Deploy Hybrid App | Provisions a PostgreSQL VM + deploys a Next.js/Node.js app on VKS | [`examples/deploy-hybrid-app/`](examples/deploy-hybrid-app/) |
 | Deploy Managed DB App | Provisions a DSM-managed PostgresCluster + deploys a Next.js/Node.js app on VKS | [`examples/deploy-managed-db-app/`](examples/deploy-managed-db-app/) |
 | Deploy HA VM App | Deploys a traditional HA three-tier app on VMs: 2× web VMs + LB, 2× API VMs + LB, DSM PostgresCluster | [`examples/deploy-ha-vm-app/`](examples/deploy-ha-vm-app/) |

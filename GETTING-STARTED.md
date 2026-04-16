@@ -98,7 +98,7 @@ See the [Deploy Metrics README](examples/deploy-metrics/README-deploy.md) for de
 
 ### Deploy GitOps
 
-Installs Harbor, ArgoCD, GitLab, and deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application.
+Installs Harbor, ArgoCD, GitLab, and deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application. After initial deployment, configures a self-contained CI/CD pipeline: creates a Harbor CI project for built images, a GitLab project with `.gitlab-ci.yml` pipeline, and re-points ArgoCD to source from GitLab — enabling a live demo where editing `demo-config.yaml` triggers a full build→push→deploy cycle.
 
 ```bash
 docker exec vcf9-dev bash examples/deploy-gitops/deploy-gitops.sh

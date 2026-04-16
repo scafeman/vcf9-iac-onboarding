@@ -8,7 +8,7 @@ This repository contains ten GitHub Actions workflows that automate the end-to-e
 |---|---|---|
 | Deploy Cluster — Deploy VKS Cluster | `deploy-vks.yml` | Provisions VCF 9 VKS infrastructure end-to-end: context creation, project/namespace, cluster deployment, kubeconfig retrieval, cluster autoscaler installation, and functional validation |
 | Deploy Metrics — Deploy VKS Metrics Stack | `deploy-vks-metrics.yml` | Deploys the metrics/observability stack (Telegraf, Prometheus, Grafana) on an existing VKS cluster |
-| Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) on an existing VKS cluster |
+| Deploy GitOps — Deploy ArgoCD Stack | `deploy-argocd.yml` | Deploys the ArgoCD consumption model stack (Harbor, ArgoCD, GitLab, GitLab Runner, Microservices Demo) with a self-contained CI/CD pipeline (Harbor CI project, GitLab project with `.gitlab-ci.yml`, ArgoCD re-point to GitLab) and Node CA installer DaemonSet on an existing VKS cluster |
 | Deploy Hybrid App — Infrastructure Asset Tracker | `deploy-hybrid-app.yml` | Provisions a PostgreSQL VM via VM Service, deploys a Node.js API and Next.js frontend to the VKS cluster, demonstrating container-to-VM connectivity |
 | Deploy Secrets Demo — VCF Secret Store | `deploy-secrets-demo.yml` | Demonstrates VCF Secret Store integration with vault-injected secrets for Redis and PostgreSQL authentication via a Next.js dashboard |
 | Deploy Bastion VM — SSH Jump Host | `deploy-bastion-vm.yml` | Deploys an Ubuntu 24.04 bastion VM as a secure SSH jump host with source-IP-restricted LoadBalancer access in a supervisor namespace |
@@ -297,6 +297,7 @@ curl -X POST \
 | 6e | **Register Package Repository** | Registers the VKS standard packages repository and waits for reconciliation |
 | 6f | **Install Cluster Autoscaler** | Installs the Cluster Autoscaler package to enable automatic node scaling |
 | 6g | **Wait for Autoscaler Ready** | Confirms the autoscaler deployment in `kube-system` is ready |
+| 6h | **Node DNS Patcher DaemonSet (Phase 5j)** | When `USE_SSLIP_DNS=true`, deploys a privileged `node-dns-patcher` DaemonSet to `kube-system` that configures `systemd-resolved` on each VKS node with public DNS servers (8.8.8.8, 1.1.1.1) for sslip.io resolution. Required because kubelet uses node-level DNS (not CoreDNS) for container image pulls |
 | 7 | **Deploy Functional Test Workload** | Deploys a PVC, test app Deployment (`scafeman/vks-test-app:latest`), and LoadBalancer Service to validate the cluster |
 | 7b | **Wait for PVC Bound** | Waits for the PersistentVolumeClaim to bind (300s timeout) |
 | 7c | **Wait for LoadBalancer IP** | Waits for the Service to receive an external IP (300s timeout) |
@@ -471,7 +472,7 @@ curl -X POST \
 
 ## Overview
 
-Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Deploy Cluster. Requires a running VKS cluster with a valid admin kubeconfig file.
+Deploys the ArgoCD Consumption Model stack (Harbor, ArgoCD, GitLab, GitLab Runner, and the Microservices Demo) on an existing VKS cluster provisioned by Deploy Cluster. After initial deployment, configures a self-contained CI/CD pipeline: creates a Harbor CI project for built images, a GitLab project with `.gitlab-ci.yml` pipeline and `demo-config.yaml`, and re-points ArgoCD to source from GitLab. Also installs a Node CA Bundle DaemonSet (`node-ca-installer`) to ensure kubelet and containerd trust Harbor's TLS certificates on every node. Requires a running VKS cluster with a valid admin kubeconfig file.
 
 ## Triggering the Workflow
 
@@ -547,7 +548,8 @@ curl -X POST \
 | 11 | **Configure CoreDNS** | When `USE_SSLIP_DNS=false`: patches CoreDNS ConfigMap with `harbor/gitlab/argocd.<DOMAIN>` → Contour LB IP; restarts CoreDNS; waits for API server. When `USE_SSLIP_DNS=true`: skipped (sslip.io resolves externally) |
 | 12 | **Install ArgoCD** | Installs ArgoCD via Helm with hostname substitution; retrieves admin password from `argocd-initial-admin-secret`; waits for pods Running |
 | 13 | **Install ArgoCD CLI** | Downloads ArgoCD CLI from GitHub releases if not in PATH; adds to `$GITHUB_PATH` |
-| 14 | **Distribute Certificates** | Creates TLS secrets in ArgoCD, GitLab, and Runner namespaces using `--dry-run=client -o yaml \| kubectl apply -f -` |
+| 14 | **Distribute Certificates** | Creates TLS secrets in ArgoCD, GitLab, and Runner namespaces using `--dry-run=client -o yaml \| kubectl apply -f -`. The CA bundle includes the self-signed CA plus Let's Encrypt staging and production root CAs |
+| 14b | **Node CA Bundle Installation (Phase 8b)** | Creates a CA bundle ConfigMap and deploys a `node-ca-installer` DaemonSet to `kube-system` that installs the CA bundle into each node's system trust store via `nsenter`, creates OpenSSL hash symlinks, and restarts `containerd` |
 | 15 | **Install GitLab** | Installs GitLab via Helm with hostname substitution; waits for webservice pod Running |
 | 16 | **Verify Harbor Proxy Configuration** | Checks GitLab values file for Harbor proxy cache config; prints `::warning::` if not found |
 | 17 | **Install GitLab Runner** | Retrieves runner registration token; installs GitLab Runner via Helm; waits for pod Running |
@@ -555,8 +557,26 @@ curl -X POST \
 | 19 | **Register Cluster with ArgoCD** | Authenticates to ArgoCD via `kubectl exec`; copies kubeconfig; registers cluster with `argocd cluster add` |
 | 20 | **Bootstrap ArgoCD Application** | Applies ArgoCD Application manifest for Microservices Demo; waits for Synced and Healthy state |
 | 21 | **Verify Microservices Demo** | Checks all 11 microservice pods are Running; waits for `frontend-external` LoadBalancer IP |
-| 22 | **Write Job Summary** | Writes Markdown summary with all service URLs, credentials, versions, and DNS instructions |
-| 23 | **Write Failure Summary** | On failure (`if: failure()`), writes failure summary with cluster name, environment, and error context |
+| 21b | **Let's Encrypt TLS Ingress** | When a ClusterIssuer is available, creates Ingress resources with `cert-manager.io/cluster-issuer` annotations for Harbor, GitLab, and ArgoCD; waits for certificates to reach Ready state |
+| 22 | **Harbor CI Project & GitLab Project Creation (Phase 16)** | Creates Harbor CI project (`HARBOR_CI_PROJECT`) via REST API; obtains GitLab API token; creates GitLab project (`GITLAB_PROJECT_NAME`) via REST API; pushes `.gitlab-ci.yml`, `Dockerfile`, `kustomization.yaml`, `kubernetes-manifests.yaml`, and `demo-config.yaml` to the GitLab project |
+| 23 | **ArgoCD Re-Point to GitLab (Phase 17)** | Adds GitLab repository credentials to ArgoCD; patches the ArgoCD Application to source from the GitLab project instead of GitHub; waits for Synced and Healthy state |
+| 24 | **Pipeline Verification (Phase 18)** | Verifies GitLab Runner is registered; confirms ArgoCD Application is Synced with GitLab source; checks frontend pod is running (all non-fatal) |
+| 25 | **Write Job Summary** | Writes Markdown summary with all service URLs, credentials, versions, CI/CD pipeline URLs, and live demo instructions |
+| 26 | **Write Failure Summary** | On failure (`if: failure()`), writes failure summary with cluster name, environment, and error context |
+
+### CI/CD Pipeline Parameters
+
+These parameters control the self-contained CI/CD pipeline created in Phases 16–18:
+
+| Parameter | `client_payload` key | Default | Description |
+|---|---|---|---|
+| `GITLAB_PROJECT_NAME` | `gitlab_project_name` | `microservices-demo` | GitLab project name for the CI/CD pipeline |
+| `HARBOR_CI_PROJECT` | `harbor_ci_project` | `microservices-ci` | Harbor project name for CI-built container images |
+| `DEMO_BANNER_TEXT` | `demo_banner_text` | (empty) | Default banner text for the Online Boutique frontend |
+
+### Node CA Bundle (Phase 8b)
+
+After certificate distribution, the workflow deploys a `node-ca-installer` DaemonSet to `kube-system` that installs a CA bundle (self-signed CA + Let's Encrypt staging root CA + Let's Encrypt production root CA) into each VKS node's system trust store. This ensures the kubelet and containerd trust Harbor's TLS certificates for container image pulls, regardless of which CA issued them. The DaemonSet uses `nsenter` to access the host mount namespace, creates a hash symlink for OpenSSL certificate lookup, and restarts `containerd` on each node. It loops every hour to handle node reboots.
 
 ## Shared Infrastructure Idempotency
 
