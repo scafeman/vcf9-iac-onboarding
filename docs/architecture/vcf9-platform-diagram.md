@@ -11,84 +11,84 @@ Use this as a reference when onboarding to VCF 9 or explaining the platform to t
 ```mermaid
 graph TB
     subgraph "Layer 1: Management and Automation"
-        VCFA["VCF Automation<br/>Multi-Tenant Self-Service Portal"]
-        SDDC["SDDC Manager<br/>Lifecycle Management"]
-        VC["vCenter Server<br/>vSphere Management"]
+        VCFA["VCF Automation<br/>Self-Service Portal"]
+        SDDC["SDDC Manager<br/>Lifecycle Mgmt"]
+        VC["vCenter Server<br/>vSphere Mgmt"]
         NSXMGR["NSX Manager<br/>SDN Control Plane"]
     end
 
     subgraph "Layer 2: Organization and Governance"
-        ORG["Organization<br/>Top-Level Tenant Boundary"]
+        ORG["Organization<br/>Tenant Boundary"]
         PROJ["Projects<br/>Governance Boundary"]
         RBAC["Role Bindings<br/>admin, edit, view"]
-        REGION["Regions<br/>Geographic Grouping"]
+        REGION["Regions"]
         NSCLASS["Namespace Classes<br/>small to xxlarge"]
     end
 
     subgraph "Layer 3: Supervisor Cluster"
-        SUPER["vSphere Supervisor<br/>K8s Control Plane on ESXi"]
-        SNS["Supervisor Namespaces<br/>Compute, Storage, Network Quotas"]
+        SUPER["vSphere Supervisor<br/>K8s Control Plane"]
+        SNS["Supervisor Namespaces<br/>Quotas and Isolation"]
         ZONES["Zones<br/>Availability Zones"]
     end
 
     subgraph "Layer 4: Supervisor Services"
-        VMSVC["VM Service<br/>VirtualMachine CRD"]
-        VKS["vSphere Kubernetes Service<br/>Cluster API"]
-        DSM["Data Services Manager<br/>PostgreSQL, MySQL"]
-        SSS["Secret Store Service<br/>Vault + vault-injector"]
-        CERT["cert-manager<br/>Certificate Lifecycle"]
-        CONTOUR["Contour, Envoy<br/>Ingress Controller"]
-        HARBOR["Cloud Native Registry<br/>Harbor"]
-        VELERO["Velero Operator<br/>Backup, DR"]
+        VMSVC["VM Service"]
+        VKS["VKS<br/>Kubernetes Service"]
+        DSM["DSM<br/>Managed Databases"]
+        SSS["Secret Store<br/>Vault"]
+        CERT["cert-manager"]
+        CONTOUR["Contour Envoy<br/>Ingress"]
+        HARBOR["Harbor<br/>Registry"]
+        VELERO["Velero<br/>Backup"]
     end
 
     subgraph "Layer 5: Networking"
-        VPC["NSX VPCs<br/>Private CIDRs"]
-        TGW["Transit Gateways<br/>North-South Routing"]
-        NSXLB["NSX Load Balancer<br/>L4 LoadBalancer"]
-        DFW["Distributed Firewall<br/>Micro-Segmentation"]
-        AVI["AVI Load Balancer<br/>L7, WAF"]
+        VPC["NSX VPCs"]
+        TGW["Transit Gateways"]
+        NSXLB["NSX Load Balancer"]
+        DFW["Distributed Firewall"]
+        AVI["AVI Load Balancer"]
     end
 
-    subgraph "Layer 6: Storage"
-        VSAN["SAN<br/>Block Storage"]
+    subgraph "Layer 6: Compute"
+        ESXI["ESXi Hosts<br/>Bare-Metal Hypervisor"]
+        VMC["VM Classes<br/>small to xlarge"]
+        CL["Content Libraries<br/>OS Images"]
+    end
+
+    subgraph "Layer 7: Storage"
+        SAN["SAN<br/>Block Storage"]
         NFS["NFS<br/>Shared Storage"]
-        CNS["Cloud Native Storage<br/>vSphere CSI Driver"]
+        CNS["Cloud Native Storage<br/>vSphere CSI"]
         SC["Storage Classes<br/>nfs, performance, standard, capacity"]
         SP["Storage Policies<br/>QoS, Placement"]
     end
 
-    subgraph "Layer 7: Compute"
-        ESXI["ESXi Hosts<br/>Bare-Metal Hypervisor"]
-        VMC["VM Classes<br/>small to xlarge"]
-        CL["Content Libraries<br/>OS Image Templates"]
-    end
-
     VCFA --> ORG
+    NSXMGR --> VPC
+
     ORG --> PROJ
     PROJ --> RBAC
     PROJ --> SNS
     REGION --> ZONES
     NSCLASS --> SNS
-    SUPER --> SNS
 
+    SUPER --> SNS
     SNS --> VMSVC
     SNS --> VKS
     SNS --> DSM
 
-    NSXMGR --> VPC
     VPC --> TGW
     VPC --> NSXLB
     VPC --> DFW
     NSXLB -.-> AVI
 
+    ESXI --> SAN
+    ESXI --> NFS
     CNS --> SC
-    SC --> VSAN
+    SC --> SAN
     SC --> NFS
-    SP --> VSAN
-
-    VSAN --> ESXI
-    NFS --> ESXI
+    SP --> SAN
     VMC --> CL
 
     style VCFA fill:#4a90d9,color:#fff
@@ -121,15 +121,15 @@ graph TB
     style DFW fill:#d0021b,color:#fff
     style AVI fill:#d0021b,color:#fff
 
-    style VSAN fill:#336791,color:#fff
+    style ESXI fill:#000,color:#fff
+    style VMC fill:#000,color:#fff
+    style CL fill:#000,color:#fff
+
+    style SAN fill:#336791,color:#fff
     style NFS fill:#336791,color:#fff
     style CNS fill:#336791,color:#fff
     style SC fill:#336791,color:#fff
     style SP fill:#336791,color:#fff
-
-    style ESXI fill:#000,color:#fff
-    style VMC fill:#000,color:#fff
-    style CL fill:#000,color:#fff
 ```
 
 ## Layer Details
@@ -236,7 +236,24 @@ NSX provides the entire software-defined networking stack for VCF. Every Supervi
 
 ---
 
-### Layer 6: Storage
+### Layer 6: Compute (ESXi)
+
+The physical compute layer. ESXi hosts provide the bare-metal hypervisor that runs all VMs — including Supervisor control plane nodes, VKS worker nodes, VM Service VMs, and DSM database VMs.
+
+| Component | What It Does | AWS Equivalent | Toolkit Usage |
+|---|---|---|---|
+| **ESXi Hosts** | Bare-metal hypervisor. Runs all VMs including Supervisor nodes, VKS workers, and application VMs. Managed by vCenter and grouped into vSphere clusters. | EC2 bare-metal instances (implicit) | Infrastructure-level — not directly managed by toolkit scripts |
+| **VM Classes** | Compute shapes that define CPU and memory for VMs. Available classes: `best-effort-small` (2 vCPU, 4 GB), `best-effort-medium` (4 vCPU, 8 GB), `best-effort-large` (8 vCPU, 16 GB), `best-effort-xlarge` (16 vCPU, 32 GB). | EC2 instance types (t3.small, m5.large, etc.) | VKS worker nodes use `best-effort-large`; VM Service VMs reference VM classes in manifests |
+| **Content Libraries** | vSphere repositories for OS image templates (OVAs). VKS uses Tanzu Kubernetes Release (TKR) images; VM Service uses Ubuntu/RHEL templates. | AMIs (Amazon Machine Images) | VKS nodes pull from TKR content library; VM Service VMs reference `ubuntu-24.04` images |
+
+**Key CRD/API References:**
+- `VirtualMachineClass` — `apiVersion: vmoperator.vmware.com/v1alpha3`
+- `VirtualMachineImage` — `apiVersion: vmoperator.vmware.com/v1alpha3`
+- `TanzuKubernetesRelease` — `kubectl get tkr` (lists available Kubernetes versions)
+
+---
+
+### Layer 7: Storage
 
 VCF provides software-defined storage through SAN (block storage) and NFS (network-attached), exposed to Kubernetes workloads via the vSphere CSI driver (Cloud Native Storage).
 
@@ -255,30 +272,13 @@ VCF provides software-defined storage through SAN (block storage) and NFS (netwo
 
 ---
 
-### Layer 7: Compute (ESXi)
-
-The physical compute layer. ESXi hosts provide the bare-metal hypervisor that runs all VMs — including Supervisor control plane nodes, VKS worker nodes, VM Service VMs, and DSM database VMs.
-
-| Component | What It Does | AWS Equivalent | Toolkit Usage |
-|---|---|---|---|
-| **ESXi Hosts** | Bare-metal hypervisor. Runs all VMs including Supervisor nodes, VKS workers, and application VMs. Managed by vCenter and grouped into vSphere clusters. | EC2 bare-metal instances (implicit) | Infrastructure-level — not directly managed by toolkit scripts |
-| **VM Classes** | Compute shapes that define CPU and memory for VMs. Available classes: `best-effort-small` (2 vCPU, 4 GB), `best-effort-medium` (4 vCPU, 8 GB), `best-effort-large` (8 vCPU, 16 GB), `best-effort-xlarge` (16 vCPU, 32 GB). | EC2 instance types (t3.small, m5.large, etc.) | VKS worker nodes use `best-effort-large`; VM Service VMs reference VM classes in manifests |
-| **Content Libraries** | vSphere repositories for OS image templates (OVAs). VKS uses Tanzu Kubernetes Release (TKR) images; VM Service uses Ubuntu/RHEL templates. | AMIs (Amazon Machine Images) | VKS nodes pull from TKR content library; VM Service VMs reference `ubuntu-24.04` images |
-
-**Key CRD/API References:**
-- `VirtualMachineClass` — `apiVersion: vmoperator.vmware.com/v1alpha3`
-- `VirtualMachineImage` — `apiVersion: vmoperator.vmware.com/v1alpha3`
-- `TanzuKubernetesRelease` — `kubectl get tkr` (lists available Kubernetes versions)
-
----
-
 ## How the Layers Connect
 
 The VCF 9 platform is a vertical stack where each layer depends on the one below it:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 1: VCFA / SDDC Manager / vCenter                     │  ← Operators manage here
+│  Layer 1: VCFA / SDDC Manager / vCenter / NSX Manager       │  ← Operators manage here
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Org → Projects → RBAC → Namespace Classes         │  ← Tenant governance
 ├─────────────────────────────────────────────────────────────┤
@@ -288,9 +288,9 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 5: NSX VPCs / Transit GW / LB / DFW                  │  ← Network fabric
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 6: vSAN / NFS / CNS / Storage Classes                │  ← Persistent storage
+│  Layer 6: ESXi Hosts / VM Classes / Content Libraries       │  ← Physical compute
 ├─────────────────────────────────────────────────────────────┤
-│  Layer 7: ESXi Hosts / VM Classes / Content Libraries       │  ← Physical compute
+│  Layer 7: SAN / NFS / CNS / Storage Classes                 │  ← Persistent storage
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -300,7 +300,7 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 2. Creates a **Project** and **SupervisorNamespace** (Layer 2) with RBAC and quota class
 3. The **Supervisor** (Layer 3) provisions the namespace with an **NSX VPC** (Layer 5) and **storage** (Layer 6)
 4. Engineer applies a **VKS Cluster** manifest (Layer 4), which provisions **VMs** on **ESXi** (Layer 7) using **VM Classes** and **Content Library** images
-5. VKS worker nodes get **LoadBalancer** IPs from **NSX** (Layer 5) and **PVCs** from **CNS** (Layer 6)
+5. VKS worker nodes get **LoadBalancer** IPs from **NSX** (Layer 5) and **PVCs** from **CNS** (Layer 7)
 6. VKS Standard Packages (**cert-manager**, **Contour**) are installed as Layer 4 services
 
 ## AWS to VCF Quick Reference
@@ -325,8 +325,8 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 | NLB | NSX Load Balancer | 5 |
 | Security Groups | NSX Distributed Firewall | 5 |
 | ALB + WAF | AVI Load Balancer (optional) | 5 |
-| EBS (gp3) | SAN Block Storage | 6 |
-| EFS | NFS | 6 |
-| EBS CSI Driver | Cloud Native Storage (vSphere CSI) | 6 |
-| EC2 Instance Types | VM Classes | 7 |
-| AMIs | Content Libraries | 7 |
+| EBS (gp3) | SAN Block Storage | 7 |
+| EFS | NFS | 7 |
+| EBS CSI Driver | Cloud Native Storage (vSphere CSI) | 7 |
+| EC2 Instance Types | VM Classes | 6 |
+| AMIs | Content Libraries | 6 |
