@@ -19,114 +19,91 @@ graph TB
     subgraph "Layer 2: Organization and Governance"
         ORG["Organization<br/>Top-Level Tenant Boundary"]
         PROJ["Projects<br/>Governance Boundary"]
-        RBAC["Users and Groups Role Bindings<br/>ProjectRoleBinding: admin, edit, view"]
+        RBAC["Role Bindings<br/>admin, edit, view"]
         REGION["Regions<br/>Geographic Grouping"]
-        NSCLASS["Namespace Classes<br/>Quota Templates: small to xxlarge"]
+        NSCLASS["Namespace Classes<br/>small to xxlarge"]
     end
 
-    subgraph "Layer 3: Supervisor Cluster and Namespaces"
-        SUPER["vSphere Supervisor<br/>K8s-Native Control Plane on ESXi"]
+    subgraph "Layer 3: Supervisor Cluster"
+        SUPER["vSphere Supervisor<br/>K8s Control Plane on ESXi"]
         SNS["Supervisor Namespaces<br/>Compute, Storage, Network Quotas"]
-        ZONES["Zones<br/>Availability Zones to vSphere Clusters"]
+        ZONES["Zones<br/>Availability Zones"]
     end
 
     subgraph "Layer 4: Supervisor Services"
         VMSVC["VM Service<br/>VirtualMachine CRD"]
-        VKS["vSphere Kubernetes Service<br/>Managed Clusters via Cluster API"]
-        DSM["Data Services Manager<br/>Managed PostgreSQL, MySQL"]
-        SSS["Secret Store Service<br/>HashiCorp Vault + vault-injector"]
-        CERT["cert-manager<br/>X.509 Certificate Lifecycle"]
-        CONTOUR["Contour and Envoy<br/>HTTP, HTTPS Ingress"]
-        HARBOR["Cloud Native Registry<br/>Harbor Container Registry"]
-        VELERO["Velero vSphere Operator<br/>Backup and Disaster Recovery"]
+        VKS["vSphere Kubernetes Service<br/>Cluster API"]
+        DSM["Data Services Manager<br/>PostgreSQL, MySQL"]
+        SSS["Secret Store Service<br/>Vault + vault-injector"]
+        CERT["cert-manager<br/>Certificate Lifecycle"]
+        CONTOUR["Contour, Envoy<br/>Ingress Controller"]
+        HARBOR["Cloud Native Registry<br/>Harbor"]
+        VELERO["Velero Operator<br/>Backup, DR"]
     end
 
-    subgraph "Layer 5: Networking - NSX"
+    subgraph "Layer 5: Networking"
         NSXMGR["NSX Manager<br/>SDN Control Plane"]
-        VPC["NSX VPCs<br/>Private CIDR Ranges"]
+        VPC["NSX VPCs<br/>Private CIDRs"]
         TGW["Transit Gateways<br/>North-South Routing"]
-        NSXLB["NSX Load Balancer<br/>L4 for type LoadBalancer"]
-        DFW["NSX Distributed Firewall<br/>Micro-Segmentation"]
-        AVI["AVI Load Balancer<br/>L7, WAF - optional"]
+        NSXLB["NSX Load Balancer<br/>L4 LoadBalancer"]
+        DFW["Distributed Firewall<br/>Micro-Segmentation"]
+        AVI["AVI Load Balancer<br/>L7, WAF"]
     end
 
     subgraph "Layer 6: Storage"
-        VSAN["vSAN<br/>Hyper-Converged Storage"]
-        NFS["NFS<br/>Shared Network Storage"]
-        CNS["Cloud Native Storage<br/>vSphere CSI Driver for PVCs"]
-        SC["Storage Classes<br/>nfs, vsan-default-storage-policy"]
-        SP["Storage Policies<br/>QoS and Placement Rules"]
+        VSAN["vSAN<br/>Hyper-Converged"]
+        NFS["NFS<br/>Shared Storage"]
+        CNS["Cloud Native Storage<br/>vSphere CSI Driver"]
+        SC["Storage Classes<br/>nfs, vsan-default"]
+        SP["Storage Policies<br/>QoS, Placement"]
     end
 
-    subgraph "Layer 7: Compute - ESXi"
+    subgraph "Layer 7: Compute"
         ESXI["ESXi Hosts<br/>Bare-Metal Hypervisor"]
-        VMC["VM Classes<br/>best-effort-small to best-effort-xlarge"]
+        VMC["VM Classes<br/>small to xlarge"]
         CL["Content Libraries<br/>OS Image Templates"]
     end
 
-    %% Layer 1 to Layer 2
     VCFA --> ORG
-    SDDC --> VC
-
-    %% Layer 2 to Layer 3
     ORG --> PROJ
     PROJ --> RBAC
     PROJ --> SNS
     REGION --> ZONES
     NSCLASS --> SNS
-
-    %% Layer 3 to Layer 4
     SUPER --> SNS
+
     SNS --> VMSVC
     SNS --> VKS
     SNS --> DSM
-    VKS --> SSS
-    VKS --> CERT
-    VKS --> CONTOUR
-    VKS --> HARBOR
-    VKS --> VELERO
 
-    %% Layer 4 to Layer 5
-    VMSVC --> VPC
-    VKS --> VPC
+    NSXMGR --> VPC
     VPC --> TGW
     VPC --> NSXLB
     VPC --> DFW
-    NSXMGR --> VPC
     NSXLB -.-> AVI
 
-    %% Layer 5 to Layer 6
-    VPC --> CNS
     CNS --> SC
     SC --> VSAN
     SC --> NFS
     SP --> VSAN
 
-    %% Layer 6 to Layer 7
     VSAN --> ESXI
-    SUPER --> ESXI
-    VMSVC --> VMC
-    VKS --> VMC
     VMC --> CL
 
-    %% Styles — Layer 1: Blue (Management)
     style VCFA fill:#4a90d9,color:#fff
     style SDDC fill:#4a90d9,color:#fff
     style VC fill:#4a90d9,color:#fff
 
-    %% Styles — Layer 2: Orange (Governance)
     style ORG fill:#f5a623,color:#fff
     style PROJ fill:#f5a623,color:#fff
     style RBAC fill:#f5a623,color:#fff
     style REGION fill:#f5a623,color:#fff
     style NSCLASS fill:#f5a623,color:#fff
 
-    %% Styles — Layer 3: Green (Supervisor)
     style SUPER fill:#7ed321,color:#fff
     style SNS fill:#7ed321,color:#fff
     style ZONES fill:#7ed321,color:#fff
 
-    %% Styles — Layer 4: Purple (Services)
     style VMSVC fill:#9013fe,color:#fff
     style VKS fill:#9013fe,color:#fff
     style DSM fill:#9013fe,color:#fff
@@ -136,7 +113,6 @@ graph TB
     style HARBOR fill:#9013fe,color:#fff
     style VELERO fill:#9013fe,color:#fff
 
-    %% Styles — Layer 5: Red (Networking)
     style NSXMGR fill:#d0021b,color:#fff
     style VPC fill:#d0021b,color:#fff
     style TGW fill:#d0021b,color:#fff
@@ -144,14 +120,12 @@ graph TB
     style DFW fill:#d0021b,color:#fff
     style AVI fill:#d0021b,color:#fff
 
-    %% Styles — Layer 6: Teal (Storage)
     style VSAN fill:#336791,color:#fff
     style NFS fill:#336791,color:#fff
     style CNS fill:#336791,color:#fff
     style SC fill:#336791,color:#fff
     style SP fill:#336791,color:#fff
 
-    %% Styles — Layer 7: Dark (Compute)
     style ESXI fill:#000,color:#fff
     style VMC fill:#000,color:#fff
     style CL fill:#000,color:#fff
