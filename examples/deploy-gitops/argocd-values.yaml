@@ -2,6 +2,13 @@
 # Chart: argo/argo-cd
 # Configures the ArgoCD server with ingress via Contour.
 
+# Reduce Git polling interval for faster auto-sync in demo environments.
+# Default is 180s; 15s ensures ArgoCD detects commits within ~20 seconds.
+configs:
+  cm:
+    timeout.reconciliation: "15s"
+    timeout.reconciliation.jitter: "5s"
+
 server:
   # Run ArgoCD server without internal TLS. Contour terminates TLS at the
   # ingress level and forwards plain HTTP to the server. Without this flag
