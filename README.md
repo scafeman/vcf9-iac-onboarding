@@ -32,7 +32,7 @@ Coming from AWS EKS? Here's how the core concepts map to VCF 9 and where this to
 | RDS (PostgreSQL) | Data Services Manager (DSM) | Fully managed PostgresCluster via DSM CRD in `examples/deploy-managed-db-app/` |
 | Lambda | Knative Service | Scale-to-zero serverless functions in `examples/deploy-knative/` |
 | API Gateway | Contour (net-contour) | HTTP routing via Envoy proxy for Knative Services |
-| Route 53 | sslip.io Magic DNS | Wildcard DNS via `<IP>.sslip.io` — no external DNS provider required |
+| Route 53 | sslip.io Magic DNS | Wildcard DNS via `<IP>.sslip.io` — ideal for lab/demo/PoC (use enterprise DNS for production) |
 | ACM (Certificate Manager) | Let's Encrypt + cert-manager | Automated trusted TLS certificates via ACME HTTP-01 challenge |
 | DynamoDB Streams | HTTP Webhook | Direct HTTP invocation from API server to Knative audit function |
 | EC2 (HA multi-tier) | VM Service VMs | 2× web + 2× API VMs with LoadBalancers in `examples/deploy-ha-vm-app/` |
