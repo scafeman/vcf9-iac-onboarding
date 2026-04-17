@@ -82,6 +82,8 @@ Typical deployment time: **5–18 minutes**.
 
 All deployment patterns use sslip.io for automatic DNS resolution — services are accessible via `<name>.<IP>.sslip.io` hostnames without requiring external DNS configuration or `/etc/hosts` entries. If `LETSENCRYPT_EMAIL` is set, Let's Encrypt TLS certificates are automatically provisioned for HTTPS access. When `USE_SSLIP_DNS=true` (default), dashboard services use ClusterIP instead of LoadBalancer, with traffic routed through the shared envoy-lb Ingress. Only deploy-cluster keeps both a raw LoadBalancer IP (for NSX validation) and the envoy-lb Ingress route.
 
+> **Production Note:** sslip.io is designed for lab, demo, and PoC environments. For production deployments, replace with your enterprise DNS provider (e.g., Infoblox, Route 53) and set `USE_SSLIP_DNS=false`.
+
 See the [Deploy Cluster README](examples/deploy-cluster/README-deploy.md) for a detailed breakdown of each phase.
 
 ### Deploy Metrics

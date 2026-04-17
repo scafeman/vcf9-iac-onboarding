@@ -210,7 +210,7 @@ Supervisor Services are platform capabilities exposed as Kubernetes CRDs within 
 | **vSphere Kubernetes Service (VKS)** | Managed Kubernetes clusters provisioned via Cluster API. Deploys control plane and worker VMs, supports autoscaling, and integrates with VKS Standard Packages. | EKS | Deploy Cluster — the foundation for all container-based patterns |
 | **Data Services Manager (DSM)** | Managed PostgreSQL and MySQL databases via the `PostgresCluster` CRD. DSM handles VM provisioning, database installation, patching, and connection management. | RDS | Deploy Managed DB App, Deploy HA VM App, Deploy Knative |
 | **Secret Store Service** | HashiCorp Vault-based secret management. Secrets are created via `vcf secret create` and injected into pods via the `vault-injector` sidecar. | AWS Secrets Manager | Deploy Managed DB App, Deploy Secrets Demo |
-| **cert-manager** | X.509 certificate lifecycle management. Installed as a VKS Standard Package. Watches Ingress annotations and requests certificates from ACME (Let's Encrypt). | ACM (AWS Certificate Manager) | Deploy Cluster Phase 5g — enables TLS for all Ingress routes |
+| **cert-manager** | X.509 certificate lifecycle management. Installed as a VKS Standard Package. Watches Ingress annotations and requests certificates from ACME (Let's Encrypt). Ideal for lab/demo/PoC — use an enterprise CA (e.g., DigiCert, Microsoft AD CS) for production. | ACM (AWS Certificate Manager) | Deploy Cluster Phase 5g — enables TLS for all Ingress routes |
 | **Contour / Envoy** | Kubernetes Ingress controller. Installed as a VKS Standard Package. Contour watches Ingress/HTTPProxy resources; Envoy handles L7 traffic routing. | ALB Ingress Controller | Deploy Cluster Phase 5h — shared `envoy-lb` for all deployment patterns |
 | **Cloud Native Registry (Harbor)** | Container image registry. Provides image storage, vulnerability scanning, and replication. | ECR (Elastic Container Registry) | Deploy GitOps — Harbor hosts CI-built images for the microservices pipeline |
 | **Velero vSphere Operator** | Backup and disaster recovery for Kubernetes workloads. Snapshots PVs and cluster state for restore operations. | AWS Backup + EBS Snapshots | Available as a Supervisor Service (not directly used in toolkit patterns) |
@@ -327,7 +327,7 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 | EC2 | VM Service (VirtualMachine CRD) | 4 |
 | RDS | Data Services Manager (DSM) | 4 |
 | Secrets Manager | Secret Store Service (Vault) | 4 |
-| ACM | cert-manager (VKS Standard Package) | 4 |
+| ACM | cert-manager — Let's Encrypt for lab, enterprise CA for production | 4 |
 | ALB Ingress Controller | Contour / Envoy (VKS Standard Package) | 4 |
 | ECR | Harbor (Cloud Native Registry) | 4 |
 | AWS Backup | Velero vSphere Operator | 4 |

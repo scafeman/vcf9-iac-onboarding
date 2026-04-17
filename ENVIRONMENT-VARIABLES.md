@@ -223,6 +223,8 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 
 These variables control the sslip.io DNS integration and optional Let's Encrypt TLS certificate provisioning. They apply to Deploy Cluster (infrastructure setup) and are consumed by all deployment patterns that create Ingress resources.
 
+> **Production Note:** sslip.io is designed for lab, demo, and PoC environments where no external DNS provider is available. For production deployments, replace sslip.io with your enterprise DNS provider (e.g., Infoblox, AWS Route 53, Azure DNS) and set `USE_SSLIP_DNS=false`. Configure your DNS to point service hostnames to the Contour envoy-lb LoadBalancer IP.
+
 When `USE_SSLIP_DNS=true` (default), dashboard services (hybrid-app, managed-db-app, secrets-demo, knative) use ClusterIP instead of LoadBalancer, with traffic routed through the shared envoy-lb Ingress. Only deploy-cluster keeps both a raw LoadBalancer IP (for NSX validation) and the envoy-lb Ingress route. No DNS entries or `/etc/hosts` changes are needed — sslip.io resolves automatically.
 
 | Variable | Required | Default | Description |
