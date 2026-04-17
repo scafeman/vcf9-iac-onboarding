@@ -19,21 +19,28 @@ graph TB
             ENVOYLB[envoy-lb Service<br/>type: LoadBalancer<br/>External IP: 74.x.x.x]
         end
 
-        subgraph "CI/CD Stack"
-            HARBOR[Harbor<br/>Container Registry<br/>harbor namespace]
-            GITLAB[GitLab<br/>Source Control + CI<br/>gitlab-system namespace]
-            RUNNER[GitLab Runner<br/>CI/CD Executor<br/>gitlab-runners namespace]
-            ARGOCD[ArgoCD<br/>GitOps Controller<br/>argocd namespace]
+        subgraph "Container Registry — harbor namespace"
+            HARBOR[Harbor<br/>Registry + UI + Trivy<br/>harbor.IP.sslip.io]
         end
 
-        subgraph "Application — microservices-demo"
+        subgraph "Source Control + CI — gitlab-system namespace"
+            GITLAB[GitLab<br/>Webservice + Gitaly + PostgreSQL<br/>gitlab.IP.sslip.io]
+            RUNNER[GitLab Runner<br/>DinD CI/CD Executor<br/>gitlab-runners namespace]
+        end
+
+        subgraph "GitOps Controller — argocd namespace"
+            ARGOCD[ArgoCD<br/>Server + Repo Server + App Controller<br/>argocd.IP.sslip.io]
+        end
+
+        subgraph "Application — microservices-demo namespace"
             FRONTEND[Frontend<br/>Online Boutique UI<br/>LoadBalancer IP]
             SERVICES[11 Microservices<br/>cart, checkout, currency<br/>payment, shipping, etc.]
         end
 
         subgraph "Node DaemonSets — kube-system"
             DNSPATCH[node-dns-patcher<br/>resolvectl: 8.8.8.8, 1.1.1.1]
-            CAINSTALL[node-ca-installer<br/>Harbor CA trust on nodes]
+            CAINSTALL[node-ca-installer<br/>Harbor CA bundle on nodes]
+            COREDNS[CoreDNS<br/>+ sslip.io forwarding]
         end
     end
 
