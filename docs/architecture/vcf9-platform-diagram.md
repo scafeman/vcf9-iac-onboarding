@@ -69,14 +69,7 @@ graph TB
 
     VCFA --> ORG
     NSXMGR --> VPC
-
-    %% Force Layer 1 nodes into a vertical column
-    VCFA ~~~ SDDC
-    SDDC ~~~ VC
-    VC ~~~ NSXMGR
-    NSXMGR ~~~ VCFOPS
-    VCFOPS ~~~ VCFLOGS
-    VCFLOGS ~~~ VCFNET
+    VC --> SUPER
 
     ORG --> PROJ
     PROJ --> RBAC
