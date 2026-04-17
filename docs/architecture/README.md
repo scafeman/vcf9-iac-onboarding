@@ -4,6 +4,12 @@ High-level design documents for each VCF 9 deployment pattern. Each document inc
 
 These documents are intended for DevOps engineers migrating from AWS EKS to VCF 9 VKS.
 
+## Platform Reference
+
+| Document | Description |
+|---|---|
+| [VCF 9 Platform Architecture](vcf9-platform-diagram.md) | Full-stack platform diagram with all 7 layers, component details, and AWS equivalence mapping |
+
 ## Deployment Patterns
 
 | Pattern | Document | AWS Equivalent |

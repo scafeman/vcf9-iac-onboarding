@@ -12,107 +12,79 @@ This is the VCF equivalent of creating an AWS EKS cluster with managed node grou
 graph TB
     subgraph "Internet"
         USER[DevOps Engineer<br/>Browser / kubectl]
-        SSLIP[sslip.io DNS<br/>Magic DNS Service]
-        LE[Let's Encrypt<br/>ACME CA]
     end
 
-    subgraph "VCF 9 Platform"
-        subgraph "VCFA Control Plane"
-            VCFA[VCFA Endpoint<br/>CCI API Server]
-            CCI[Cloud Consumption Interface<br/>Projects, Namespaces, RBAC]
+    subgraph "VCF 9 Control Plane"
+        VCFA[VCFA Endpoint<br/>CCI API Server]
+        NS[SupervisorNamespace<br/>my-project-01-ns-xxxxx]
+    end
+
+    subgraph "VKS Guest Cluster"
+        subgraph "Control Plane + Workers"
+            CP[Control Plane<br/>1 or 3 nodes]
+            W1[Worker 1<br/>best-effort-large]
+            W2[Worker 2<br/>best-effort-large]
+            WN[Worker N<br/>autoscaler: 2–10]
         end
 
-        subgraph "Supervisor Cluster"
-            subgraph "Project: my-project-01"
-                NS[SupervisorNamespace<br/>my-project-01-ns-xxxxx]
-                PRB[ProjectRoleBinding<br/>admin → user-identity]
-            end
+        subgraph "Infrastructure Packages — tkg-packages"
+            AUTOSCALER[Cluster Autoscaler<br/>VKS Standard Package]
+            CERTMGR[cert-manager<br/>VKS Standard Package]
+            CONTOUR[Contour + Envoy<br/>VKS Standard Package]
         end
 
-        subgraph "NSX Networking"
-            VPC[NSX VPC<br/>10.10.0.0/16]
-            TGW[Transit Gateway<br/>North-South routing]
-            EXTIP[External IP Pool<br/>Public IPs for LoadBalancers]
+        subgraph "Ingress — tanzu-system-ingress"
+            ENVOYLB[envoy-lb Service<br/>type: LoadBalancer<br/>External IP: 74.x.x.x]
         end
 
-        subgraph "VKS Guest Cluster"
-            subgraph "Control Plane"
-                CP[Control Plane Node<br/>1 or 3 replicas]
-            end
+        subgraph "TLS — ClusterIssuers"
+            LEPROD[letsencrypt-prod<br/>ACME Production]
+            LESTAG[letsencrypt-staging<br/>ACME Staging]
+        end
 
-            subgraph "Worker Pool: node-pool-01"
-                W1[Worker Node 1<br/>best-effort-large]
-                W2[Worker Node 2<br/>best-effort-large]
-                WN[Worker Node N<br/>autoscaler: 2–10]
-            end
+        subgraph "Node DaemonSets — kube-system"
+            DNSPATCH[node-dns-patcher<br/>resolvectl: 8.8.8.8, 1.1.1.1]
+            COREDNS[CoreDNS<br/>+ sslip.io forwarding]
+        end
 
-            subgraph "System Namespaces"
-                KUBE[kube-system<br/>CoreDNS, kube-proxy]
-                COREDNS[CoreDNS<br/>+ sslip.io forwarding rule]
-            end
-
-            subgraph "tkg-packages Namespace"
-                AUTOSCALER[Cluster Autoscaler<br/>VKS Standard Package]
-                CERTMGR[cert-manager<br/>VKS Standard Package]
-                CONTOUR[Contour<br/>VKS Standard Package]
-            end
-
-            subgraph "tanzu-system-ingress Namespace"
-                ENVOY[Envoy Proxy<br/>Contour data plane]
-                ENVOYLB[envoy-lb Service<br/>type: LoadBalancer]
-            end
-
-            subgraph "ClusterIssuers"
-                LEPROD[letsencrypt-prod<br/>ACME Production]
-                LESTAG[letsencrypt-staging<br/>ACME Staging]
-            end
-
-            subgraph "default Namespace — Functional Test"
-                PVC[PersistentVolumeClaim<br/>vks-test-pvc / 1Gi / nfs]
-                DEPLOY[Deployment: vks-test-app<br/>scafeman/vks-test-app:latest]
-                LBSVC[Service: vks-test-lb<br/>type: LoadBalancer]
-                INGRESS[Ingress: vks-test-sslip-ingress<br/>test.IP.sslip.io]
-            end
+        subgraph "Functional Test — default namespace"
+            PVC[PVC: vks-test-pvc<br/>1Gi / nfs]
+            DEPLOY[Deployment: vks-test-app<br/>scafeman/vks-test-app:latest]
+            LBSVC[Service: vks-test-lb<br/>type: LoadBalancer]
+            INGRESS[Ingress: vks-test-sslip-ingress<br/>test.IP.sslip.io]
         end
     end
 
-    USER -->|HTTPS| VCFA
-    VCFA --> CCI
-    CCI --> NS
-    CCI --> PRB
+    USER -->|HTTPS / API Token| VCFA
+    VCFA -->|provisions| NS
+    NS -->|creates| CP
 
-    NS --> CP
     CP --> W1
     CP --> W2
     CP --> WN
+    AUTOSCALER -->|scales 2–10| WN
 
-    AUTOSCALER -->|scales| W1
-    AUTOSCALER -->|scales| WN
-
-    CERTMGR -->|issues certs via| LE
-    COREDNS -->|forwards sslip.io → 8.8.8.8| SSLIP
-
-    ENVOYLB -->|External IP from| EXTIP
-    LBSVC -->|External IP from| EXTIP
+    CERTMGR -->|issues certs via| LEPROD
+    CONTOUR --> ENVOYLB
 
     USER -->|http://test.IP.sslip.io| ENVOYLB
-    ENVOYLB --> ENVOY
-    ENVOY --> INGRESS
+    ENVOYLB --> INGRESS
     INGRESS --> DEPLOY
 
     USER -->|http://EXTERNAL_IP| LBSVC
     LBSVC --> DEPLOY
     DEPLOY --> PVC
 
-    VPC --> TGW
-
     style VCFA fill:#4a90d9,color:#fff
     style NS fill:#f5a623,color:#fff
     style CP fill:#7ed321,color:#fff
     style CERTMGR fill:#9013fe,color:#fff
     style CONTOUR fill:#9013fe,color:#fff
+    style AUTOSCALER fill:#9013fe,color:#fff
     style ENVOYLB fill:#d0021b,color:#fff
     style LBSVC fill:#d0021b,color:#fff
+    style DNSPATCH fill:#336791,color:#fff
+    style COREDNS fill:#336791,color:#fff
 ```
 
 ## Component Details
@@ -178,6 +150,7 @@ graph TB
 | 5g. cert-manager | Installs cert-manager VKS package | ~60s |
 | 5h. Contour + envoy-lb | Installs Contour, creates envoy-lb LoadBalancer, patches CoreDNS | ~90s |
 | 5i. ClusterIssuers | Creates Let's Encrypt prod + staging ClusterIssuers | ~30s |
+| 5j. Node DNS Patcher | Deploys DaemonSet to configure systemd-resolved with public DNS on each node | ~15s |
 | 6. Functional Test | Deploys test app, verifies PVC + LB + HTTP + sslip.io | ~60s |
 
 **Total: ~12–18 minutes** from zero to a fully validated VKS cluster.
@@ -191,3 +164,5 @@ graph TB
 3. **Dual access for functional test** — deploy-cluster keeps both the raw LoadBalancer IP (for NSX validation) and the envoy-lb Ingress (for sslip.io). Other patterns use only the envoy-lb Ingress.
 
 4. **Idempotent provisioning** — Every phase checks if resources already exist before creating them. The script can be re-run safely after partial failures.
+
+5. **Node DNS Patcher DaemonSet** — VKS nodes inherit corporate DNS from the Supervisor Cluster, which can't resolve sslip.io. The `node-dns-patcher` DaemonSet uses `nsenter` + `resolvectl` to add public DNS servers (8.8.8.8, 1.1.1.1) to `systemd-resolved` on each node, enabling kubelet/containerd to resolve sslip.io hostnames for container image pulls.
