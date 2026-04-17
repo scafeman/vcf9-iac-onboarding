@@ -36,6 +36,7 @@ If `USE_SSLIP_DNS` was enabled during deployment, the script also cleans up the 
 5. **ClusterIssuer** `letsencrypt-prod` — removes the Let's Encrypt ACME issuer
 6. **Contour VKS package** — uninstalls the Contour ingress controller and Envoy LoadBalancer
 7. **cert-manager VKS package** — uninstalls the certificate lifecycle manager
+8. **DaemonSet** `node-dns-patcher` — removes the node-level DNS patcher DaemonSet from `kube-system` (deployed by Phase 5j when `USE_SSLIP_DNS=true`)
 
 All deletes use `--ignore-not-found` so the script doesn't fail if any resource was already deleted or never created.
 

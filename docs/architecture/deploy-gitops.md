@@ -139,6 +139,30 @@ Developer → git push → GitLab → GitLab Runner (CI) → Harbor (image push)
                     Deploys to microservices-demo namespace
 ```
 
+## CI/CD Pipeline Flow
+
+After initial deployment, the ArgoCD Application is re-pointed from GitHub to a GitLab project containing the microservices-demo Kustomize overlay and a `.gitlab-ci.yml` pipeline. This enables a self-contained CI/CD loop:
+
+```
+Edit demo-config.yaml in GitLab web UI
+  → GitLab CI triggers (build + update-manifests stages)
+    → Docker-in-Docker builds customized frontend image
+      → Image pushed to Harbor (microservices-ci project)
+        → kustomization.yaml image tag updated with commit SHA
+          → ArgoCD detects kustomization.yaml change and syncs
+            → New frontend pod deployed with custom banner message
+```
+
+The pipeline files pushed to the GitLab project:
+
+| File | Purpose |
+|---|---|
+| `kustomization.yaml` | Kustomize overlay with `images` section referencing Harbor CI |
+| `kubernetes-manifests.yaml` | Upstream microservices-demo manifests |
+| `.gitlab-ci.yml` | Two-stage pipeline: `build` (DinD) and `update-manifests` |
+| `Dockerfile` | Extends upstream frontend with configurable `FRONTEND_MESSAGE` |
+| `demo-config.yaml` | Banner configuration — edit this file to trigger the pipeline |
+
 ## Installation Order
 
 | Phase | Component | Method | Duration |
@@ -154,8 +178,11 @@ Developer → git push → GitLab → GitLab Runner (CI) → Harbor (image push)
 | 7 | GitLab | Helm chart (operator) | ~5 min |
 | 8 | GitLab Runner | Helm chart | ~1 min |
 | 9 | ArgoCD Application | kubectl apply | ~3 min |
+| 16 | Harbor CI Project + GitLab Project | REST API + git push | ~30s |
+| 17 | ArgoCD Re-Point to GitLab | argocd CLI + kubectl patch | ~1 min |
+| 18 | Pipeline Verification | REST API + kubectl | ~15s |
 
-**Total: ~15–20 minutes**
+**Total: ~20–25 minutes**
 
 ## Key Design Decisions
 
@@ -166,3 +193,5 @@ Developer → git push → GitLab → GitLab Runner (CI) → Harbor (image push)
 3. **Shared infrastructure packages** — cert-manager and Contour are installed as VKS Standard Packages shared with other deployment patterns. The GitOps stack reuses the same envoy-lb LoadBalancer.
 
 4. **ArgoCD Application CR** — The Online Boutique is deployed declaratively via an ArgoCD Application custom resource that watches a Git repository. This demonstrates the GitOps reconciliation loop.
+
+5. **CI/CD pipeline** — After initial deployment from GitHub, the ArgoCD Application is re-pointed to a GitLab project. Editing `demo-config.yaml` in GitLab triggers a CI pipeline that builds a customized frontend image, pushes it to Harbor, and updates the `kustomization.yaml` image tag. ArgoCD detects the change and syncs the new image to the cluster.

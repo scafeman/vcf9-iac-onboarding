@@ -8,6 +8,7 @@ set -euo pipefail
 # installed by the Deploy GitOps deploy script, deleting resources in reverse
 # dependency order:
 #   Phase 1:  Kubeconfig Setup
+#   Phase 1b: CI/CD Pipeline Cleanup
 #   Phase 2:  Delete ArgoCD Application
 #   Phase 3:  Delete GitLab Runner
 #   Phase 4:  Delete GitLab
@@ -48,6 +49,13 @@ GITLAB_NAMESPACE="${GITLAB_NAMESPACE:-gitlab-system}"
 GITLAB_RUNNER_NAMESPACE="${GITLAB_RUNNER_NAMESPACE:-gitlab-runners}"
 ARGOCD_NAMESPACE="${ARGOCD_NAMESPACE:-argocd}"
 APP_NAMESPACE="${APP_NAMESPACE:-microservices-demo}"
+
+# --- CI/CD Pipeline ---
+GITLAB_PROJECT_NAME="${GITLAB_PROJECT_NAME:-microservices-demo}"
+HARBOR_CI_PROJECT="${HARBOR_CI_PROJECT:-microservices-ci}"
+
+# --- Repository URLs ---
+HELM_CHARTS_REPO_URL="${HELM_CHARTS_REPO_URL:-https://github.com/scafeman/vcf9-iac-onboarding.git}"
 
 ###############################################################################
 # Derived Variables (computed from DOMAIN — do not edit)
@@ -167,6 +175,118 @@ if ! kubectl get namespaces >/dev/null 2>&1; then
 fi
 
 log_success "Kubeconfig set to '${KUBECONFIG_FILE}'"
+
+###############################################################################
+# Phase 1b: CI/CD Pipeline Cleanup
+#
+# Cleans up CI/CD pipeline resources created by Phases 16–18 of the deploy
+# script. Must run BEFORE Phase 2 (Delete ArgoCD Application) because we need
+# ArgoCD running to restore the Application source and remove repo credentials.
+###############################################################################
+
+log_step "1b" "Cleaning up CI/CD pipeline resources"
+
+# --- 1b-a: Restore ArgoCD Application source to original GitHub repo ---
+
+if kubectl get application microservices-demo -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
+  kubectl patch application microservices-demo -n "${ARGOCD_NAMESPACE}" --type merge -p '{
+    "spec": {
+      "source": {
+        "repoURL": "'"${HELM_CHARTS_REPO_URL}"'",
+        "path": "examples/deploy-gitops/microservices-overlay",
+        "targetRevision": "HEAD"
+      }
+    }
+  }' 2>/dev/null || true
+  log_success "ArgoCD Application source restored to '${HELM_CHARTS_REPO_URL}'"
+else
+  log_warn "ArgoCD Application 'microservices-demo' not found, skipping source restore"
+fi
+
+# --- 1b-b: Remove ArgoCD repo credentials for GitLab ---
+
+ARGOCD_POD=$(kubectl get pod -n "${ARGOCD_NAMESPACE}" \
+  -l app.kubernetes.io/name=argocd-server \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+
+if [[ -n "${ARGOCD_POD}" ]]; then
+  # Retrieve ArgoCD admin password for CLI login
+  ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret -n "${ARGOCD_NAMESPACE}" \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+  if [[ -n "${ARGOCD_PASSWORD}" ]]; then
+    kubectl exec -n "${ARGOCD_NAMESPACE}" "${ARGOCD_POD}" -- sh -c \
+      "argocd login localhost:8080 --username admin --password '${ARGOCD_PASSWORD}' --plaintext --insecure" 2>/dev/null || true
+
+    GITLAB_REPO_URL="https://${GITLAB_HOSTNAME}/root/${GITLAB_PROJECT_NAME}.git"
+    kubectl exec -n "${ARGOCD_NAMESPACE}" "${ARGOCD_POD}" -- sh -c \
+      "argocd repo rm '${GITLAB_REPO_URL}'" 2>/dev/null || true
+    log_success "ArgoCD repo credentials for GitLab removed"
+  else
+    log_warn "Could not retrieve ArgoCD admin password, skipping repo credential removal"
+  fi
+else
+  log_warn "ArgoCD server pod not found, skipping repo credential removal"
+fi
+
+# --- 1b-c: Delete GitLab project via API ---
+
+# Retrieve GitLab root password from K8s secret
+GITLAB_ROOT_PASSWORD=$(kubectl get secret gitlab-gitlab-initial-root-password -n "${GITLAB_NAMESPACE}" \
+  -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+if [[ -n "${GITLAB_ROOT_PASSWORD}" ]]; then
+  # Obtain an OAuth token for API access
+  GITLAB_OAUTH_TOKEN=$(curl -sSk "https://${GITLAB_HOSTNAME}/oauth/token" \
+    -d "grant_type=password&username=root&password=${GITLAB_ROOT_PASSWORD}" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+  if [[ -n "${GITLAB_OAUTH_TOKEN}" ]]; then
+    # Look up the project ID by name
+    GITLAB_PROJECT_ID=$(curl -sSk \
+      "https://${GITLAB_HOSTNAME}/api/v4/projects?search=${GITLAB_PROJECT_NAME}" \
+      -H "PRIVATE-TOKEN: ${GITLAB_OAUTH_TOKEN}" 2>/dev/null \
+      | python3 -c "
+import sys, json
+projects = json.load(sys.stdin)
+for p in projects:
+    if p['path'] == '${GITLAB_PROJECT_NAME}':
+        print(p['id'])
+        sys.exit(0)
+print('')
+" 2>/dev/null || true)
+
+    if [[ -n "${GITLAB_PROJECT_ID}" ]]; then
+      curl -sSk -X DELETE \
+        "https://${GITLAB_HOSTNAME}/api/v4/projects/${GITLAB_PROJECT_ID}" \
+        -H "PRIVATE-TOKEN: ${GITLAB_OAUTH_TOKEN}" 2>/dev/null || true
+      log_success "GitLab project '${GITLAB_PROJECT_NAME}' (ID: ${GITLAB_PROJECT_ID}) deleted"
+    else
+      log_warn "GitLab project '${GITLAB_PROJECT_NAME}' not found, skipping deletion"
+    fi
+  else
+    log_warn "Could not obtain GitLab OAuth token, skipping project deletion"
+  fi
+else
+  log_warn "GitLab root password not available, skipping GitLab project deletion"
+fi
+
+# --- 1b-d: Delete Harbor CI project via API ---
+
+# Retrieve Harbor admin password from the Harbor core secret
+HARBOR_ADMIN_PASSWORD=$(kubectl get secret harbor-core -n "${HARBOR_NAMESPACE}" \
+  -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)
+
+if [[ -n "${HARBOR_ADMIN_PASSWORD}" ]]; then
+  curl -sSk -X DELETE \
+    -u "admin:${HARBOR_ADMIN_PASSWORD}" \
+    "https://${HARBOR_HOSTNAME}/api/v2.0/projects/${HARBOR_CI_PROJECT}" 2>/dev/null || true
+  log_success "Harbor CI project '${HARBOR_CI_PROJECT}' deleted"
+else
+  log_warn "Harbor admin password not available, skipping Harbor CI project deletion"
+fi
+
+log_success "CI/CD pipeline cleanup complete"
 
 ###############################################################################
 # Phase 2: Delete ArgoCD Application
@@ -294,6 +414,13 @@ fi
 
 log_success "CoreDNS restore complete"
 
+# Delete node DNS patcher DaemonSet (defensive — deployed by deploy-cluster.sh)
+kubectl delete daemonset node-dns-patcher -n kube-system --ignore-not-found 2>/dev/null || true
+
+# Delete node CA installer DaemonSet and ConfigMap (deployed by Phase 8b)
+kubectl delete daemonset node-ca-installer -n kube-system --ignore-not-found 2>/dev/null || true
+kubectl delete configmap node-ca-bundle -n kube-system --ignore-not-found 2>/dev/null || true
+
 ###############################################################################
 # Phase 7: Delete Harbor
 ###############################################################################
@@ -368,6 +495,7 @@ echo "============================================="
 echo "  Cluster:              ${CLUSTER_NAME}"
 echo "  Domain:               ${DOMAIN}"
 echo "  Removed components:"
+echo "    - CI/CD pipeline (GitLab project, Harbor CI project, ArgoCD repo credentials)"
 echo "    - ArgoCD Application (microservices-demo)"
 echo "    - Microservices Demo namespace (${APP_NAMESPACE})"
 echo "    - GitLab Runner (ns: ${GITLAB_RUNNER_NAMESPACE})"

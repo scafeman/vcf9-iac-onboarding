@@ -14,6 +14,17 @@ The script is fully non-interactive. All configuration is driven by environment 
 
 Sets the `KUBECONFIG` environment variable to the kubeconfig file path. If the file is missing or the cluster is unreachable, the script prints a warning but continues with cleanup anyway.
 
+### Phase 1b: CI/CD Pipeline Cleanup
+
+Cleans up CI/CD pipeline resources created by Phases 16–18 of the deploy script. This phase must run before Phase 2 (Delete ArgoCD Application) because ArgoCD must be running to restore the Application source and remove repository credentials.
+
+- Restores the ArgoCD Application source to the original GitHub repository (`HELM_CHARTS_REPO_URL`) and path (`examples/deploy-gitops/microservices-overlay`) via `kubectl patch`.
+- Removes ArgoCD repository credentials for the GitLab hostname via `argocd repo rm` (executed inside the ArgoCD server pod).
+- Deletes the GitLab project via the GitLab REST API (`DELETE /api/v4/projects/:id`). Retrieves the root password from the `gitlab-gitlab-initial-root-password` K8s Secret and obtains an OAuth token for API access.
+- Deletes the Harbor CI project via the Harbor REST API (`DELETE /api/v2.0/projects/HARBOR_CI_PROJECT`). Retrieves the Harbor admin password from the `harbor-core` K8s Secret.
+
+All commands use `|| true` and `2>/dev/null` for idempotency. Missing resources produce warnings via `log_warn` but do not block the script.
+
 ### Phase 2: Delete ArgoCD Application
 
 Deletes the ArgoCD Application custom resource (`microservices-demo`) from the ArgoCD namespace. Waits for Microservices Demo pods to terminate in the application namespace (up to 120 seconds). Deletes the application namespace. Uses `--ignore-not-found` and `|| true` for idempotency.
@@ -33,6 +44,12 @@ Uninstalls the ArgoCD Helm release via `helm uninstall`. Strips finalizers from 
 ### Phase 6: Restore CoreDNS
 
 When `USE_SSLIP_DNS=false` was used during deployment, reads the current CoreDNS ConfigMap and removes the custom `hosts { ... }` block that was added by the deploy script (containing Harbor, GitLab, and ArgoCD static entries). Restarts CoreDNS pods to pick up the restored configuration. Skips if the hosts block is not present or if sslip.io DNS was used (no CoreDNS patching to revert).
+
+Also performs defensive cleanup of node-level DaemonSets:
+- Deletes the `node-dns-patcher` DaemonSet from `kube-system` (deployed by `deploy-cluster.sh` Phase 5j — defensive cleanup in case `teardown-cluster.sh` was not run first).
+- Deletes the `node-ca-installer` DaemonSet and `node-ca-bundle` ConfigMap from `kube-system` (deployed by Phase 8b). This removes the node-level CA trust store installation and stops containerd restarts on each node.
+
+All deletes use `--ignore-not-found` and `|| true` for idempotency.
 
 ### Phase 7: Delete Harbor
 
@@ -80,6 +97,9 @@ Prints a summary of all removed components. Note: Contour and cert-manager are s
 | `GITLAB_RUNNER_NAMESPACE` | `gitlab-runners` | Namespace for GitLab Runner |
 | `ARGOCD_NAMESPACE` | `argocd` | ArgoCD namespace |
 | `APP_NAMESPACE` | `microservices-demo` | Namespace for the Microservices Demo |
+| `GITLAB_PROJECT_NAME` | `microservices-demo` | GitLab project name for CI/CD pipeline cleanup |
+| `HARBOR_CI_PROJECT` | `microservices-ci` | Harbor CI project name for cleanup |
+| `HELM_CHARTS_REPO_URL` | `https://github.com/scafeman/vcf9-iac-onboarding.git` | Original GitHub repo URL (used to restore ArgoCD Application source) |
 
 ---
 
@@ -106,6 +126,12 @@ A successful run produces output similar to:
 ```
 [Step 1] Setting up kubeconfig...
 ✓ Kubeconfig set to './kubeconfig-my-cluster.yaml'
+[Step 1b] Cleaning up CI/CD pipeline resources...
+✓ ArgoCD Application source restored to 'https://github.com/scafeman/vcf9-iac-onboarding.git'
+✓ ArgoCD repo credentials for GitLab removed
+✓ GitLab project 'microservices-demo' (ID: 1) deleted
+✓ Harbor CI project 'microservices-ci' deleted
+✓ CI/CD pipeline cleanup complete
 [Step 2] Deleting ArgoCD Application...
   Waiting for pods in 'microservices-demo' to terminate...
   11 pod(s) still terminating... (0s/120s elapsed)
@@ -134,6 +160,7 @@ A successful run produces output similar to:
   Cluster:              my-cluster
   Domain:               lab.local
   Removed components:
+    - CI/CD pipeline (GitLab project, Harbor CI project, ArgoCD repo credentials)
     - ArgoCD Application (microservices-demo)
     - Microservices Demo namespace (microservices-demo)
     - GitLab Runner (ns: gitlab-runners)

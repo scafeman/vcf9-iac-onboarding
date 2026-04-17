@@ -434,6 +434,13 @@ Once the VKS cluster passes Phases 1–9, you can deploy application workloads u
 | 10.26 | ArgoCD pods running | `kubectl get pods -n argocd` | All pods show `Running` |
 | 10.27 | GitLab webservice running | `kubectl get pods -n gitlab-system -l app=webservice` | Pod shows `Running` |
 | 10.28 | Microservices Demo deployed | `kubectl get pods -n microservices-demo` | All 11 pods show `Running` |
+| 10.29 | Harbor CI project exists | `curl -sSk -u "admin:<HARBOR_PASSWORD>" https://<HARBOR_HOST>/api/v2.0/projects?name=microservices-ci` | Returns project with `name: microservices-ci` |
+| 10.30 | GitLab CI/CD project exists | Navigate to `https://<GITLAB_HOST>/root/microservices-demo` | Project page loads with `.gitlab-ci.yml`, `demo-config.yaml`, `kustomization.yaml` |
+| 10.31 | GitLab Runner registered | `kubectl get pods -n gitlab-runners` | Runner pod shows `Running` |
+| 10.32 | ArgoCD sources from GitLab | `kubectl get application microservices-demo -n argocd -o jsonpath='{.spec.source.repoURL}'` | Returns GitLab URL (e.g., `https://gitlab.IP.sslip.io/root/microservices-demo.git`) |
+| 10.33 | CI/CD pipeline triggers on edit | Edit `demo-config.yaml` in GitLab web UI, commit change | Pipeline runs at `https://<GITLAB_HOST>/root/microservices-demo/-/pipelines` |
+| 10.34 | Node DNS patcher running | `kubectl get daemonset node-dns-patcher -n kube-system` | DaemonSet shows desired/ready counts matching |
+| 10.35 | Node CA installer running | `kubectl get daemonset node-ca-installer -n kube-system` | DaemonSet shows desired/ready counts matching |
 
 ### Deploy HA VM App — HA Three-Tier Application on VMs
 
@@ -487,7 +494,7 @@ Once all phases pass, the VKS cluster is validated and ready for workload migrat
 | 10c | Deploy Bastion VM (SSH jump host) | ☐ Pass / ☐ Fail / ☐ Skipped |
 | 10d | Deploy Secrets Demo (Secret Store integration) | ☐ Pass / ☐ Fail / ☐ Skipped |
 | 10e | Deploy Metrics (observability stack) | ☐ Pass / ☐ Fail / ☐ Skipped |
-| 10f | Deploy GitOps (CI/CD stack) | ☐ Pass / ☐ Fail / ☐ Skipped |
+| 10f | Deploy GitOps (CI/CD stack + self-contained pipeline) | ☐ Pass / ☐ Fail / ☐ Skipped |
 
 ### Migration Readiness Criteria
 

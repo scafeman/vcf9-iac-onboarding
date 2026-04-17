@@ -28,13 +28,18 @@ Kubeconfig Setup
                           └─► ArgoCD Installation (Helm, ingress via Contour)
                                 └─► ArgoCD CLI Installation (auto-download)
                                       └─► Certificate Distribution (Harbor CA, GitLab TLS)
-                                            └─► GitLab (Helm)
+                                            └─► Node CA Bundle Installation (Phase 8b)
+                                                  └─► GitLab (Helm)
                                                   └─► Harbor Proxy Patching (image registry)
                                                         └─► GitLab Runner (Helm)
                                                               └─► GitLab Sign-Up Disabled (API)
                                                                     └─► ArgoCD Cluster Registration
                                                                     └─► ArgoCD Application Bootstrap
                                                                           └─► Microservices Demo Verification
+                                                                                └─► Let's Encrypt TLS Ingress (sslip.io only)
+                                                                                      └─► Harbor CI Project & GitLab Project Creation
+                                                                                            └─► ArgoCD Re-Point to GitLab
+                                                                                                  └─► Pipeline Verification & Demo Instructions
 ```
 
 - **Certificates** are generated first so all subsequent Helm installs can use TLS from the start.
@@ -49,6 +54,10 @@ Kubeconfig Setup
 - **GitLab Runner** must be running before CI pipelines can execute.
 - **ArgoCD Cluster Registration** must complete before ArgoCD can deploy applications to the VKS cluster.
 - **ArgoCD Application Bootstrap** triggers the GitOps sync that deploys the Microservices Demo.
+- **Harbor CI Project** is created via the Harbor REST API to store CI-built frontend images.
+- **GitLab Project** is created with a `.gitlab-ci.yml` pipeline, `Dockerfile`, `kustomization.yaml`, and `demo-config.yaml` — enabling a one-file demo workflow.
+- **ArgoCD Re-Point** patches the ArgoCD Application to source from the GitLab project instead of GitHub, completing the self-contained CI/CD loop.
+- **Pipeline Verification** confirms the GitLab Runner is registered, ArgoCD is synced with GitLab, and the frontend pod is running.
 
 The teardown script (`teardown-gitops.sh`) reverses this order, removing application services (GitLab, ArgoCD, Harbor) and their namespaces. Contour and cert-manager are shared VKS packages managed by Deploy Metrics's teardown — Deploy GitOps teardown does not remove them.
 
@@ -96,6 +105,12 @@ Checks if the `argocd` CLI is already in PATH. If not, downloads it from GitHub 
 
 Creates Harbor CA certificate secrets in the GitLab and GitLab Runner namespaces. Creates the GitLab wildcard TLS secret in the GitLab namespace. Creates namespaces with PodSecurity labels if they do not already exist. Uses `--dry-run=client -o yaml | kubectl apply -f -` for idempotent Secret creation. Exits with code 9 on failure.
 
+The CA bundle includes the self-signed CA certificate plus Let's Encrypt staging and production root CAs (downloaded at runtime). This ensures the GitLab Runner trusts GitLab regardless of whether the ingress uses self-signed certs, Let's Encrypt staging, or Let's Encrypt production certificates.
+
+### Phase 8b: Node CA Bundle Installation
+
+Creates a CA bundle combining the self-signed CA, Let's Encrypt staging root CA (`letsencrypt-stg-root-x1.pem`), and Let's Encrypt production root CA (`isrgrootx1.pem`). Stores the bundle in a `node-ca-bundle` ConfigMap in `kube-system`. Deploys a `node-ca-installer` DaemonSet that runs on every node (including control plane) and installs the CA bundle into each node's system trust store at `/etc/ssl/certs/sslip-ca-bundle.pem` using `nsenter` to access the host mount namespace. Creates a hash symlink for OpenSSL certificate lookup and restarts `containerd` on each node to pick up the new trust store. The DaemonSet loops every hour to handle node reboots. This ensures the kubelet and containerd trust Harbor's TLS certificates for container image pulls, regardless of which CA issued them.
+
 ### Phase 9: GitLab Installation
 
 Adds the GitLab Helm repository, then installs GitLab via `helm upgrade --install` with the configured version and values file. Waits for the GitLab webservice pod to reach Running state. Exits with code 10 if installation fails or pods do not start.
@@ -123,6 +138,28 @@ Applies the ArgoCD Application manifest that defines the Helm charts repository 
 ### Phase 14: Microservices Demo Verification
 
 Checks that pods for all 11 microservices are in a Running state: adservice, cartservice, checkoutservice, currencyservice, emailservice, frontend, loadgenerator, paymentservice, productcatalogservice, recommendationservice, and shippingservice. Prints warnings for any non-running pods. Waits up to 5 minutes for the `frontend-external` LoadBalancer service to receive an external IP from NSX (the service is created by ArgoCD sync moments before this phase runs). Displays the frontend LB IP or falls back to ClusterIP with port-forward instructions. This phase is non-fatal — the script warns but does not block.
+
+### Phase 16: Harbor CI Project & GitLab Project Creation
+
+Creates the Harbor project for CI-built images and a GitLab project with the full CI/CD pipeline configuration. The Harbor CI project (`HARBOR_CI_PROJECT`, default `microservices-ci`) is created via the Harbor REST API (`/api/v2.0/projects`), skipping creation if it already exists. A GitLab personal access token is obtained for API operations (via OAuth token exchange using the root password from the `gitlab-gitlab-initial-root-password` K8s Secret). The GitLab project (`GITLAB_PROJECT_NAME`, default `microservices-demo`) is created via the GitLab REST API (`/api/v4/projects`), skipping if it already exists.
+
+The script then generates and pushes the following files to the GitLab project's default branch:
+
+- `kustomization.yaml` — Kustomize overlay with an `images` section referencing the Harbor CI project (e.g., `harbor.IP.sslip.io/microservices-ci/frontend`)
+- `kubernetes-manifests.yaml` — Upstream microservices-demo manifests (copied from `examples/deploy-gitops/microservices-overlay/`)
+- `.gitlab-ci.yml` — Two-stage pipeline: `build` (Docker-in-Docker, builds customized frontend image, pushes to Harbor) and `update-manifests` (updates `kustomization.yaml` image tag with commit SHA)
+- `Dockerfile` — Extends the upstream frontend image with a configurable `FRONTEND_MESSAGE` build arg
+- `demo-config.yaml` — Banner configuration file (edit this file to trigger the CI/CD pipeline)
+
+Exits with code 16 on failure (Harbor API error, GitLab API error, or git push failure).
+
+### Phase 17: ArgoCD Re-Point to GitLab
+
+Adds the GitLab repository credentials to ArgoCD via `argocd repo add` (executed inside the ArgoCD server pod). Patches the ArgoCD Application `microservices-demo` to source from the GitLab project (`https://GITLAB_HOSTNAME/root/GITLAB_PROJECT_NAME.git`, path `.`, targetRevision `main`) instead of the original GitHub repository. Waits for the ArgoCD Application to reach Synced and Healthy status after the re-point. Skips the repo add if ArgoCD already has credentials for the GitLab hostname. Exits with code 17 on failure (repo add failure, patch failure, or sync timeout).
+
+### Phase 18: Pipeline Verification & Demo Instructions
+
+Verifies the CI/CD pipeline is ready for use. Checks that at least one GitLab Runner is registered via the GitLab API (`/api/v4/runners/all`). Checks that the ArgoCD Application `microservices-demo` is Synced and Healthy with the GitLab source. Checks that the frontend pod is running in the application namespace. All checks are non-fatal — failures produce warnings via `log_warn` but do not block the script. The pipeline may need a few minutes to fully converge after initial setup.
 
 ### Phase 15: Summary Banner
 
@@ -181,6 +218,9 @@ The ArgoCD CLI is auto-downloaded if not already in PATH.
 | `ARGOCD_APP_MANIFEST` | `examples/deploy-gitops/argocd-microservices-demo.yaml` | Path to ArgoCD Application manifest |
 | `PACKAGE_TIMEOUT` | `900` | Wait loop timeout (seconds) |
 | `POLL_INTERVAL` | `15` | Wait loop polling interval (seconds) |
+| `GITLAB_PROJECT_NAME` | `microservices-demo` | GitLab project name for the CI/CD pipeline |
+| `HARBOR_CI_PROJECT` | `microservices-ci` | Harbor project name for CI-built images |
+| `DEMO_BANNER_TEXT` | (empty) | Default banner text for the Online Boutique frontend |
 
 ### Derived Variables (computed automatically)
 
@@ -274,6 +314,22 @@ A successful run produces output similar to:
 ✓ Service 'cartservice' is running
   ... (all 11 services)
 ✓ Microservices Demo verification complete
+[Step 16] Creating Harbor CI project and GitLab project for CI/CD pipeline...
+✓ Harbor CI project 'microservices-ci' created
+✓ GitLab API token obtained for root user
+✓ GitLab project 'microservices-demo' created (ID: 1)
+✓ CI/CD files pushed to GitLab project 'microservices-demo'
+✓ Phase 16 complete — Harbor CI project and GitLab project ready
+[Step 17] Re-pointing ArgoCD to GitLab repository...
+✓ GitLab repository credentials added to ArgoCD
+✓ ArgoCD Application 'microservices-demo' patched to source from GitLab
+  Waiting for ArgoCD application 'microservices-demo' to be Synced and Healthy (GitLab source)...
+✓ Phase 17 complete — ArgoCD now watches GitLab repository
+[Step 18] Verifying CI/CD pipeline readiness...
+✓ GitLab Runner is registered and available
+✓ ArgoCD Application 'microservices-demo' is Synced and Healthy with GitLab source
+✓ Frontend pod is running in namespace 'microservices-demo'
+✓ Phase 18 complete — pipeline verification finished
 [Step 15] Deployment summary...
 =============================================
   VCF 9 Deploy GitOps — Deployment Complete
@@ -303,8 +359,12 @@ A successful run produces output similar to:
 | Phase 12: ArgoCD Registration | 15–30 seconds | |
 | Phase 13: ArgoCD App Bootstrap | 2–5 minutes | Depends on Helm chart sync time |
 | Phase 14: Demo Verification | 30s–5 minutes | Includes frontend LB IP wait |
+| Phase 14b: Let's Encrypt TLS | 1–3 minutes | Skipped if ClusterIssuer not ready |
+| Phase 16: Harbor CI + GitLab Project | 15–30 seconds | API calls + git push |
+| Phase 17: ArgoCD Re-Point | 30s–2 minutes | Includes sync wait |
+| Phase 18: Pipeline Verification | < 15 seconds | Non-fatal checks |
 | Phase 15: Summary | < 1 second | |
-| **Total** | **~20–35 minutes** | GitLab startup dominates |
+| **Total** | **~20–40 minutes** | GitLab startup dominates |
 
 ---
 
@@ -325,6 +385,44 @@ Generated files in `CERT_DIR`:
 - `fullchain.crt` — Wildcard cert + CA cert concatenated
 
 To use your own certificates instead, pre-populate `CERT_DIR` with `ca.crt`, `wildcard.key`, `wildcard.crt`, and `fullchain.crt` before running the script.
+
+---
+
+---
+
+## CI/CD Pipeline Demo
+
+After deployment completes, the CI/CD pipeline is ready for a live demo. The pipeline flow is:
+
+```
+Edit demo-config.yaml in GitLab → GitLab CI builds customized frontend image
+  → pushes to Harbor → updates kustomization.yaml image tag
+    → ArgoCD detects change and syncs → new frontend deployed with banner
+```
+
+### Step-by-Step Demo Instructions
+
+1. Navigate to GitLab → `root/microservices-demo` project:
+   `https://<GITLAB_HOSTNAME>/root/microservices-demo`
+
+2. Open the file `demo-config.yaml` in the GitLab web UI (click the file, then click "Edit" → "Edit single file").
+
+3. Change the `banner_text` value to a custom message, for example:
+   ```yaml
+   banner_text: "Hello from VCF GitOps!"
+   ```
+
+4. Commit the change (use the default commit message or write your own, commit to the `main` branch).
+
+5. Watch the CI pipeline run in GitLab → CI/CD → Pipelines:
+   `https://<GITLAB_HOSTNAME>/root/microservices-demo/-/pipelines`
+   - The `build` stage builds a customized frontend Docker image and pushes it to Harbor.
+   - The `update-manifests` stage updates the `kustomization.yaml` image tag with the new commit SHA.
+
+6. ArgoCD detects the updated `kustomization.yaml` and automatically syncs the new image. Monitor the sync at:
+   `https://<ARGOCD_HOSTNAME>/applications/argocd/microservices-demo`
+
+7. Refresh the Online Boutique frontend in your browser to see the banner message.
 
 ---
 

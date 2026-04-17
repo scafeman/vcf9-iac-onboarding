@@ -65,6 +65,9 @@ For setup instructions and the starter `.env` template, see the [Getting Started
 | `ARGOCD_VERSION` | No | ArgoCD Helm chart version (default: `9.4.17`) |
 | `GITLAB_OPERATOR_VERSION` | No | GitLab Operator Helm chart version (default: `9.10.3`) |
 | `GITLAB_RUNNER_VERSION` | No | GitLab Runner Helm chart version (default: `0.87.1`) |
+| `GITLAB_PROJECT_NAME` | No | GitLab project name for the CI/CD pipeline (default: `microservices-demo`) |
+| `HARBOR_CI_PROJECT` | No | Harbor project name for CI-built container images (default: `microservices-ci`) |
+| `DEMO_BANNER_TEXT` | No | Default banner text for the Online Boutique frontend demo (default: empty) |
 
 ---
 

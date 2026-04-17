@@ -44,12 +44,19 @@ runners:
   config: |
     [[runners]]
       executor = "kubernetes"
+      tls_verify = false
+      environment = ["DOCKER_TLS_CERTDIR="]
       [runners.kubernetes]
         namespace = "gitlab-runners"
         image = "ubuntu:22.04"
-        helper_image = "HARBOR_HOSTNAME/library/gitlab-runner-helper:x86_64-latest"
         poll_timeout = 600
         privileged = true
+        [[runners.kubernetes.volumes.secret]]
+          name = "harbor-ca-cert"
+          mount_path = "/etc/docker/certs.d/HARBOR_HOSTNAME"
+          read_only = true
+          [runners.kubernetes.volumes.secret.items]
+            "ca.crt" = "ca.crt"
 
 # ---------------------------------------------------------------------------
 # Resource limits for the runner manager pod

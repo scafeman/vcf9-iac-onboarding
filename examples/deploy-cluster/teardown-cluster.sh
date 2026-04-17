@@ -195,6 +195,10 @@ if [[ "${SKIP_CLUSTER_TEARDOWN}" == "false" ]]; then
 
     log_success "Guest cluster workloads and sslip.io resources deleted"
 
+    # Delete node DNS patcher DaemonSet (deployed by Phase 5j when USE_SSLIP_DNS=true)
+    kubectl delete daemonset node-dns-patcher -n kube-system --ignore-not-found 2>/dev/null || true
+    log_success "Node DNS patcher DaemonSet deleted"
+
     # --- Phase 1b: Delete ClusterIssuers and sslip.io infrastructure ---
     log_step "1b" "Deleting ClusterIssuers and sslip.io infrastructure"
 

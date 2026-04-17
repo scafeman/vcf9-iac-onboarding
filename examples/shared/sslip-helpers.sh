@@ -4,7 +4,8 @@
 #
 # Provides reusable functions for constructing sslip.io hostnames, managing
 # cert-manager ClusterIssuers, creating Kubernetes Ingress resources with
-# optional TLS, and waiting for certificate readiness.
+# optional TLS, waiting for certificate readiness, deploying node-level DNS
+# patching, and installing CA bundles on VKS node trust stores.
 #
 # Usage:
 #   source "$(dirname "$0")/../shared/sslip-helpers.sh"
@@ -22,6 +23,8 @@
 #   create_cluster_issuer <name> <acme_server> <email>
 #   create_ingress_with_tls <name> <namespace> <hostname> <service_name> <service_port> [tls_enabled] [issuer_name]
 #   wait_for_certificate <secret_name> <namespace> [timeout]
+#   deploy_node_dns_daemonset [namespace]
+#   install_node_ca_bundle <ca_bundle_file> [namespace]
 ###############################################################################
 
 ###############################################################################
@@ -274,4 +277,190 @@ wait_for_certificate() {
 
   echo "  Timeout waiting for certificate '${secret_name}' after ${elapsed}s"
   return 1
+}
+
+###############################################################################
+# deploy_node_dns_daemonset — Deploy a DaemonSet to patch node /etc/resolv.conf
+#
+# Deploys a privileged DaemonSet named 'node-dns-patcher' that runs on every
+# node (including control plane) and ensures public DNS servers (8.8.8.8 and
+# 1.1.1.1) are configured in systemd-resolved alongside the existing corporate
+# DNS. This enables the kubelet and containerd to resolve sslip.io hostnames
+# for container image pulls.
+#
+# The DaemonSet container runs a loop that:
+#   1. Checks if 8.8.8.8 and 1.1.1.1 are configured in systemd-resolved on eth0
+#   2. Adds them via resolvectl if missing (alongside existing corporate DNS)
+#   3. Sleeps 60s and repeats (handles node reboots that reset DNS config)
+#
+# Uses nsenter to access the host's mount/network namespace and resolvectl to
+# configure systemd-resolved (required on Photon OS where /etc/resolv.conf is
+# a symlink to the systemd-resolved stub file).
+#
+# Uses kubectl apply for idempotent create-or-update semantics.
+#
+# Arguments:
+#   $1 - namespace : Kubernetes namespace for the DaemonSet (default: "kube-system")
+#
+# Returns:
+#   0 on success
+#   Non-zero on kubectl apply failure
+#
+# Example:
+#   deploy_node_dns_daemonset
+#   deploy_node_dns_daemonset "custom-namespace"
+###############################################################################
+deploy_node_dns_daemonset() {
+  local namespace="${1:-kube-system}"
+
+  kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-dns-patcher
+  namespace: ${namespace}
+  labels:
+    app: node-dns-patcher
+spec:
+  selector:
+    matchLabels:
+      app: node-dns-patcher
+  template:
+    metadata:
+      labels:
+        app: node-dns-patcher
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: dns-patcher
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                CHANGED=false
+                CURRENT_DNS=\$(nsenter --target 1 --mount --uts --ipc --net -- resolvectl dns eth0 2>/dev/null || echo "")
+                for ns in 8.8.8.8 1.1.1.1; do
+                  if ! echo "\$CURRENT_DNS" | grep -q "\$ns"; then
+                    CHANGED=true
+                  fi
+                done
+                if [ "\$CHANGED" = "true" ]; then
+                  nsenter --target 1 --mount --uts --ipc --net -- resolvectl dns eth0 172.20.10.41 8.8.8.8 1.1.1.1 2>/dev/null
+                  echo "[\$(date)] Configured systemd-resolved with public DNS servers (8.8.8.8, 1.1.1.1) on eth0"
+                fi
+                sleep 60
+              done
+          securityContext:
+            privileged: true
+EOF
+}
+
+###############################################################################
+# install_node_ca_bundle — Install a CA bundle into VKS node trust stores
+#
+# Creates a ConfigMap containing the CA bundle and deploys a DaemonSet that
+# copies the CA certificates into each node's system trust store using
+# nsenter. This enables the kubelet and containerd to trust custom CAs
+# (self-signed CA, Let's Encrypt staging, Let's Encrypt prod) when pulling
+# container images from registries using those certificates.
+#
+# The DaemonSet container runs a loop that:
+#   1. Reads the CA bundle from the mounted ConfigMap
+#   2. Copies each certificate to the node's /etc/ssl/certs/ directory
+#   3. Runs update-ca-certificates (or equivalent) to rebuild the trust store
+#   4. Sleeps 300s and repeats (handles node reboots)
+#
+# Uses nsenter to access the host's mount namespace (required on Photon OS).
+# Uses kubectl apply for idempotent create-or-update semantics.
+#
+# Arguments:
+#   $1 - ca_bundle_file : Path to the CA bundle PEM file containing one or
+#                         more CA certificates to trust
+#   $2 - namespace      : Kubernetes namespace (default: "kube-system")
+#
+# Returns:
+#   0 on success
+#   Non-zero on kubectl apply failure
+#
+# Example:
+#   install_node_ca_bundle "/tmp/ca-bundle.crt"
+#   install_node_ca_bundle "/tmp/ca-bundle.crt" "custom-namespace"
+###############################################################################
+install_node_ca_bundle() {
+  local ca_bundle_file="$1"
+  local namespace="${2:-kube-system}"
+
+  if [[ ! -f "${ca_bundle_file}" ]]; then
+    echo "⚠ WARNING: CA bundle file '${ca_bundle_file}' not found — skipping node CA installation"
+    return 1
+  fi
+
+  # Create/update ConfigMap with the CA bundle
+  kubectl create configmap node-ca-bundle \
+    --from-file=ca-bundle.crt="${ca_bundle_file}" \
+    --namespace "${namespace}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  # Deploy DaemonSet that installs the CA bundle on each node
+  kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-ca-installer
+  namespace: ${namespace}
+  labels:
+    app: node-ca-installer
+spec:
+  selector:
+    matchLabels:
+      app: node-ca-installer
+  template:
+    metadata:
+      labels:
+        app: node-ca-installer
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: ca-installer
+          image: busybox:1.36
+          command:
+            - /bin/sh
+            - -c
+            - |
+              while true; do
+                if [ -f /ca-bundle/ca-bundle.crt ]; then
+                  # Pipe CA bundle into host /etc/ssl/certs/ via nsenter + tee
+                  # Photon OS uses /etc/ssl/certs/ with hashed symlinks (no update-ca-trust)
+                  cat /ca-bundle/ca-bundle.crt | nsenter --target 1 --mount -- tee /etc/ssl/certs/sslip-ca-bundle.pem > /dev/null
+                  # Create hash symlink for the first cert in the bundle
+                  nsenter --target 1 --mount -- sh -c 'cd /etc/ssl/certs && ln -sf sslip-ca-bundle.pem \$(openssl x509 -hash -noout -in sslip-ca-bundle.pem 2>/dev/null).0 2>/dev/null || true'
+                  # Restart containerd to pick up new trust store
+                  nsenter --target 1 --mount --pid -- systemctl restart containerd 2>/dev/null || true
+                  echo "[\$(date)] Installed CA bundle on node and restarted containerd"
+                  # Only need to do this once per boot — sleep long
+                  sleep 3600
+                else
+                  echo "[\$(date)] CA bundle not found — waiting"
+                  sleep 30
+                fi
+              done
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /ca-bundle
+              readOnly: true
+      volumes:
+        - name: ca-bundle
+          configMap:
+            name: node-ca-bundle
+EOF
 }

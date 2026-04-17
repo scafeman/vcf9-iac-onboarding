@@ -324,7 +324,7 @@ Installs a monitoring stack on an existing VKS cluster: Telegraf (metrics collec
 
 ## Deploy GitOps: Self-Contained ArgoCD Consumption Model
 
-Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application. When sslip.io DNS is enabled, Harbor, GitLab, and ArgoCD are accessible via sslip.io hostnames with optional Let's Encrypt TLS, replacing the self-signed certificate and CoreDNS patching workflow.
+Installs a full GitOps and CI/CD stack on an existing VKS cluster. Infrastructure services (cert-manager, Contour) are installed as shared VKS standard packages. Application services (Harbor, ArgoCD, GitLab) are installed via Helm. Deploys the Google Microservices Demo (Online Boutique) as a sample ArgoCD-managed application. After initial deployment, configures a self-contained CI/CD pipeline: creates a Harbor CI project (`microservices-ci`) for built images, a GitLab project with `.gitlab-ci.yml` pipeline and `demo-config.yaml`, re-points ArgoCD to source from GitLab, and verifies the pipeline is ready. Editing `demo-config.yaml` in GitLab triggers a full build→push→deploy cycle. Also installs a Node CA Bundle DaemonSet (`node-ca-installer`) to ensure kubelet and containerd trust Harbor's TLS certificates on every node. When sslip.io DNS is enabled, Harbor, GitLab, and ArgoCD are accessible via sslip.io hostnames with optional Let's Encrypt TLS, replacing the self-signed certificate and CoreDNS patching workflow.
 
 | | |
 |---|---|
