@@ -36,8 +36,8 @@ graph TB
 
     subgraph "Layer 4: Supervisor Services"
         VMSVC["VM Service"]
-        VKS["vSphere Kubernetes Service - VKS"]
-        DSM["Data Services Manager - DSM"]
+        VKS["vSphere Kubernetes Service"]
+        DSM["Data Services Manager"]
         SSS["Secret Store"]
         CERT["cert-manager"]
         CONTOUR["Contour Envoy"]
