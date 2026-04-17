@@ -15,6 +15,9 @@ graph TB
         SDDC["SDDC Manager<br/>Lifecycle Mgmt"]
         VC["vCenter Server<br/>vSphere Mgmt"]
         NSXMGR["NSX Manager<br/>SDN Control Plane"]
+        VCFOPS["VCF Operations<br/>Monitoring, Capacity"]
+        VCFLOGS["VCF Operations for Logs<br/>Log Analytics"]
+        VCFNET["VCF Operations for Networks<br/>Network Visibility"]
     end
 
     subgraph "Layer 2: Organization and Governance"
@@ -95,6 +98,9 @@ graph TB
     style SDDC fill:#4a90d9,color:#fff
     style VC fill:#4a90d9,color:#fff
     style NSXMGR fill:#4a90d9,color:#fff
+    style VCFOPS fill:#4a90d9,color:#fff
+    style VCFLOGS fill:#4a90d9,color:#fff
+    style VCFNET fill:#4a90d9,color:#fff
 
     style ORG fill:#f5a623,color:#fff
     style PROJ fill:#f5a623,color:#fff
@@ -145,6 +151,10 @@ The top-level management plane that operators and platform teams interact with t
 | **VCF Automation (VCFA)** | Multi-tenant self-service portal. Exposes the CCI API endpoint that the VCF CLI authenticates against. All `vcf context create` commands target this endpoint. | AWS Organizations + Service Catalog | Every deployment starts with `vcf context create` against the VCFA endpoint |
 | **SDDC Manager** | Lifecycle management for the entire VCF stack — ESXi hosts, vCenter, NSX, vSAN. Handles upgrades, patching, and capacity expansion. | AWS Control Tower + Systems Manager | Not directly used by toolkit scripts (infrastructure-level) |
 | **vCenter Server** | vSphere management plane. Manages ESXi hosts, VMs, storage, and networking. The Supervisor Cluster runs on top of vCenter-managed infrastructure. | EC2 management plane (implicit) | Supervisor Namespaces and VM Service VMs are visible in vCenter |
+| **NSX Manager** | Software-defined networking control plane. Manages VPCs, load balancers, firewall rules, and routing. Operators interact via NSX Manager UI or API. | VPC management plane (implicit) | Infrastructure-level — VPCs are auto-provisioned with Supervisor Namespaces |
+| **VCF Operations** | Infrastructure monitoring, capacity planning, and performance analytics. Provides dashboards for CPU, memory, storage, and network utilization across the entire VCF stack. | CloudWatch + Trusted Advisor | Infrastructure-level — monitors the platform that workloads run on |
+| **VCF Operations for Logs** | Centralized log aggregation and analytics. Collects logs from ESXi hosts, vCenter, NSX, and Supervisor components for troubleshooting and compliance. | CloudWatch Logs + OpenSearch | Infrastructure-level — log analysis for platform operations |
+| **VCF Operations for Networks** | Network visibility, troubleshooting, and flow analytics. Provides path analysis, latency monitoring, and micro-segmentation visibility across NSX. | VPC Flow Logs + Network Manager | Infrastructure-level — network diagnostics and flow analysis |
 
 **Key CRD/API References:**
 - VCFA endpoint: `https://<vcfa-hostname>` — target for `vcf context create`
@@ -279,6 +289,7 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 1: VCFA / SDDC Manager / vCenter / NSX Manager       │  ← Operators manage here
+│          VCF Operations / Logs / Networks                   │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Org → Projects → RBAC → Namespace Classes         │  ← Tenant governance
 ├─────────────────────────────────────────────────────────────┤
