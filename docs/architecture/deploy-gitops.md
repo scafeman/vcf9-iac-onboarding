@@ -12,57 +12,28 @@ When sslip.io DNS is enabled, all services are accessible via `*.IP.sslip.io` ho
 graph TB
     subgraph "Internet"
         DEV[Developer<br/>Browser / git push]
-        SSLIP[sslip.io DNS]
     end
 
     subgraph "VKS Guest Cluster"
-        subgraph "tanzu-system-ingress"
-            ENVOY[Envoy Proxy]
-            ENVOYLB[envoy-lb<br/>LoadBalancer<br/>IP: 74.x.x.x]
+        subgraph "Ingress — tanzu-system-ingress"
+            ENVOYLB[envoy-lb Service<br/>type: LoadBalancer<br/>External IP: 74.x.x.x]
         end
 
-        subgraph "harbor Namespace"
-            HARBOR_CORE[Harbor Core<br/>API + UI]
-            HARBOR_REG[Harbor Registry<br/>Container Image Storage]
-            HARBOR_DB[Harbor Database<br/>PostgreSQL]
-            HARBOR_REDIS[Harbor Redis<br/>Cache + Job Queue]
-            HARBOR_TRIVY[Trivy<br/>Vulnerability Scanner]
+        subgraph "CI/CD Stack"
+            HARBOR[Harbor<br/>Container Registry<br/>harbor namespace]
+            GITLAB[GitLab<br/>Source Control + CI<br/>gitlab-system namespace]
+            RUNNER[GitLab Runner<br/>CI/CD Executor<br/>gitlab-runners namespace]
+            ARGOCD[ArgoCD<br/>GitOps Controller<br/>argocd namespace]
         end
 
-        subgraph "gitlab-system Namespace"
-            GITLAB_WS[GitLab Webservice<br/>Rails App]
-            GITLAB_GIT[Gitaly<br/>Git Storage]
-            GITLAB_PG[GitLab PostgreSQL<br/>Metadata DB]
-            GITLAB_REDIS[GitLab Redis<br/>Cache + Sidekiq]
-            GITLAB_REG[GitLab Registry<br/>Container Registry]
+        subgraph "Application — microservices-demo"
+            FRONTEND[Frontend<br/>Online Boutique UI<br/>LoadBalancer IP]
+            SERVICES[11 Microservices<br/>cart, checkout, currency<br/>payment, shipping, etc.]
         end
 
-        subgraph "gitlab-runners Namespace"
-            RUNNER[GitLab Runner<br/>CI/CD Job Executor]
-        end
-
-        subgraph "argocd Namespace"
-            ARGOCD_SRV[ArgoCD Server<br/>API + UI]
-            ARGOCD_REPO[ArgoCD Repo Server<br/>Git Manifest Rendering]
-            ARGOCD_APP[ArgoCD Application Controller<br/>Reconciliation Loop]
-            APP_CR[Application CR<br/>microservices-demo]
-        end
-
-        subgraph "microservices-demo Namespace"
-            FRONTEND[Frontend<br/>Online Boutique UI]
-            CART[Cart Service]
-            CHECKOUT[Checkout Service]
-            CURRENCY[Currency Service]
-            PAYMENT[Payment Service]
-            SHIPPING[Shipping Service]
-            PRODUCT[Product Catalog]
-            RECOMMEND[Recommendation Service]
-            AD[Ad Service]
-            EMAIL[Email Service]
-        end
-
-        subgraph "kube-system"
-            COREDNS[CoreDNS<br/>sslip.io forwarding]
+        subgraph "Node DaemonSets — kube-system"
+            DNSPATCH[node-dns-patcher<br/>resolvectl: 8.8.8.8, 1.1.1.1]
+            CAINSTALL[node-ca-installer<br/>Harbor CA trust on nodes]
         end
     end
 
@@ -71,31 +42,26 @@ graph TB
     DEV -->|https://argocd.IP.sslip.io| ENVOYLB
     DEV -->|http://FRONTEND_IP| FRONTEND
 
-    ENVOYLB --> ENVOY
-    ENVOY -->|host: harbor.*| HARBOR_CORE
-    ENVOY -->|host: gitlab.*| GITLAB_WS
-    ENVOY -->|host: argocd.*| ARGOCD_SRV
+    ENVOYLB -->|host routing| HARBOR
+    ENVOYLB -->|host routing| GITLAB
+    ENVOYLB -->|host routing| ARGOCD
 
-    GITLAB_WS --> GITLAB_GIT
-    GITLAB_WS --> GITLAB_PG
-    GITLAB_WS --> GITLAB_REDIS
+    DEV -->|edit demo-config.yaml| GITLAB
+    GITLAB -->|triggers CI| RUNNER
+    RUNNER -->|push image| HARBOR
+    ARGOCD -->|watches repo| GITLAB
+    ARGOCD -->|deploys| FRONTEND
 
-    RUNNER -->|CI jobs| GITLAB_WS
-    RUNNER -->|push images| HARBOR_REG
+    FRONTEND --> SERVICES
 
-    ARGOCD_APP -->|watches git repo| GITLAB_WS
-    ARGOCD_APP -->|deploys manifests| FRONTEND
-    APP_CR -->|defines| ARGOCD_APP
-
-    HARBOR_CORE --> HARBOR_REG
-    HARBOR_CORE --> HARBOR_DB
-    HARBOR_CORE --> HARBOR_REDIS
-
-    style HARBOR_CORE fill:#60b932,color:#fff
-    style GITLAB_WS fill:#fc6d26,color:#fff
-    style ARGOCD_SRV fill:#ef7b4d,color:#fff
+    style HARBOR fill:#60b932,color:#fff
+    style GITLAB fill:#fc6d26,color:#fff
+    style ARGOCD fill:#ef7b4d,color:#fff
+    style RUNNER fill:#fc6d26,color:#fff
     style ENVOYLB fill:#d0021b,color:#fff
     style FRONTEND fill:#4a90d9,color:#fff
+    style DNSPATCH fill:#336791,color:#fff
+    style CAINSTALL fill:#336791,color:#fff
 ```
 
 ## Component Details
