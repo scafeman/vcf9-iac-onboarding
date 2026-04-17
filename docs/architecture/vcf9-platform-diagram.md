@@ -12,37 +12,37 @@ Use this as a reference when onboarding to VCF 9 or explaining the platform to t
 graph TB
     subgraph "Layer 1: Management and Automation"
         VCFA["VCF Automation"]
-        SDDC["SDDC Manager"]
-        VC["vCenter Server"]
-        NSXMGR["NSX Manager"]
         VCFOPS["VCF Operations"]
         VCFLOGS["VCF Ops for Logs"]
         VCFNET["VCF Ops for Networks"]
+        VC["vCenter Server"]
+        SDDC["SDDC Manager"]
+        NSXMGR["NSX Manager"]
     end
 
     subgraph "Layer 2: Organization and Governance"
-        ORG["Organization<br/>Tenant Boundary"]
-        PROJ["Projects<br/>Governance Boundary"]
-        RBAC["Role Bindings<br/>admin, edit, view"]
+        ORG["Organization"]
+        PROJ["Projects"]
+        RBAC["Role Bindings"]
         REGION["Regions"]
-        NSCLASS["Namespace Classes<br/>small to xxlarge"]
+        NSCLASS["Namespace Classes"]
     end
 
     subgraph "Layer 3: Supervisor Cluster"
-        SUPER["vSphere Supervisor<br/>K8s Control Plane"]
-        SNS["Supervisor Namespaces<br/>Quotas and Isolation"]
-        ZONES["Zones<br/>Availability Zones"]
+        SUPER["vSphere Supervisor"]
+        SNS["Supervisor Namespaces"]
+        ZONES["Zones"]
     end
 
     subgraph "Layer 4: Supervisor Services"
         VMSVC["VM Service"]
-        VKS["VKS<br/>Kubernetes Service"]
-        DSM["DSM<br/>Managed Databases"]
-        SSS["Secret Store<br/>Vault"]
+        VKS["VKS"]
+        DSM["DSM"]
+        SSS["Secret Store"]
         CERT["cert-manager"]
-        CONTOUR["Contour Envoy<br/>Ingress"]
-        HARBOR["Harbor<br/>Registry"]
-        VELERO["Velero<br/>Backup"]
+        CONTOUR["Contour Envoy"]
+        HARBOR["Harbor"]
+        VELERO["Velero"]
     end
 
     subgraph "Layer 5: Networking"
@@ -54,46 +54,45 @@ graph TB
     end
 
     subgraph "Layer 6: Compute"
-        ESXI["ESXi Hosts<br/>Bare-Metal Hypervisor"]
-        VMC["VM Classes<br/>small to xlarge"]
-        CL["Content Libraries<br/>OS Images"]
+        ESXI["ESXi Hosts"]
+        VMC["VM Classes"]
+        CL["Content Libraries"]
     end
 
     subgraph "Layer 7: Storage"
-        SAN["SAN<br/>Block Storage"]
-        NFS["NFS<br/>Shared Storage"]
-        CNS["Cloud Native Storage<br/>vSphere CSI"]
-        SC["Storage Classes<br/>nfs, performance, standard, capacity"]
-        SP["Storage Policies<br/>QoS, Placement"]
+        SAN["SAN Block Storage"]
+        NFS["NFS Shared Storage"]
+        CNS["Cloud Native Storage"]
+        SC["Storage Classes"]
+        SP["Storage Policies"]
     end
 
+    %% Vertical chain: Layer 1 → 2 → 3 → 4 → 5 → 6 → 7
     VCFA --> ORG
-    NSXMGR --> VPC
     VC --> SUPER
-
+    NSXMGR --> VPC
     ORG --> PROJ
-    PROJ --> RBAC
     PROJ --> SNS
+    PROJ --> RBAC
     REGION --> ZONES
     NSCLASS --> SNS
-
     SUPER --> SNS
-    SNS --> VMSVC
     SNS --> VKS
+    SNS --> VMSVC
     SNS --> DSM
-
+    VKS --> VPC
     VPC --> TGW
     VPC --> NSXLB
     VPC --> DFW
     NSXLB -.-> AVI
-
+    VMSVC --> ESXI
+    VMC --> CL
     ESXI --> SAN
     ESXI --> NFS
     CNS --> SC
     SC --> SAN
     SC --> NFS
     SP --> SAN
-    VMC --> CL
 
     style VCFA fill:#4a90d9,color:#fff
     style SDDC fill:#4a90d9,color:#fff
