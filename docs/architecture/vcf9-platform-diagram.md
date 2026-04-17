@@ -51,10 +51,10 @@ graph TB
     end
 
     subgraph "Layer 6: Storage"
-        VSAN["vSAN<br/>Hyper-Converged"]
+        VSAN["SAN<br/>Block Storage"]
         NFS["NFS<br/>Shared Storage"]
         CNS["Cloud Native Storage<br/>vSphere CSI Driver"]
-        SC["Storage Classes<br/>nfs, vsan-default"]
+        SC["Storage Classes<br/>nfs, performance, standard, capacity"]
         SP["Storage Policies<br/>QoS, Placement"]
     end
 
@@ -237,14 +237,14 @@ NSX provides the entire software-defined networking stack for VCF. Every Supervi
 
 ### Layer 6: Storage
 
-VCF provides software-defined storage through vSAN (hyper-converged) and NFS (network-attached), exposed to Kubernetes workloads via the vSphere CSI driver (Cloud Native Storage).
+VCF provides software-defined storage through SAN (block storage) and NFS (network-attached), exposed to Kubernetes workloads via the vSphere CSI driver (Cloud Native Storage).
 
 | Component | What It Does | AWS Equivalent | Toolkit Usage |
 |---|---|---|---|
-| **vSAN** | Software-defined, hyper-converged storage. Aggregates local disks across ESXi hosts into a shared datastore. Provides block storage with configurable redundancy policies. | EBS (gp3/io2) | Default storage backend for VMs and persistent volumes |
+| **SAN** | Block storage backed by vSAN, Fibre Channel, or iSCSI arrays. Provides high-performance storage with configurable redundancy policies (RAID-1/5/6). | EBS (gp3/io2) | Default storage backend for VMs and persistent volumes |
 | **NFS** | Network file storage. Provides shared storage accessible by multiple nodes simultaneously (RWX). Backed by external NFS servers or ONTAP. | EFS (Elastic File System) | `nfs` StorageClass used for PVCs in Deploy Cluster functional test |
 | **Cloud Native Storage (CNS)** | vSphere CSI driver for Kubernetes. Translates PVC requests into vSphere storage operations. Pre-installed on every VKS cluster as `vmware-system-csi`. | EBS CSI Driver / EFS CSI Driver | All PVC-based workloads use CNS for dynamic volume provisioning |
-| **Storage Classes** | Kubernetes StorageClass resources that map to vSphere storage policies. Common classes: `nfs` (shared file), `vsan-default-storage-policy` (block). | `gp3` / `io1` StorageClasses | Referenced in PVC manifests; validated in Migration Checklist Phase 7 |
+| **Storage Classes** | Kubernetes StorageClass resources that map to vSphere storage policies. Common classes: `nfs` (shared file), `performance` (high IOPS), `standard` (balanced), `capacity` (high density). | `gp3` / `io1` StorageClasses | Referenced in PVC manifests; validated in Migration Checklist Phase 7 |
 | **Storage Policies** | vSphere-level QoS and placement rules. Define redundancy (RAID-1/5/6), encryption, and datastore placement for persistent volumes. | EBS volume types + IOPS provisioning | Configured by platform admins; mapped to StorageClasses |
 
 **Key CRD/API References:**
@@ -324,7 +324,7 @@ The VCF 9 platform is a vertical stack where each layer depends on the one below
 | NLB | NSX Load Balancer | 5 |
 | Security Groups | NSX Distributed Firewall | 5 |
 | ALB + WAF | AVI Load Balancer (optional) | 5 |
-| EBS (gp3) | vSAN | 6 |
+| EBS (gp3) | SAN Block Storage | 6 |
 | EFS | NFS | 6 |
 | EBS CSI Driver | Cloud Native Storage (vSphere CSI) | 6 |
 | EC2 Instance Types | VM Classes | 7 |
