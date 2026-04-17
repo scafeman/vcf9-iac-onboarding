@@ -12,26 +12,23 @@ This is the VCF equivalent of AWS CloudWatch + Managed Grafana, running entirely
 graph TB
     subgraph "Internet"
         USER[DevOps Engineer<br/>Browser]
-        SSLIP[sslip.io DNS]
     end
 
     subgraph "VKS Guest Cluster"
-        subgraph "tkg-packages Namespace"
+        subgraph "Ingress — tanzu-system-ingress"
+            ENVOYLB[envoy-lb Service<br/>type: LoadBalancer<br/>External IP: 74.x.x.x]
+        end
+
+        subgraph "Infrastructure Packages — tkg-packages"
             TELEGRAF[Telegraf<br/>VKS Standard Package<br/>Metrics Collection Agent]
             PROMETHEUS[Prometheus Server<br/>VKS Standard Package<br/>Metrics Storage + Alerting]
             CERTMGR[cert-manager<br/>VKS Standard Package]
-            CONTOUR[Contour<br/>VKS Standard Package]
+            CONTOUR[Contour + Envoy<br/>VKS Standard Package]
         end
 
-        subgraph "tanzu-system-ingress Namespace"
-            ENVOY[Envoy Proxy]
-            ENVOYLB[envoy-lb<br/>type: LoadBalancer<br/>External IP: 74.x.x.x]
-        end
-
-        subgraph "grafana Namespace"
+        subgraph "Grafana — grafana namespace"
             GRAFOP[Grafana Operator<br/>Helm Chart]
             GRAFANA[Grafana Instance<br/>Web UI + Dashboards]
-            GRAFSVC[grafana-service<br/>type: ClusterIP<br/>port: 80]
             GRAFING[Ingress: grafana-ingress<br/>grafana.IP.sslip.io]
             DS[GrafanaDatasource<br/>prometheus-ds]
             DB1[GrafanaDashboard<br/>k8s-views-global]
@@ -44,16 +41,14 @@ graph TB
             NODE2[Node 2<br/>kubelet metrics]
         end
 
-        subgraph "kube-system"
+        subgraph "Node DaemonSets — kube-system"
             COREDNS[CoreDNS<br/>+ sslip.io forwarding]
         end
     end
 
     USER -->|https://grafana.IP.sslip.io| ENVOYLB
-    ENVOYLB --> ENVOY
-    ENVOY --> GRAFING
-    GRAFING --> GRAFSVC
-    GRAFSVC --> GRAFANA
+    ENVOYLB --> GRAFING
+    GRAFING --> GRAFANA
 
     TELEGRAF -->|scrapes kubelet| NODE1
     TELEGRAF -->|scrapes kubelet| NODE2
@@ -66,6 +61,7 @@ graph TB
     DB2 -->|provisions| GRAFANA
     DB3 -->|provisions| GRAFANA
 
+    CONTOUR --> ENVOYLB
     CERTMGR -->|TLS cert for Ingress| GRAFING
 
     style TELEGRAF fill:#4a90d9,color:#fff
@@ -73,6 +69,7 @@ graph TB
     style GRAFANA fill:#f46800,color:#fff
     style ENVOYLB fill:#d0021b,color:#fff
     style CERTMGR fill:#9013fe,color:#fff
+    style CONTOUR fill:#9013fe,color:#fff
 ```
 
 ## Component Details
