@@ -14,6 +14,7 @@ graph TB
         VCFA["VCF Automation<br/>Multi-Tenant Self-Service Portal"]
         SDDC["SDDC Manager<br/>Lifecycle Management"]
         VC["vCenter Server<br/>vSphere Management"]
+        NSXMGR["NSX Manager<br/>SDN Control Plane"]
     end
 
     subgraph "Layer 2: Organization and Governance"
@@ -42,7 +43,6 @@ graph TB
     end
 
     subgraph "Layer 5: Networking"
-        NSXMGR["NSX Manager<br/>SDN Control Plane"]
         VPC["NSX VPCs<br/>Private CIDRs"]
         TGW["Transit Gateways<br/>North-South Routing"]
         NSXLB["NSX Load Balancer<br/>L4 LoadBalancer"]
@@ -88,11 +88,13 @@ graph TB
     SP --> VSAN
 
     VSAN --> ESXI
+    NFS --> ESXI
     VMC --> CL
 
     style VCFA fill:#4a90d9,color:#fff
     style SDDC fill:#4a90d9,color:#fff
     style VC fill:#4a90d9,color:#fff
+    style NSXMGR fill:#4a90d9,color:#fff
 
     style ORG fill:#f5a623,color:#fff
     style PROJ fill:#f5a623,color:#fff
@@ -113,7 +115,6 @@ graph TB
     style HARBOR fill:#9013fe,color:#fff
     style VELERO fill:#9013fe,color:#fff
 
-    style NSXMGR fill:#d0021b,color:#fff
     style VPC fill:#d0021b,color:#fff
     style TGW fill:#d0021b,color:#fff
     style NSXLB fill:#d0021b,color:#fff
