@@ -10,72 +10,72 @@ Use this as a reference when onboarding to VCF 9 or explaining the platform to t
 
 ```mermaid
 graph TB
-    subgraph "Layer 1 — Management & Automation"
-        VCFA[VCF Automation<br/>Multi-Tenant Self-Service Portal]
-        SDDC[SDDC Manager<br/>Lifecycle Management]
-        VC[vCenter Server<br/>vSphere Management & VM Operations]
+    subgraph "Layer 1: Management and Automation"
+        VCFA["VCF Automation<br/>Multi-Tenant Self-Service Portal"]
+        SDDC["SDDC Manager<br/>Lifecycle Management"]
+        VC["vCenter Server<br/>vSphere Management"]
     end
 
-    subgraph "Layer 2 — Organization & Governance (CCI APIs)"
-        ORG[Organization<br/>Top-Level Tenant Boundary]
-        PROJ[Projects<br/>Governance Boundary for Resources]
-        RBAC[Users & Groups Role Bindings<br/>ProjectRoleBinding: admin, edit, view]
-        REGION[Regions<br/>Geographic / Logical Grouping]
-        NSCLASS[Namespace Classes<br/>Quota Templates: small, medium, large, xxlarge]
+    subgraph "Layer 2: Organization and Governance"
+        ORG["Organization<br/>Top-Level Tenant Boundary"]
+        PROJ["Projects<br/>Governance Boundary"]
+        RBAC["Users and Groups Role Bindings<br/>ProjectRoleBinding: admin, edit, view"]
+        REGION["Regions<br/>Geographic Grouping"]
+        NSCLASS["Namespace Classes<br/>Quota Templates: small to xxlarge"]
     end
 
-    subgraph "Layer 3 — Supervisor Cluster & Namespaces"
-        SUPER[vSphere Supervisor<br/>Kubernetes-Native Control Plane on ESXi]
-        SNS[Supervisor Namespaces<br/>Compute / Storage / Network Quotas]
-        ZONES[Zones<br/>Availability Zones → vSphere Clusters]
+    subgraph "Layer 3: Supervisor Cluster and Namespaces"
+        SUPER["vSphere Supervisor<br/>K8s-Native Control Plane on ESXi"]
+        SNS["Supervisor Namespaces<br/>Compute, Storage, Network Quotas"]
+        ZONES["Zones<br/>Availability Zones to vSphere Clusters"]
     end
 
-    subgraph "Layer 4 — Supervisor Services"
-        VMSVC[VM Service<br/>VirtualMachine CRD]
-        VKS[vSphere Kubernetes Service<br/>Managed Clusters via Cluster API]
-        DSM[Data Services Manager<br/>Managed PostgreSQL / MySQL]
-        SSS[Secret Store Service<br/>HashiCorp Vault + vault-injector]
-        CERT[cert-manager<br/>X.509 Certificate Lifecycle]
-        CONTOUR[Contour / Envoy<br/>HTTP & HTTPS Ingress]
-        HARBOR[Cloud Native Registry<br/>Harbor Container Registry]
-        VELERO[Velero vSphere Operator<br/>Backup & Disaster Recovery]
+    subgraph "Layer 4: Supervisor Services"
+        VMSVC["VM Service<br/>VirtualMachine CRD"]
+        VKS["vSphere Kubernetes Service<br/>Managed Clusters via Cluster API"]
+        DSM["Data Services Manager<br/>Managed PostgreSQL, MySQL"]
+        SSS["Secret Store Service<br/>HashiCorp Vault + vault-injector"]
+        CERT["cert-manager<br/>X.509 Certificate Lifecycle"]
+        CONTOUR["Contour and Envoy<br/>HTTP, HTTPS Ingress"]
+        HARBOR["Cloud Native Registry<br/>Harbor Container Registry"]
+        VELERO["Velero vSphere Operator<br/>Backup and Disaster Recovery"]
     end
 
-    subgraph "Layer 5 — Networking (NSX)"
-        NSXMGR[NSX Manager<br/>SDN Control Plane]
-        VPC[NSX VPCs<br/>Private CIDR Ranges]
-        TGW[Transit Gateways<br/>North-South Routing]
-        NSXLB[NSX Load Balancer<br/>L4 for type: LoadBalancer]
-        DFW[NSX Distributed Firewall<br/>Micro-Segmentation]
-        AVI[AVI Load Balancer<br/>L7 + WAF (optional)]
+    subgraph "Layer 5: Networking - NSX"
+        NSXMGR["NSX Manager<br/>SDN Control Plane"]
+        VPC["NSX VPCs<br/>Private CIDR Ranges"]
+        TGW["Transit Gateways<br/>North-South Routing"]
+        NSXLB["NSX Load Balancer<br/>L4 for type LoadBalancer"]
+        DFW["NSX Distributed Firewall<br/>Micro-Segmentation"]
+        AVI["AVI Load Balancer<br/>L7, WAF - optional"]
     end
 
-    subgraph "Layer 6 — Storage"
-        VSAN[vSAN<br/>Hyper-Converged Storage]
-        NFS[NFS<br/>Shared Network Storage]
-        CNS[Cloud Native Storage<br/>vSphere CSI Driver for PVCs]
-        SC[Storage Classes<br/>nfs, vsan-default-storage-policy]
-        SP[Storage Policies<br/>QoS & Placement Rules]
+    subgraph "Layer 6: Storage"
+        VSAN["vSAN<br/>Hyper-Converged Storage"]
+        NFS["NFS<br/>Shared Network Storage"]
+        CNS["Cloud Native Storage<br/>vSphere CSI Driver for PVCs"]
+        SC["Storage Classes<br/>nfs, vsan-default-storage-policy"]
+        SP["Storage Policies<br/>QoS and Placement Rules"]
     end
 
-    subgraph "Layer 7 — Compute (ESXi)"
-        ESXI[ESXi Hosts<br/>Bare-Metal Hypervisor]
-        VMC[VM Classes<br/>best-effort-small → best-effort-xlarge]
-        CL[Content Libraries<br/>OS Image Templates]
+    subgraph "Layer 7: Compute - ESXi"
+        ESXI["ESXi Hosts<br/>Bare-Metal Hypervisor"]
+        VMC["VM Classes<br/>best-effort-small to best-effort-xlarge"]
+        CL["Content Libraries<br/>OS Image Templates"]
     end
 
-    %% Layer 1 → Layer 2
+    %% Layer 1 to Layer 2
     VCFA --> ORG
     SDDC --> VC
 
-    %% Layer 2 → Layer 3
+    %% Layer 2 to Layer 3
     ORG --> PROJ
     PROJ --> RBAC
     PROJ --> SNS
     REGION --> ZONES
     NSCLASS --> SNS
 
-    %% Layer 3 → Layer 4
+    %% Layer 3 to Layer 4
     SUPER --> SNS
     SNS --> VMSVC
     SNS --> VKS
@@ -86,7 +86,7 @@ graph TB
     VKS --> HARBOR
     VKS --> VELERO
 
-    %% Layer 4 → Layer 5
+    %% Layer 4 to Layer 5
     VMSVC --> VPC
     VKS --> VPC
     VPC --> TGW
@@ -95,14 +95,14 @@ graph TB
     NSXMGR --> VPC
     NSXLB -.-> AVI
 
-    %% Layer 5 → Layer 6
+    %% Layer 5 to Layer 6
     VPC --> CNS
     CNS --> SC
     SC --> VSAN
     SC --> NFS
     SP --> VSAN
 
-    %% Layer 6 → Layer 7
+    %% Layer 6 to Layer 7
     VSAN --> ESXI
     SUPER --> ESXI
     VMSVC --> VMC
