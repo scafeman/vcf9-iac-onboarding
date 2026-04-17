@@ -34,7 +34,17 @@ graph TB
 
         subgraph "Application — microservices-demo namespace"
             FRONTEND[Frontend<br/>Online Boutique UI<br/>LoadBalancer IP]
-            SERVICES[11 Microservices<br/>cart, checkout, currency<br/>payment, shipping, etc.]
+            CART[Cart Service]
+            CHECKOUT[Checkout Service]
+            CURRENCY[Currency Service]
+            PAYMENT[Payment Service]
+            SHIPPING[Shipping Service]
+            PRODUCT[Product Catalog]
+            RECOMMEND[Recommendation Service]
+            AD[Ad Service]
+            EMAIL[Email Service]
+            LOADGEN[Load Generator]
+            REDIS[Redis Cart]
         end
 
         subgraph "Node DaemonSets — kube-system"
@@ -59,7 +69,19 @@ graph TB
     ARGOCD -->|watches repo| GITLAB
     ARGOCD -->|deploys| FRONTEND
 
-    FRONTEND --> SERVICES
+    FRONTEND --> CART
+    FRONTEND --> CHECKOUT
+    FRONTEND --> CURRENCY
+    FRONTEND --> SHIPPING
+    FRONTEND --> PRODUCT
+    FRONTEND --> RECOMMEND
+    FRONTEND --> AD
+    CHECKOUT --> PAYMENT
+    CHECKOUT --> EMAIL
+    CHECKOUT --> SHIPPING
+    CHECKOUT --> CURRENCY
+    CHECKOUT --> CART
+    CART --> REDIS
 
     style HARBOR fill:#60b932,color:#fff
     style GITLAB fill:#fc6d26,color:#fff
