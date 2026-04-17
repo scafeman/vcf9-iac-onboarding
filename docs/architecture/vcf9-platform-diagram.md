@@ -11,13 +11,13 @@ Use this as a reference when onboarding to VCF 9 or explaining the platform to t
 ```mermaid
 graph TB
     subgraph "Layer 1: Management and Automation"
-        VCFA["VCF Automation<br/>Self-Service Portal"]
-        SDDC["SDDC Manager<br/>Lifecycle Mgmt"]
-        VC["vCenter Server<br/>vSphere Mgmt"]
-        NSXMGR["NSX Manager<br/>SDN Control Plane"]
-        VCFOPS["VCF Operations<br/>Monitoring, Capacity"]
-        VCFLOGS["VCF Operations for Logs<br/>Log Analytics"]
-        VCFNET["VCF Operations for Networks<br/>Network Visibility"]
+        VCFA["VCF Automation"]
+        SDDC["SDDC Manager"]
+        VC["vCenter Server"]
+        NSXMGR["NSX Manager"]
+        VCFOPS["VCF Operations"]
+        VCFLOGS["VCF Ops for Logs"]
+        VCFNET["VCF Ops for Networks"]
     end
 
     subgraph "Layer 2: Organization and Governance"
@@ -69,6 +69,14 @@ graph TB
 
     VCFA --> ORG
     NSXMGR --> VPC
+
+    %% Force Layer 1 nodes into a vertical column
+    VCFA ~~~ SDDC
+    SDDC ~~~ VC
+    VC ~~~ NSXMGR
+    NSXMGR ~~~ VCFOPS
+    VCFOPS ~~~ VCFLOGS
+    VCFLOGS ~~~ VCFNET
 
     ORG --> PROJ
     PROJ --> RBAC
