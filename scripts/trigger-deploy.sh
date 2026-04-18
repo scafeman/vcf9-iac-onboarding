@@ -45,6 +45,8 @@ Optional (override workflow defaults):
   --autoscaler-scale-down-delay-after-add   Cooldown after scale-up before scale-down (default: 5m)
   --autoscaler-scale-down-utilization-threshold  Node utilization threshold for scale-down (default: 0.5)
   --autoscaler-scale-down-delay-after-delete  Cooldown after node deletion before next scale-down (default: 10s)
+  --use-sslip-dns     Use sslip.io for automatic DNS resolution (default: true)
+  --letsencrypt-email Email for Let's Encrypt certificate registration
   --vcfa-endpoint     VCFA hostname (no https://)
   --tenant-name       SSO tenant/organization
 
@@ -87,6 +89,8 @@ AUTOSCALER_SCALE_DOWN_UNNEEDED_TIME=""
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD=""
 AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD=""
 AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE=""
+USE_SSLIP_DNS=""
+LETSENCRYPT_EMAIL=""
 VCFA_ENDPOINT=""
 TENANT_NAME=""
 
@@ -119,6 +123,8 @@ while [[ $# -gt 0 ]]; do
     --autoscaler-scale-down-delay-after-add) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD="$2"; shift 2 ;;
     --autoscaler-scale-down-utilization-threshold) AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD="$2"; shift 2 ;;
     --autoscaler-scale-down-delay-after-delete) AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE="$2"; shift 2 ;;
+    --use-sslip-dns)      USE_SSLIP_DNS="$2"; shift 2 ;;
+    --letsencrypt-email)  LETSENCRYPT_EMAIL="$2"; shift 2 ;;
     --vcfa-endpoint)      VCFA_ENDPOINT="$2"; shift 2 ;;
     --tenant-name)        TENANT_NAME="$2"; shift 2 ;;
     -h|--help)            usage; exit 0 ;;
@@ -183,6 +189,8 @@ add_field "autoscaler_scale_down_unneeded_time" "$AUTOSCALER_SCALE_DOWN_UNNEEDED
 add_field "autoscaler_scale_down_delay_after_add" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_ADD"
 add_field "autoscaler_scale_down_utilization_threshold" "$AUTOSCALER_SCALE_DOWN_UTILIZATION_THRESHOLD"
 add_field "autoscaler_scale_down_delay_after_delete" "$AUTOSCALER_SCALE_DOWN_DELAY_AFTER_DELETE"
+add_field "use_sslip_dns"      "$USE_SSLIP_DNS"
+add_field "letsencrypt_email"  "$LETSENCRYPT_EMAIL"
 add_field "vcfa_endpoint"      "$VCFA_ENDPOINT"
 add_field "tenant_name"        "$TENANT_NAME"
 
