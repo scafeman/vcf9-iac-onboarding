@@ -32,7 +32,7 @@ services:
     environment:
       - REPO_URL=${REPO_URL}
       - RUNNER_TOKEN=${RUNNER_TOKEN}
-      - RUNNER_NAME=vcf-local-runner
+      - RUNNER_NAME_PREFIX=vcf-runner
       - RUNNER_WORKDIR=/runner-work
       - LABELS=self-hosted,vcf
     volumes:

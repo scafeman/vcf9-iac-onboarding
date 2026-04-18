@@ -33,6 +33,8 @@ Optional (override workflow defaults):
   --storage-class           Storage class for PVCs
   --grafana-admin-password  Grafana admin password
   --package-timeout         Package reconciliation timeout in seconds
+  --vcfa-endpoint           VCF Automation endpoint
+  --tenant-name             VCF tenant name
 
 Example:
   $(basename "$0") \\
@@ -60,6 +62,8 @@ PROMETHEUS_VALUES_FILE=""
 STORAGE_CLASS=""
 GRAFANA_ADMIN_PASSWORD=""
 PACKAGE_TIMEOUT=""
+VCFA_ENDPOINT=""
+TENANT_NAME=""
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
@@ -78,6 +82,8 @@ while [[ $# -gt 0 ]]; do
     --storage-class)           STORAGE_CLASS="$2"; shift 2 ;;
     --grafana-admin-password)  GRAFANA_ADMIN_PASSWORD="$2"; shift 2 ;;
     --package-timeout)         PACKAGE_TIMEOUT="$2"; shift 2 ;;
+    --vcfa-endpoint)           VCFA_ENDPOINT="$2"; shift 2 ;;
+    --tenant-name)             TENANT_NAME="$2"; shift 2 ;;
     -h|--help)                 usage; exit 0 ;;
     *)
       echo "Error: Unknown argument: $1" >&2
@@ -126,6 +132,8 @@ add_field "prometheus_values_file" "$PROMETHEUS_VALUES_FILE"
 add_field "storage_class"          "$STORAGE_CLASS"
 add_field "grafana_admin_password" "$GRAFANA_ADMIN_PASSWORD"
 add_field "package_timeout"        "$PACKAGE_TIMEOUT"
+add_field "vcfa_endpoint"          "$VCFA_ENDPOINT"
+add_field "tenant_name"            "$TENANT_NAME"
 
 # --- Send repository_dispatch event ---
 DISPATCH_BODY=$(jq -n --argjson payload "$PAYLOAD" '{

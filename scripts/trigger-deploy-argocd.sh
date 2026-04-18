@@ -31,6 +31,8 @@ Optional (override workflow defaults):
   --gitlab-runner-version      GitLab Runner Helm chart version
   --harbor-admin-password      Harbor admin password
   --package-timeout            Package reconciliation timeout in seconds
+  --vcfa-endpoint              VCF Automation endpoint
+  --tenant-name                VCF tenant name
 
 Example:
   $(basename "$0") \\
@@ -55,6 +57,8 @@ GITLAB_OPERATOR_VERSION=""
 GITLAB_RUNNER_VERSION=""
 HARBOR_ADMIN_PASSWORD=""
 PACKAGE_TIMEOUT=""
+VCFA_ENDPOINT=""
+TENANT_NAME=""
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
@@ -71,6 +75,8 @@ while [[ $# -gt 0 ]]; do
     --gitlab-runner-version)      GITLAB_RUNNER_VERSION="$2"; shift 2 ;;
     --harbor-admin-password)      HARBOR_ADMIN_PASSWORD="$2"; shift 2 ;;
     --package-timeout)            PACKAGE_TIMEOUT="$2"; shift 2 ;;
+    --vcfa-endpoint)              VCFA_ENDPOINT="$2"; shift 2 ;;
+    --tenant-name)                TENANT_NAME="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
     *)
       echo "Error: Unknown argument: $1" >&2
@@ -117,6 +123,8 @@ add_field "gitlab_operator_version"  "$GITLAB_OPERATOR_VERSION"
 add_field "gitlab_runner_version"    "$GITLAB_RUNNER_VERSION"
 add_field "harbor_admin_password"    "$HARBOR_ADMIN_PASSWORD"
 add_field "package_timeout"          "$PACKAGE_TIMEOUT"
+add_field "vcfa_endpoint"            "$VCFA_ENDPOINT"
+add_field "tenant_name"              "$TENANT_NAME"
 
 # --- Send repository_dispatch event ---
 DISPATCH_BODY=$(jq -n --argjson payload "$PAYLOAD" '{
