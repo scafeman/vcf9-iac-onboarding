@@ -254,7 +254,7 @@ The physical compute layer. ESXi hosts provide the bare-metal hypervisor that ru
 |---|---|---|---|
 | **ESXi Hosts** | Bare-metal hypervisor. Runs all VMs including Supervisor nodes, VKS workers, and application VMs. Managed by vCenter and grouped into vSphere clusters. | EC2 bare-metal instances (implicit) | Infrastructure-level — not directly managed by toolkit scripts |
 | **VM Classes** | Compute shapes that define CPU and memory for VMs. Available classes: `best-effort-small` (2 vCPU, 4 GB), `best-effort-medium` (4 vCPU, 8 GB), `best-effort-large` (8 vCPU, 16 GB), `best-effort-xlarge` (16 vCPU, 32 GB). | EC2 instance types (t3.small, m5.large, etc.) | VKS worker nodes use `best-effort-large`; VM Service VMs reference VM classes in manifests |
-| **Content Libraries** | vSphere repositories for OS image templates (OVAs). VKS uses Tanzu Kubernetes Release (TKR) images; VM Service uses Ubuntu/RHEL templates. | AMIs (Amazon Machine Images) | VKS nodes pull from TKR content library; VM Service VMs reference `ubuntu-24.04` images |
+| **Content Libraries** | vSphere repositories for OS image templates (OVAs). VKS uses vSphere Kubernetes Release (TKR) images; VM Service uses Ubuntu/RHEL templates. | AMIs (Amazon Machine Images) | VKS nodes pull from TKR content library; VM Service VMs reference `ubuntu-24.04` images |
 
 **Key CRD/API References:**
 - `VirtualMachineClass` — `apiVersion: vmoperator.vmware.com/v1alpha3`

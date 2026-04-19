@@ -78,7 +78,7 @@ Commands that run after switching to a namespace-scoped context via the Context 
 | `kubectl get clusters` | List VKS clusters in the namespace |
 | `kubectl get cluster <CLUSTER> -o yaml` | Get cluster details and status |
 | `kubectl get cluster <CLUSTER> -o jsonpath='{.status.phase}'` | Get cluster provisioning phase |
-| `kubectl get tkr` | List available Tanzu Kubernetes Releases (versions) |
+| `kubectl get tkr` | List available vSphere Kubernetes Releases (versions) |
 | `kubectl get clustercontentlibraries` | List content libraries for VM images |
 | `vcf cluster kubeconfig get <CLUSTER> --admin --export-file kubeconfig-<CLUSTER>.yaml` | Export admin kubeconfig |
 | `kubectl delete cluster <CLUSTER>` | Delete a VKS cluster |

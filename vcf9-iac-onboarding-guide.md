@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This guide walks DevOps engineers through the complete Infrastructure-as-Code (IaC) workflow for migrating container workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with VMware Kubernetes Service (VKS). It covers the full lifecycle from environment initialization through VKS cluster deployment and functional validation.
+This guide walks DevOps engineers through the complete Infrastructure-as-Code (IaC) workflow for migrating container workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with vSphere Kubernetes Service (VKS). It covers the full lifecycle from environment initialization through VKS cluster deployment and functional validation.
 
 > **Companion documents:** Working sample manifests are in the [`examples/`](examples/) folder — see the [Examples README](examples/README.md) for deployment order and details. For a pass/fail validation checklist, see the [AWS EKS to VCF VKS Migration Checklist](AWS-EKS-to-VCF-VKS-Migration-Checklist.md).
 
@@ -662,7 +662,7 @@ When running `kubectl get clusters` or `kubectl apply -f cluster.yaml`, the glob
 
 ## Phase 6: VKS Cluster Deployment
 
-With the Context Bridge completed in Phase 5, your `kubectl` session is now scoped to the Supervisor Namespace and the `cluster.x-k8s.io` API group is visible. You can now deploy a VKS (VMware Kubernetes Service) cluster using a declarative Cluster API manifest — the VCF 9 equivalent of provisioning an EKS cluster on AWS.
+With the Context Bridge completed in Phase 5, your `kubectl` session is now scoped to the Supervisor Namespace and the `cluster.x-k8s.io` API group is visible. You can now deploy a VKS (vSphere Kubernetes Service) cluster using a declarative Cluster API manifest — the VCF 9 equivalent of provisioning an EKS cluster on AWS.
 
 > **Prerequisite:** Complete Phase 5 (Context Bridge Execution). You must be in a namespace-scoped context targeting your `<GENERATED_NS_NAME>`. If `kubectl get clusters` returns an error about unknown resource types, go back to Phase 5 and complete the Context Bridge.
 
@@ -723,7 +723,7 @@ spec:
     # This is a system namespace managed by VKS
     classNamespace: vmware-system-vks-public
     # Target Kubernetes version for the cluster
-    # Must match an available Tanzu Kubernetes Release (TKR)
+    # Must match an available vSphere Kubernetes Release (TKR)
     # Check available versions: kubectl get tkr
     version: <K8S_VERSION>
     # -----------------------------------------------------------
@@ -806,7 +806,7 @@ Replace the placeholders with your environment-specific values:
 
 #### How to Obtain the Content Library ID
 
-The `<CONTENT_LIBRARY_ID>` is a vSphere-level resource identifier that points to the content library containing Tanzu Kubernetes node OS images. The ID is typically a UUID-like string (e.g., `cl-32ee3681364c701d0`). You can find it using either of the following methods:
+The `<CONTENT_LIBRARY_ID>` is a vSphere-level resource identifier that points to the content library containing vSphere Kubernetes node OS images. The ID is typically a UUID-like string (e.g., `cl-32ee3681364c701d0`). You can find it using either of the following methods:
 
 **Method 1: kubectl CLI**
 
@@ -833,14 +833,14 @@ NAME                   VSPHERENAME                          TYPE         STORAGE
 cl-32ee3681364c701d0   Kubernetes Service Content Library   Subscribed   Datastore     13d
 ```
 
-The `NAME` column contains the Content Library ID. For VKS cluster creation, use the ID from the library that contains the Tanzu Kubernetes node OS images — this is typically the **Subscribed** library listed by `kubectl get clustercontentlibraries` (e.g., `cl-32ee3681364c701d0`).
+The `NAME` column contains the Content Library ID. For VKS cluster creation, use the ID from the library that contains the vSphere Kubernetes node OS images — this is typically the **Subscribed** library listed by `kubectl get clustercontentlibraries` (e.g., `cl-32ee3681364c701d0`).
 
 **Method 2: VCFA Portal (UI)**
 
 1. Log in to the VCFA portal at `https://<VCFA_ENDPOINT>`
 2. Navigate to **Build & Deploy** → **Services** → **Virtual Machine Image**
 3. Click the **Content Libraries** tab (next to "Virtual Machine Images")
-4. The table shows both Local and Subscribed libraries — click the library that contains the Tanzu Kubernetes node OS images (e.g., "Kubernetes Service Content Library", Type: Subscribed)
+4. The table shows both Local and Subscribed libraries — click the library that contains the vSphere Kubernetes node OS images (e.g., "Kubernetes Service Content Library", Type: Subscribed)
 5. Click the **VIEW YAML** link next to the library name
 6. In the YAML view, find the `metadata.name` field (line 13) — this is the Content Library ID (e.g., `cl-32ee3681364c701d0`)
 
@@ -1436,7 +1436,7 @@ This table documents all 22 `<PLACEHOLDER>` variables used throughout the guide.
 | `<NAMESPACE_PREFIX>` | Prefix for `generateName` — VCF appends a random 5-character suffix to produce the Dynamic Namespace Name | `myproject-ns-` | Phase 4 |
 | `<GENERATED_NS_NAME>` | Dynamic Namespace Name — the VCF-generated namespace identifier including the random 5-character suffix | `myproject-ns-a1b2c` | Phase 5, Phase 6, Phase 7 |
 | `<CLUSTER_NAME>` | VKS cluster name — unique identifier for the managed Kubernetes cluster within the Supervisor Namespace | `myproject-clus-01` | Phase 6, Phase 7 |
-| `<K8S_VERSION>` | Kubernetes version — the target Tanzu Kubernetes Release version for the VKS cluster | `v1.33.6+vmware.1-fips` | Phase 6 |
+| `<K8S_VERSION>` | Kubernetes version — the target vSphere Kubernetes Release version for the VKS cluster | `v1.33.6+vmware.1-fips` | Phase 6 |
 | `<CONTENT_LIBRARY_ID>` | vSphere content library ID — UUID of the content library containing OS image templates for cluster node VMs | *(UUID from vSphere)* | Phase 6 |
 | `<SERVICES_CIDR>` | Service network CIDR — IP address range for Kubernetes ClusterIP services; must not overlap with pod or VPC CIDRs | `10.96.0.0/12` | Phase 6 |
 | `<PODS_CIDR>` | Pod network CIDR — IP address range for pod networking; must be large enough for all pods across all nodes | `192.168.156.0/20` | Phase 6 |
@@ -1486,7 +1486,7 @@ This section consolidates all error scenarios documented throughout the guide in
 | 5 — Context Bridge | Incorrect context format | `vcf context use` fails to switch scope | Use the exact three-part format: `<CONTEXT_NAME>:<GENERATED_NS_NAME>:<PROJECT_NAME>` |
 | 5 — Context Bridge | Cluster API not visible | `kubectl get clusters` returns "server doesn't have a resource type" or "No resources found" | Confirm the Context Bridge is complete; re-run `vcf context use` with the namespace-scoped three-part format |
 | 6 — VKS Cluster Deployment | Wrong namespace in manifest | Cluster created in wrong scope or rejected by the API server | Update `metadata.namespace` in the Cluster manifest to match the exact `<GENERATED_NS_NAME>` from Phase 5 |
-| 6 — VKS Cluster Deployment | Invalid Kubernetes version | Cluster provisioning fails with a version error | Check available Tanzu Kubernetes Releases with `kubectl get tkr` and update `spec.topology.version` |
+| 6 — VKS Cluster Deployment | Invalid Kubernetes version | Cluster provisioning fails with a version error | Check available vSphere Kubernetes Releases with `kubectl get tkr` and update `spec.topology.version` |
 | 6 — VKS Cluster Deployment | VM provisioning stalls | VirtualMachines stuck in `Creating` state indefinitely | Check vSphere resource availability, content library sync status, and storage capacity on the target cluster |
 | 7 — Functional Validation | PVC stuck in Pending | PersistentVolumeClaim does not bind to a volume | Verify the storage class exists with `kubectl get sc` and check CSI driver pods in the `vmware-system-csi` namespace |
 | 7 — Functional Validation | LoadBalancer no external IP | Service stays in `<pending>` state for the external IP | Verify with `kubectl get svc` (primary method) to check the EXTERNAL-IP column; if still pending, check NSX Edge cluster capacity. The command `kubectl get loadbalancers -A` queries NSX native resources at the Supervisor level and may return empty results in a VKS guest cluster context — this is normal |

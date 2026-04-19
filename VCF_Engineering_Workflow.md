@@ -1,6 +1,6 @@
 # VCF 9 Engineering Workflow: Infrastructure & Application Deployment
 
-This guide provides the standardized steps to initialize the VCF context, provision infrastructure, deploy VMware Kubernetes Service (VKS) clusters, and run application workloads on VCF 9.
+This guide provides the standardized steps to initialize the VCF context, provision infrastructure, deploy vSphere Kubernetes Service (VKS) clusters, and run application workloads on VCF 9.
 
 ---
 

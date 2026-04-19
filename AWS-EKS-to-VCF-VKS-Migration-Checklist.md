@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document provides a pass/fail checklist for teams migrating workloads from AWS Elastic Kubernetes Service (EKS) to VMware Cloud Foundation (VCF) 9 VMware Kubernetes Service (VKS). Each item maps an AWS EKS concept to its VCF equivalent and includes a verification command to confirm the migration step succeeded.
+This document provides a pass/fail checklist for teams migrating workloads from AWS Elastic Kubernetes Service (EKS) to VMware Cloud Foundation (VCF) 9 vSphere Kubernetes Service (VKS). Each item maps an AWS EKS concept to its VCF equivalent and includes a verification command to confirm the migration step succeeded.
 
 Use this checklist sequentially. Each phase builds on the previous one — do not skip ahead.
 
@@ -168,7 +168,7 @@ In AWS, EKS cluster creation is a single API call that provisions a fully manage
 | Control plane visibility | Hidden (managed service) | Visible as VirtualMachine resources |
 | Provisioning time | 10-15 minutes | 5-20 minutes (depends on VM cloning speed) |
 | Node scaling | Managed Node Groups (EC2 Auto Scaling) | Cluster API MachineDeployments with autoscaler annotations |
-| Kubernetes version | EKS-managed versions | Tanzu Kubernetes Releases (`kubectl get tkr`) |
+| Kubernetes version | EKS-managed versions | vSphere Kubernetes Releases (`kubectl get tkr`) |
 | Cluster configuration | `eksctl` config or AWS API | Cluster API manifest (`cluster.x-k8s.io/v1beta1`) with topology class |
 
 ---

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Deploy Cluster provisions a production-ready VKS (VMware Kubernetes Service) cluster from scratch on VCF 9 private cloud infrastructure. It is the foundation for all other deployment patterns — every container-based pattern depends on a running VKS cluster created by this workflow.
+Deploy Cluster provisions a production-ready VKS (vSphere Kubernetes Service) cluster from scratch on VCF 9 private cloud infrastructure. It is the foundation for all other deployment patterns — every container-based pattern depends on a running VKS cluster created by this workflow.
 
 This is the VCF equivalent of creating an AWS EKS cluster with managed node groups, EBS CSI driver, ALB controller, and cluster autoscaler.
 

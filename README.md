@@ -1,6 +1,6 @@
 # VCF 9 IaC Onboarding Toolkit
 
-Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with VMware Kubernetes Service (VKS). Automates the full lifecycle — from cluster provisioning to hybrid VM+container deployments — on Private Cloud infrastructure.
+Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with vSphere Kubernetes Service (VKS). Automates the full lifecycle — from cluster provisioning to hybrid VM+container deployments — on Private Cloud infrastructure.
 
 ## What This Repo Provides
 
@@ -161,7 +161,7 @@ This is the deployment that resonates most with teams migrating from AWS. If you
 | **Context Bridge** | The critical step that switches from global (org-level) to namespace-scoped context, making Cluster API resources visible. Without it, `kubectl get clusters` returns nothing. |
 | **generateName** | Supervisor Namespaces use `generateName` instead of `name`, so VCF appends a random 5-character suffix. Scripts must discover the dynamic name after creation. |
 | **CCI APIs** | Cloud Consumption Interface — the VCF 9 API layer for Projects, Namespaces, RBAC, and infrastructure resources. |
-| **VKS** | VMware Kubernetes Service — managed Kubernetes clusters deployed via Cluster API on a vSphere Supervisor. |
+| **VKS** | vSphere Kubernetes Service — managed Kubernetes clusters deployed via Cluster API on a vSphere Supervisor. |
 | **VKS Standard Packages** | Pre-built, versioned Kubernetes add-ons distributed as OCI images and managed by kapp-controller. Installed via `vcf package install` into a dedicated namespace (default: `tkg-packages`). The AWS equivalent is EKS Add-ons — both provide curated, lifecycle-managed cluster extensions. |
 | **Package Repository** | An OCI registry containing the VKS standard packages catalog. Registered via `vcf package repository add` before any packages can be installed. Similar to adding a Helm repo, but uses the Carvel packaging APIs. |
 | **kapp-controller** | The Carvel package manager that runs on every VKS cluster. It watches PackageInstall resources and reconciles them. During teardown, finalizers must be stripped before deletion to prevent cascading namespace destruction. |

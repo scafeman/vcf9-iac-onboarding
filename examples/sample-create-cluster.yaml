@@ -2,7 +2,7 @@
 # Sample VKS Cluster Manifest - Cluster API (cluster.x-k8s.io)
 # =============================================================================
 #
-# This manifest creates a VKS (VMware Kubernetes Service) cluster via the
+# This manifest creates a VKS (vSphere Kubernetes Service) cluster via the
 # Cluster API. VKS uses a topology-based approach where the cluster class
 # defines the infrastructure blueprint and you customize it with variables
 # and overrides. It corresponds to Phase 6 of the VCF 9 IaC Onboarding Guide.
