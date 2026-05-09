@@ -1,6 +1,6 @@
 # VCF 9 IaC Onboarding Toolkit
 
-Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with VMware Kubernetes Service (VKS). Automates the full lifecycle — from cluster provisioning to hybrid VM+container deployments — on Private Cloud infrastructure.
+Infrastructure-as-Code toolkit for migrating containerized workloads from AWS EKS to VMware Cloud Foundation (VCF) 9 with vSphere Kubernetes Service (VKS). Automates the full lifecycle — from cluster provisioning to hybrid VM+container deployments — on Private Cloud infrastructure.
 
 ## What This Repo Provides
 
